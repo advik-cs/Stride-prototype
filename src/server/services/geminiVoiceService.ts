@@ -379,6 +379,58 @@ export function getGeminiApiKey(): string | undefined {
 }
 
 /**
+ * Normalizes browser-recorded MediaRecorder MIME types (e.g., 'audio/webm;codecs=opus')
+ * into standard IANA MIME types explicitly supported by Gemini multimodal audio.
+ */
+export function normalizeAudioMimeType(rawMime?: string): string {
+  if (!rawMime || typeof rawMime !== 'string') return 'audio/webm';
+  const lower = rawMime.toLowerCase().trim();
+  const base = lower.split(';')[0].trim();
+
+  if (base.includes('webm')) return 'audio/webm';
+  if (base.includes('ogg') || base.includes('opus')) return 'audio/ogg';
+  if (base.includes('mp4') || base.includes('m4a') || base.includes('aac')) return 'audio/mp4';
+  if (base.includes('wav')) return 'audio/wav';
+  if (base.includes('mp3') || base.includes('mpeg')) return 'audio/mp3';
+  if (base.includes('flac')) return 'audio/flac';
+
+  return 'audio/webm';
+}
+
+/**
+ * Robust JSON extractor that handles raw JSON, markdown-fenced code blocks (```json ... ```),
+ * or JSON embedded within text. Never throws a SyntaxError.
+ */
+export function extractAndParseJson<T = any>(rawText?: string): T | null {
+  if (!rawText || typeof rawText !== 'string') return null;
+  const trimmed = rawText.trim();
+
+  // 1. Direct JSON parse
+  try {
+    return JSON.parse(trimmed) as T;
+  } catch {}
+
+  // 2. Markdown fenced block ```json ... ```
+  const fenceMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  if (fenceMatch) {
+    try {
+      return JSON.parse(fenceMatch[1].trim()) as T;
+    } catch {}
+  }
+
+  // 3. Outermost curly braces { ... }
+  const firstBrace = trimmed.indexOf('{');
+  const lastBrace = trimmed.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+    try {
+      return JSON.parse(trimmed.slice(firstBrace, lastBrace + 1)) as T;
+    } catch {}
+  }
+
+  return null;
+}
+
+/**
  * Main Gemini-powered emergency processing function.
  * Leverages @google/genai with strict JSON response and graceful fallback.
  */
@@ -491,24 +543,24 @@ Return JSON:`;
     });
 
     const responseText = response.text || '';
-    const parsed = JSON.parse(responseText);
+    const parsed = extractAndParseJson(responseText);
 
     // Validate structured fields
     const validModes: VoiceEmergencyMode[] = ['ASSIST', 'ASSESS', 'EMERGENCY'];
-    const mode: VoiceEmergencyMode = validModes.includes(parsed.mode) ? parsed.mode : 'ASSESS';
+    const mode: VoiceEmergencyMode = parsed && validModes.includes(parsed.mode) ? parsed.mode : 'ASSESS';
 
     return {
       mode,
-      intent: parsed.intent || 'emergency_voice_processing',
+      intent: parsed?.intent || 'emergency_voice_processing',
       assistantResponse:
-        parsed.assistantResponse ||
+        parsed?.assistantResponse ||
         (mode === 'EMERGENCY'
           ? "I have logged your emergency distress signal with our response units. Stay in a safe, elevated location."
           : "I am here with STRIDE Emergency Command. How can I assist you?"),
-      extractedInformation: parsed.extractedInformation || {},
-      uncertainInformation: Array.isArray(parsed.uncertainInformation) ? parsed.uncertainInformation : [],
-      missingInformation: Array.isArray(parsed.missingInformation) ? parsed.missingInformation : [],
-      shouldCreateOrUpdateSos: !!parsed.shouldCreateOrUpdateSos && mode === 'EMERGENCY',
+      extractedInformation: parsed?.extractedInformation || {},
+      uncertainInformation: Array.isArray(parsed?.uncertainInformation) ? parsed.uncertainInformation : [],
+      missingInformation: Array.isArray(parsed?.missingInformation) ? parsed.missingInformation : [],
+      shouldCreateOrUpdateSos: !!parsed?.shouldCreateOrUpdateSos && mode === 'EMERGENCY',
       isFallbackExtractor: false,
     };
   } catch (err: any) {
@@ -527,23 +579,27 @@ export async function processEmergencyAudioInput(
   audioBuffer: Buffer,
   mimeType: string,
   history: ChatMessage[],
-  context: StrideContextData
+  context: StrideContextData,
+  correlationId?: string
 ): Promise<VoiceAudioAssistantOutput> {
   const apiKey = getGeminiApiKey();
-  const cleanMimeType = (mimeType || 'audio/webm').split(';')[0].trim() || 'audio/webm';
+  const cleanMimeType = normalizeAudioMimeType(mimeType);
+  const reqId = correlationId || `req-srv-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
 
   // Safe server-side diagnostic logging (NEVER exposes API keys or secrets)
   console.log('[STRIDE Gemini Audio Input Structure]', {
+    correlationId: reqId,
     historyLength: Array.isArray(history) ? history.length : 0,
     hasActiveSosInContext: !!context.activeSos,
     activeSosId: context.activeSos?.id || null,
     audioBufferSize: audioBuffer ? audioBuffer.length : 0,
-    mimeType: cleanMimeType,
+    rawMimeType: mimeType,
+    cleanMimeType,
     hasApiKey: !!apiKey,
   });
 
   if (!audioBuffer || audioBuffer.length === 0) {
-    console.warn('[STRIDE Gemini Audio] Empty audio buffer received');
+    console.warn(`[STRIDE Gemini Audio] Empty audio buffer received (id: ${reqId})`);
     return {
       transcript: '',
       mode: 'ASSIST',
@@ -558,13 +614,30 @@ export async function processEmergencyAudioInput(
     };
   }
 
+  // Defensive: check for ultra-short buffers (< 200 bytes) which are empty container headers
+  if (audioBuffer.length < 200) {
+    console.warn(`[STRIDE Gemini Audio] Recording too short (${audioBuffer.length} bytes, id: ${reqId}).`);
+    return {
+      transcript: '',
+      mode: 'ASSIST',
+      intent: 'recording_too_short',
+      assistantResponse:
+        "Your audio recording was too brief to detect speech. Please tap the microphone and speak your message, or type below.",
+      extractedInformation: {},
+      uncertainInformation: [],
+      missingInformation: [],
+      shouldCreateOrUpdateSos: false,
+      isFallbackExtractor: true,
+    };
+  }
+
   // If no Gemini API key configured, use safe deterministic fallback
   if (!apiKey) {
     const presentKeys = Object.keys(process.env).filter((k) =>
       /gemini|google|key|ai/i.test(k)
     );
     console.warn(
-      `[STRIDE Gemini Audio] No Gemini API key detected in environment. Checked: GEMINI_API_KEY, GOOGLE_API_KEY, GOOGLE_GENAI_API_KEY, VITE_GEMINI_API_KEY, VITE_GOOGLE_API_KEY. Detected matching env keys: [${presentKeys.join(', ')}]. Using safe fallback.`
+      `[STRIDE Gemini Audio] No Gemini API key detected in environment (id: ${reqId}). Checked: GEMINI_API_KEY, GOOGLE_API_KEY, GOOGLE_GENAI_API_KEY, VITE_GEMINI_API_KEY, VITE_GOOGLE_API_KEY. Detected matching env keys: [${presentKeys.join(', ')}]. Using safe fallback.`
     );
     return {
       transcript: '(Spoken audio received)',
@@ -582,7 +655,7 @@ export async function processEmergencyAudioInput(
 
   const masked = apiKey.length > 8 ? `${apiKey.slice(0, 4)}...${apiKey.slice(-4)}` : '***';
   console.log(
-    `[STRIDE Gemini Audio] API key resolved (length: ${apiKey.length}, preview: ${masked}). Audio payload: ${audioBuffer.length} bytes, clean MIME: ${cleanMimeType}. Calling gemini-2.5-flash...`
+    `[STRIDE Gemini Audio] API key resolved (length: ${apiKey.length}, preview: ${masked}). Audio payload: ${audioBuffer.length} bytes, clean MIME: ${cleanMimeType}, id: ${reqId}. Calling gemini-2.5-flash...`
   );
 
   try {
@@ -658,19 +731,12 @@ Analyze the citizen's audio recording and return the JSON response:`;
       model: 'gemini-2.5-flash',
       contents: [
         {
-          role: 'user',
-          parts: [
-            {
-              inlineData: {
-                mimeType: cleanMimeType,
-                data: audioBuffer.toString('base64'),
-              },
-            },
-            {
-              text: prompt,
-            },
-          ],
+          inlineData: {
+            mimeType: cleanMimeType,
+            data: audioBuffer.toString('base64'),
+          },
         },
+        prompt,
       ],
       config: {
         responseMimeType: 'application/json',
@@ -678,35 +744,46 @@ Analyze the citizen's audio recording and return the JSON response:`;
     });
 
     const responseText = response.text || '';
-    const parsed = JSON.parse(responseText);
+    const parsed = extractAndParseJson(responseText);
 
     const validModes: VoiceEmergencyMode[] = ['ASSIST', 'ASSESS', 'EMERGENCY'];
-    const mode: VoiceEmergencyMode = validModes.includes(parsed.mode) ? parsed.mode : 'ASSESS';
+    const mode: VoiceEmergencyMode = parsed && validModes.includes(parsed.mode) ? parsed.mode : 'ASSESS';
+
+    let transcript = '';
+    if (parsed && typeof parsed.transcript === 'string') {
+      transcript = parsed.transcript.trim();
+    } else if (responseText && !parsed) {
+      transcript = responseText.trim();
+    }
 
     return {
-      transcript: typeof parsed.transcript === 'string' ? parsed.transcript : '',
+      transcript,
       mode,
-      intent: parsed.intent || 'voice_audio_processing',
+      intent: parsed?.intent || 'voice_audio_processing',
       assistantResponse:
-        parsed.assistantResponse ||
+        parsed?.assistantResponse ||
         (mode === 'EMERGENCY'
           ? "I have logged your emergency distress signal with our response units. Stay in a safe, elevated location."
           : "I am here with STRIDE Emergency Command. How can I assist you?"),
-      extractedInformation: parsed.extractedInformation || {},
-      uncertainInformation: Array.isArray(parsed.uncertainInformation) ? parsed.uncertainInformation : [],
-      missingInformation: Array.isArray(parsed.missingInformation) ? parsed.missingInformation : [],
-      shouldCreateOrUpdateSos: !!parsed.shouldCreateOrUpdateSos && mode === 'EMERGENCY',
+      extractedInformation: parsed?.extractedInformation || {},
+      uncertainInformation: Array.isArray(parsed?.uncertainInformation) ? parsed.uncertainInformation : [],
+      missingInformation: Array.isArray(parsed?.missingInformation) ? parsed.missingInformation : [],
+      shouldCreateOrUpdateSos: !!parsed?.shouldCreateOrUpdateSos && mode === 'EMERGENCY',
       isFallbackExtractor: false,
     };
   } catch (err: any) {
     console.error('[STRIDE Gemini Audio Error] Full failure details:', {
-      message: err?.message,
-      status: err?.status,
+      correlationId: reqId,
+      model: 'gemini-2.5-flash',
+      apiKeyResolved: !!apiKey,
+      receivedMimeType: mimeType,
+      cleanMimeType,
+      bufferSizeBytes: audioBuffer.length,
+      errorMessage: err?.message,
+      errorStatus: err?.status,
       statusCode: err?.statusCode,
-      code: err?.code,
-      name: err?.name,
-      details: err?.details,
-      stack: err?.stack,
+      errorCode: err?.code,
+      errorDetails: err?.details,
     });
     return {
       transcript: '(Spoken audio received)',

@@ -443,6 +443,15 @@ export async function handleVoiceEmergencyAudio(
       return;
     }
 
+    const clientRequestId =
+      (typeof req.body.clientRequestId === 'string' && req.body.clientRequestId.trim()) ||
+      (typeof req.headers['x-request-id'] === 'string' && req.headers['x-request-id'].trim()) ||
+      `req-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+
+    console.log(
+      `[STRIDE Voice Emergency Audio] Request received. clientRequestId: ${clientRequestId}, user: ${userId}, size: ${file.buffer.length} bytes, mimetype: ${file.mimetype}`
+    );
+
     // Parse history, currentLocation, activeRequestId from multipart FormData
     let history: any[] = [];
     if (req.body.history) {
@@ -478,7 +487,8 @@ export async function handleVoiceEmergencyAudio(
       file.buffer,
       file.mimetype || 'audio/webm',
       Array.isArray(history) ? history : [],
-      context
+      context,
+      clientRequestId
     );
 
     // 3. Apply unified SOS triage and lifecycle management
@@ -496,6 +506,7 @@ export async function handleVoiceEmergencyAudio(
     );
 
     res.json({
+      clientRequestId,
       transcript: aiResult.transcript || '',
       mode: aiResult.mode,
       intent: aiResult.intent,

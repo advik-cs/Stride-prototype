@@ -75,6 +75,9 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingTimerRef = useRef<any>(null);
   const chatBottomRef = useRef<HTMLDivElement>(null);
+  const isRecordingRef = useRef(false);
+  const hasStoppedRef = useRef(false);
+  const isSubmittingAudioRef = useRef(false);
 
   // Initialize GPS location
   useEffect(() => {
@@ -112,6 +115,9 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
       setInputVal('');
       setCurrentStatus('IDLE');
       setCurrentMode('ASSIST');
+      isRecordingRef.current = false;
+      hasStoppedRef.current = false;
+      isSubmittingAudioRef.current = false;
     }
     prevIsOpenRef.current = isOpen;
   }, [isOpen]);
@@ -133,6 +139,9 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
     setInputVal('');
     setCurrentStatus('IDLE');
     setCurrentMode('ASSIST');
+    isRecordingRef.current = false;
+    hasStoppedRef.current = false;
+    isSubmittingAudioRef.current = false;
   };
 
   // Load existing active SOS if passed or in localStorage
@@ -152,6 +161,7 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
     return () => {
       if (recordingTimerRef.current) {
         clearInterval(recordingTimerRef.current);
+        recordingTimerRef.current = null;
       }
       if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
         try {
@@ -160,6 +170,7 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
       }
       if (audioStreamRef.current) {
         audioStreamRef.current.getTracks().forEach((track) => track.stop());
+        audioStreamRef.current = null;
       }
       if ('speechSynthesis' in window) {
         window.speechSynthesis.cancel();
@@ -194,11 +205,19 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
   };
 
   const stopRecording = () => {
+    if (!isRecordingRef.current || hasStoppedRef.current) return;
+    hasStoppedRef.current = true;
+    isRecordingRef.current = false;
+
     if (recordingTimerRef.current) {
       clearInterval(recordingTimerRef.current);
       recordingTimerRef.current = null;
     }
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+
+    // Immediately switch status so UI disables the button and displays processing state
+    setCurrentStatus('PROCESSING');
+
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       try {
         mediaRecorderRef.current.stop();
       } catch (err) {
@@ -208,6 +227,7 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
   };
 
   const startRecording = async () => {
+    if (isRecordingRef.current || isSubmittingAudioRef.current) return;
     if (currentStatus === 'SPEAKING' && 'speechSynthesis' in window) {
       window.speechSynthesis.cancel();
     }
@@ -238,6 +258,9 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
       const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
       mediaRecorderRef.current = recorder;
       audioChunksRef.current = [];
+      isRecordingRef.current = true;
+      hasStoppedRef.current = false;
+      isSubmittingAudioRef.current = false;
 
       recorder.ondataavailable = (e) => {
         if (e.data && e.data.size > 0) {
@@ -246,8 +269,15 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
       };
 
       recorder.onstop = async () => {
+        // Defensive lock: prevent onstop handler from ever executing twice
+        if (isSubmittingAudioRef.current) {
+          console.warn('[STRIDE Voice] Duplicate onstop invocation suppressed.');
+          return;
+        }
+        isSubmittingAudioRef.current = true;
+
         const mime = recorder.mimeType || 'audio/webm';
-        const blob = new Blob(audioChunksRef.current, { type: mime });
+        const chunks = [...audioChunksRef.current];
         audioChunksRef.current = [];
 
         // Release hardware mic track
@@ -256,10 +286,14 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
           audioStreamRef.current = null;
         }
 
-        if (blob.size > 0) {
+        const blob = new Blob(chunks, { type: mime });
+
+        if (blob.size >= 50) {
           await handleAudioUpload(blob);
         } else {
+          console.warn('[STRIDE Voice] Recording too small (<50 bytes), ignoring.');
           setCurrentStatus('IDLE');
+          isSubmittingAudioRef.current = false;
         }
       };
 
@@ -279,6 +313,9 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
       }, 1000);
     } catch (err: any) {
       console.warn('Microphone getUserMedia error:', err);
+      isRecordingRef.current = false;
+      hasStoppedRef.current = false;
+      isSubmittingAudioRef.current = false;
       if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
         setMicError('Microphone permission denied. Please allow microphone access or type your emergency message below.');
       } else {
@@ -289,7 +326,8 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
   };
 
   const toggleRecording = () => {
-    if (currentStatus === 'LISTENING') {
+    if (isSubmittingAudioRef.current) return;
+    if (currentStatus === 'LISTENING' || isRecordingRef.current) {
       stopRecording();
     } else if (currentStatus === 'IDLE' || currentStatus === 'SPEAKING') {
       startRecording();
@@ -297,6 +335,7 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
   };
 
   const handleAudioUpload = async (audioBlob: Blob) => {
+    const clientRequestId = 'req-' + Date.now() + '-' + Math.random().toString(36).substring(2, 8);
     setCurrentStatus('PROCESSING');
 
     const tempUserMsgId = 'msg-' + Date.now();
@@ -321,6 +360,7 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
         history: historyPayload,
         currentLocation: currentLocation || undefined,
         activeRequestId: activeRequest?.id || localStorage.getItem('stride_active_sos_id') || undefined,
+        clientRequestId,
       });
 
       const transcriptText =
@@ -374,6 +414,8 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
         mode: 'ASSIST',
       };
       setMessages((prev) => [...prev, errorMsg]);
+    } finally {
+      isSubmittingAudioRef.current = false;
     }
   };
 
@@ -724,8 +766,12 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
             {/* Big Mic Button (Push-to-talk / Tap-to-record) */}
             <button
               type="button"
-              onClick={toggleRecording}
-              disabled={currentStatus === 'PROCESSING'}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                toggleRecording();
+              }}
+              disabled={currentStatus === 'PROCESSING' || isSubmittingAudioRef.current}
               className={`w-12 h-12 rounded-2xl flex items-center justify-center text-white transition shadow-md cursor-pointer flex-shrink-0 disabled:opacity-50 ${
                 currentStatus === 'LISTENING'
                   ? 'bg-red-600 animate-pulse ring-4 ring-red-200'

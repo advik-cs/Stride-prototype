@@ -259,9 +259,13 @@ export const duringApi = {
     history?: Array<{ role: 'user' | 'assistant'; content: string }>;
     currentLocation?: { latitude: number; longitude: number };
     activeRequestId?: string;
+    clientRequestId?: string;
   }): Promise<VoiceAssistantResponse & { transcript: string }> {
     const formData = new FormData();
     formData.append('audio', data.audioBlob, 'recording.webm');
+    if (data.clientRequestId) {
+      formData.append('clientRequestId', data.clientRequestId);
+    }
     if (data.history && data.history.length > 0) {
       formData.append('history', JSON.stringify(data.history));
     }
