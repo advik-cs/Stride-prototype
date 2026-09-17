@@ -1,4 +1,5 @@
 // src/server/app.ts
+import "dotenv/config";
 import express from "express";
 import cors from "cors";
 
@@ -2676,16 +2677,34 @@ function formatRescueRequest(reqRecord, citizenUser, customBreakdown) {
   let injuredCount = hasInjured ? 1 : 0;
   let waterLevel = hasWaterRising ? "HIGH" : "MEDIUM";
   let emergencyType = hasTrapped ? "TRAPPED" : hasFire ? "FIRE" : "FLOOD";
-  const metaMatch = rawDesc.match(/\[P:(\d+)(?:,\s*C:(\d+))?(?:,\s*E:(\d+))?(?:,\s*D:(\d+))?(?:,\s*I:(\d+))?(?:,\s*W:([\w_]+))?(?:,\s*T:([\w_]+))?\]/);
+  let isVoice = /\[(?:SRC:)?VOICE/i.test(rawDesc);
+  let spokenLocation = void 0;
+  let locationConflict = false;
+  const metaMatch = rawDesc.match(/\[(?:SRC:([\w_]+),\s*)?P:(\d+)(?:,\s*C:(\d+))?(?:,\s*E:(\d+))?(?:,\s*D:(\d+))?(?:,\s*I:(\d+))?(?:,\s*W:([\w_]+))?(?:,\s*T:([\w_]+))?(?:,\s*SPOKEN_LOC:([^,\]]+))?(?:,\s*CONFLICT:(YES|NO))?\]/i);
   if (metaMatch) {
-    peopleCount = parseInt(metaMatch[1], 10) || 1;
-    if (metaMatch[2] !== void 0) childrenCount = parseInt(metaMatch[2], 10);
-    if (metaMatch[3] !== void 0) elderlyCount = parseInt(metaMatch[3], 10);
-    if (metaMatch[4] !== void 0) disabledCount = parseInt(metaMatch[4], 10);
-    if (metaMatch[5] !== void 0) injuredCount = parseInt(metaMatch[5], 10);
-    if (metaMatch[6]) waterLevel = metaMatch[6];
-    if (metaMatch[7]) emergencyType = metaMatch[7];
+    if (metaMatch[1] && metaMatch[1].toUpperCase() === "VOICE") isVoice = true;
+    peopleCount = parseInt(metaMatch[2], 10) || 1;
+    if (metaMatch[3] !== void 0) childrenCount = parseInt(metaMatch[3], 10);
+    if (metaMatch[4] !== void 0) elderlyCount = parseInt(metaMatch[4], 10);
+    if (metaMatch[5] !== void 0) disabledCount = parseInt(metaMatch[5], 10);
+    if (metaMatch[6] !== void 0) injuredCount = parseInt(metaMatch[6], 10);
+    if (metaMatch[7]) waterLevel = metaMatch[7];
+    if (metaMatch[8]) emergencyType = metaMatch[8];
+    if (metaMatch[9]) spokenLocation = metaMatch[9].trim();
+    if (metaMatch[10]) locationConflict = metaMatch[10].toUpperCase() === "YES";
     rawDesc = rawDesc.replace(metaMatch[0], "").trim();
+  } else {
+    const simpleMeta = rawDesc.match(/\[P:(\d+)(?:,\s*C:(\d+))?(?:,\s*E:(\d+))?(?:,\s*D:(\d+))?(?:,\s*I:(\d+))?(?:,\s*W:([\w_]+))?(?:,\s*T:([\w_]+))?\]/);
+    if (simpleMeta) {
+      peopleCount = parseInt(simpleMeta[1], 10) || 1;
+      if (simpleMeta[2] !== void 0) childrenCount = parseInt(simpleMeta[2], 10);
+      if (simpleMeta[3] !== void 0) elderlyCount = parseInt(simpleMeta[3], 10);
+      if (simpleMeta[4] !== void 0) disabledCount = parseInt(simpleMeta[4], 10);
+      if (simpleMeta[5] !== void 0) injuredCount = parseInt(simpleMeta[5], 10);
+      if (simpleMeta[6]) waterLevel = simpleMeta[6];
+      if (simpleMeta[7]) emergencyType = simpleMeta[7];
+      rawDesc = rawDesc.replace(simpleMeta[0], "").trim();
+    }
   }
   const breakdown = customBreakdown || {
     criticalMedical: hasCriticalMedical ? 25 : 0,
@@ -2717,6 +2736,9 @@ function formatRescueRequest(reqRecord, citizenUser, customBreakdown) {
     priorityLevel: level,
     status,
     priorityBreakdown: breakdown,
+    source: isVoice ? "VOICE" : "MANUAL",
+    spokenLocation,
+    locationConflict,
     teamId: matchedTeam?.id || latestAssignment?.teamName || null,
     team: latestAssignment ? matchedTeam || {
       id: latestAssignment.id,
@@ -3132,6 +3154,911 @@ router8.get("/notifications", requireAuth, getNotifications);
 router8.put("/notifications/:id/read", requireAuth, markNotificationAsRead);
 var notificationRoutes_default = router8;
 
+// src/server/routes/voiceRoutes.ts
+import { Router as Router9 } from "express";
+import multer from "multer";
+
+// src/server/services/strideContextService.ts
+async function getStrideContext(userId, userLocation) {
+  const activeDisaster = await database_default.disasterEvent.findFirst({
+    where: { status: { in: ["PREDICTED", "ACTIVE", "WARNING"] } },
+    orderBy: { predictedStartTime: "asc" }
+  }) || await database_default.disasterEvent.findFirst({
+    orderBy: { createdAt: "desc" }
+  });
+  const user = await database_default.user.findUnique({
+    where: { id: userId },
+    include: {
+      households: {
+        include: { members: true }
+      }
+    }
+  });
+  const household = user?.households?.[0] || null;
+  const refLat = userLocation?.latitude || household?.latitude || 12.9716;
+  const refLng = userLocation?.longitude || household?.longitude || 77.5946;
+  let activeSos = null;
+  if (household) {
+    const memberIds = household.members.map((m) => m.id);
+    const existingReq = await database_default.emergencyRequest.findFirst({
+      where: {
+        householdMemberId: { in: memberIds },
+        rescueStatus: { not: "CANCELLED" }
+      },
+      include: {
+        conditions: true
+      },
+      orderBy: { createdAt: "desc" }
+    });
+    if (existingReq) {
+      activeSos = {
+        id: existingReq.id,
+        priorityScore: existingReq.priorityScore,
+        rescueStatus: existingReq.rescueStatus,
+        description: existingReq.description,
+        address: existingReq.address,
+        conditions: existingReq.conditions.map((c) => c.conditionType),
+        createdAt: existingReq.createdAt.toISOString()
+      };
+    }
+  }
+  const allShelters = await database_default.shelter.findMany();
+  const sortedShelters = allShelters.map((s) => ({
+    id: s.id,
+    name: s.name,
+    address: s.address,
+    capacity: s.capacity,
+    status: s.status,
+    distanceKm: parseFloat(calculateHaversineDistance(refLat, refLng, s.latitude, s.longitude).toFixed(1))
+  })).sort((a, b) => a.distanceKm - b.distanceKm).slice(0, 4);
+  const allFacilities = await database_default.emergencyFacility.findMany();
+  const sortedFacilities = allFacilities.map((f) => ({
+    id: f.id,
+    name: f.name,
+    type: f.type,
+    address: f.address,
+    contactNumber: f.contactNumber,
+    distanceKm: parseFloat(calculateHaversineDistance(refLat, refLng, f.latitude, f.longitude).toFixed(1))
+  })).sort((a, b) => a.distanceKm - b.distanceKm).slice(0, 4);
+  return {
+    activeDisaster: activeDisaster ? {
+      id: activeDisaster.id,
+      title: activeDisaster.title,
+      type: activeDisaster.type,
+      alertLevel: activeDisaster.alertLevel,
+      description: activeDisaster.description,
+      status: activeDisaster.status
+    } : null,
+    citizenHousehold: household ? {
+      id: household.id,
+      name: household.name,
+      address: household.address,
+      latitude: household.latitude,
+      longitude: household.longitude,
+      members: household.members.map((m) => ({
+        id: m.id,
+        name: m.name,
+        age: m.age,
+        category: m.category
+      }))
+    } : null,
+    activeSos,
+    nearestShelters: sortedShelters,
+    nearestFacilities: sortedFacilities
+  };
+}
+
+// src/server/services/geminiVoiceService.ts
+import { GoogleGenAI } from "@google/genai";
+function limitedEmergencySignalExtractor(message, _history, context) {
+  const lower = message.toLowerCase().trim();
+  const isQuestion = lower.startsWith("what") || lower.startsWith("where") || lower.startsWith("how") || lower.startsWith("can you") || lower.startsWith("is it safe") || lower.startsWith("should we") || lower.includes("?") || lower.includes("nearest shelter") || lower.includes("hospital") || lower.includes("helpline") || lower.includes("weather");
+  const hasTrapped = lower.includes("trapped") || lower.includes("cannot get out") || lower.includes("can't get out") || lower.includes("stuck upstairs") || lower.includes("marooned");
+  const hasInjured = lower.includes("injured") || lower.includes("bleeding") || lower.includes("unconscious") || lower.includes("broken leg") || lower.includes("heart attack") || lower.includes("medical emergency");
+  const hasRisingWater = lower.includes("water is rising") || lower.includes("water rising") || lower.includes("waist deep") || lower.includes("chest level") || lower.includes("neck deep") || lower.includes("submerged");
+  const hasFire = lower.includes("fire") || lower.includes("smoke") || lower.includes("burning");
+  const hasDisabledOrImmobile = lower.includes("cannot walk") || lower.includes("can't walk") || lower.includes("wheelchair") || lower.includes("bedridden") || lower.includes("disabled");
+  const hasExplicitRescueCall = lower.includes("please rescue") || lower.includes("send rescue") || lower.includes("send a boat") || lower.includes("help us please") || lower.includes("save us") || lower.includes("need evacuation") || lower.includes("evacuate us") || lower.includes("emergency need help");
+  const hasSpeculation = lower.includes("i think") || lower.includes("maybe") || lower.includes("might be") || lower.includes("not sure if") || lower.includes("possibly");
+  if (isQuestion && !hasTrapped && !hasInjured && !hasExplicitRescueCall) {
+    let resp = "For your safety during this flood event, please stay on higher ground and avoid entering moving floodwaters. Do you require emergency rescue assistance?";
+    if (lower.includes("shelter") && context.nearestShelters.length > 0) {
+      const s = context.nearestShelters[0];
+      resp = `The nearest shelter is ${s.name} at ${s.address} (${s.distanceKm} km away, status: ${s.status}).`;
+    } else if (lower.includes("hospital") && context.nearestFacilities.length > 0) {
+      const f = context.nearestFacilities[0];
+      resp = `The nearest medical facility is ${f.name} at ${f.address} (${f.distanceKm} km away).`;
+    } else if (lower.includes("electricity") || lower.includes("power")) {
+      resp = "If water enters your home, turn off the main electrical breaker immediately if it is safe to reach. Do not touch electrical switches or appliances while standing in water.";
+    }
+    return {
+      mode: "ASSIST",
+      intent: "general_inquiry",
+      assistantResponse: resp,
+      extractedInformation: {},
+      uncertainInformation: [],
+      missingInformation: [],
+      shouldCreateOrUpdateSos: false,
+      isFallbackExtractor: true
+    };
+  }
+  if (hasTrapped || hasInjured || hasRisingWater && !isQuestion || hasFire || hasExplicitRescueCall || hasDisabledOrImmobile && (lower.includes("water") || lower.includes("evacuation") || lower.includes("help"))) {
+    const extracted = {};
+    const uncertain = [];
+    const missing = [];
+    const conditions = ["NEED_RESCUE"];
+    if (hasTrapped) {
+      extracted.emergencyType = "TRAPPED";
+      conditions.push("TRAPPED");
+    } else if (hasFire) {
+      extracted.emergencyType = "FIRE";
+      conditions.push("FIRE");
+    } else {
+      extracted.emergencyType = "FLOOD";
+    }
+    if (hasRisingWater) {
+      extracted.waterLevel = lower.includes("chest") || lower.includes("neck") ? "EXTREME" : "HIGH";
+      conditions.push("WATER_RISING");
+    }
+    if (hasInjured) {
+      if (lower.includes("unconscious") || lower.includes("heart") || lower.includes("severe")) {
+        extracted.criticalMedicalNeed = true;
+        conditions.push("SERIOUSLY_UNWELL");
+      }
+      extracted.injuredCount = 1;
+      conditions.push("HEAVILY_INJURED");
+    }
+    const peopleNumMatch = message.match(/(\b\d+\b)\s*(?:people|individuals|members|of us|persons)/i);
+    const wordPeopleMap = {
+      one: 1,
+      two: 2,
+      three: 3,
+      four: 4,
+      five: 5,
+      six: 6,
+      seven: 7,
+      eight: 8
+    };
+    let foundPeople = 1;
+    if (peopleNumMatch) {
+      foundPeople = parseInt(peopleNumMatch[1], 10);
+    } else {
+      for (const [w, n] of Object.entries(wordPeopleMap)) {
+        if (new RegExp(`\\b${w}\\s*(?:people|individuals|of us)\\b`, "i").test(message)) {
+          foundPeople = n;
+          break;
+        }
+      }
+    }
+    extracted.peopleCount = Math.max(1, foundPeople);
+    if (lower.includes("child") || lower.includes("baby") || lower.includes("infant") || lower.includes("kid")) {
+      if (hasSpeculation) {
+        uncertain.push("Possible children present (unconfirmed)");
+      } else {
+        const childMatch = message.match(/(\b\d+\b)\s*(?:children|infants|babies|kids)/i);
+        extracted.childrenCount = childMatch ? parseInt(childMatch[1], 10) : 1;
+        conditions.push("CHILDREN_INFANTS_PRESENT");
+      }
+    }
+    if (lower.includes("grandmother") || lower.includes("grandfather") || lower.includes("elderly") || lower.includes("grandma") || lower.includes("grandpa")) {
+      if (hasSpeculation) {
+        uncertain.push("Possible elderly present (unconfirmed)");
+      } else {
+        const elderlyMatch = message.match(/(\b\d+\b)\s*(?:elderly|grandparents)/i);
+        extracted.elderlyCount = elderlyMatch ? parseInt(elderlyMatch[1], 10) : 1;
+      }
+    }
+    if (lower.includes("wheelchair") || lower.includes("disabled") || lower.includes("cannot walk") || lower.includes("can't walk") || lower.includes("bedridden")) {
+      extracted.disabledCount = 1;
+      conditions.push("PHYSICALLY_DISABLED");
+    }
+    const locMatch = message.match(/(?:in|at|near|from)\s+([A-Z][a-zA-Z0-9\s,.-]+(?:Road|Street|Layout|Nagar|Block|Stage|Cross|Metro|Circle|Area))/i);
+    if (locMatch) {
+      extracted.spokenLocation = locMatch[1].trim();
+    }
+    extracted.conditions = conditions;
+    let assistantMsg = "I have sent your emergency distress request to the disaster response command center. Our teams are triaging your location. Please stay in a safe, elevated spot. Are there any other people or specific medical needs?";
+    if (context.activeSos) {
+      assistantMsg = "I have updated your active emergency distress signal with these details and updated the dispatch triage team. Stay calm and stay above water level.";
+    }
+    return {
+      mode: "EMERGENCY",
+      intent: "emergency_sos_dispatch",
+      assistantResponse: assistantMsg,
+      extractedInformation: extracted,
+      uncertainInformation: uncertain,
+      missingInformation: missing,
+      shouldCreateOrUpdateSos: true,
+      isFallbackExtractor: true
+    };
+  }
+  return {
+    mode: "ASSESS",
+    intent: "assess_potential_danger",
+    assistantResponse: "I hear that water is entering your area. Are you able to evacuate safely right now, or are you trapped or in immediate danger?",
+    extractedInformation: {},
+    uncertainInformation: hasSpeculation ? ["Unconfirmed situation"] : [],
+    missingInformation: ["evacuation capability", "water depth", "number of individuals"],
+    shouldCreateOrUpdateSos: false,
+    isFallbackExtractor: true
+  };
+}
+function getGeminiApiKey() {
+  const candidates = [
+    process.env.GEMINI_API_KEY,
+    process.env.GOOGLE_API_KEY,
+    process.env.GOOGLE_GENAI_API_KEY,
+    process.env.VITE_GEMINI_API_KEY,
+    process.env.VITE_GOOGLE_API_KEY
+  ];
+  for (const raw of candidates) {
+    if (raw && typeof raw === "string") {
+      let cleaned = raw.trim();
+      if (cleaned.startsWith('"') && cleaned.endsWith('"') || cleaned.startsWith("'") && cleaned.endsWith("'")) {
+        cleaned = cleaned.slice(1, -1).trim();
+      }
+      if (cleaned.length > 0) {
+        return cleaned;
+      }
+    }
+  }
+  return void 0;
+}
+async function processEmergencyVoiceInput(message, history, context) {
+  const apiKey = getGeminiApiKey();
+  if (!apiKey) {
+    console.warn(
+      `[STRIDE Gemini Voice] No Gemini API key detected in environment. Checked: GEMINI_API_KEY, GOOGLE_API_KEY, GOOGLE_GENAI_API_KEY, VITE_GEMINI_API_KEY, VITE_GOOGLE_API_KEY. Using deterministic signal extractor.`
+    );
+    return limitedEmergencySignalExtractor(message, history, context);
+  }
+  const masked = apiKey.length > 8 ? `${apiKey.slice(0, 4)}...${apiKey.slice(-4)}` : "***";
+  console.log(
+    `[STRIDE Gemini Voice] API key detected (length: ${apiKey.length}, preview: ${masked}). Processing message with gemini-2.5-flash...`
+  );
+  try {
+    const ai = new GoogleGenAI({ apiKey });
+    const systemPrompt = `You are the STRIDE Emergency Voice Assistant for Bengaluru, Karnataka, India during an active flood/disaster.
+Your role:
+1. Understand the user's spoken words.
+2. Determine their intent and mode:
+   - "ASSIST": The user is asking general questions, advice, shelter/facility locations, weather, or flood preparedness. Do NOT trigger SOS.
+   - "ASSESS": The user mentions rising water, power loss, or potential danger, but hasn't confirmed if they are trapped, injured, or need rescue. Ask a direct clarifying question (e.g., "Can you leave safely or are you trapped?"). Do NOT trigger SOS.
+   - "EMERGENCY": Clear danger, trapped individuals, water rising inside house, injuries, or explicit requests for rescue/boats. Set shouldCreateOrUpdateSos = true immediately.
+3. FACT vs. SPECULATION:
+   - If user confirms: "There are 5 people here, 2 children" -> extract into extractedInformation.
+   - If user speculates: "I think there might be kids downstairs" or "maybe someone is hurt" -> DO NOT add to numbers in extractedInformation. Add to uncertainInformation array, and ask for confirmation in assistantResponse.
+   - NEVER fabricate or assume numbers.
+4. Active STRIDE Context:
+   - Active Disaster: ${context.activeDisaster?.title || "Bengaluru Urban Flood Event"} (${context.activeDisaster?.alertLevel || "HIGH"} alert level)
+   - Citizen Home Address: ${context.citizenHousehold?.address || "Bengaluru"}
+   - Active SOS Status: ${context.activeSos ? `Active SOS #${context.activeSos.id} (Status: ${context.activeSos.rescueStatus}, Priority: ${context.activeSos.priorityScore})` : "No active SOS"}
+   - Nearest Shelters: ${context.nearestShelters.map((s) => `${s.name} (${s.distanceKm}km, ${s.status})`).join(", ") || "None listed"}
+   - Nearest Facilities: ${context.nearestFacilities.map((f) => `${f.name} (${f.distanceKm}km)`).join(", ") || "None listed"}
+5. DO NOT calculate priority scores. Scores are computed solely by the backend deterministic algorithm.
+6. Provide an empathetic, clear, concise assistant response suitable for text-to-speech voice playback.
+
+OUTPUT JSON FORMAT (You MUST return valid JSON matching this schema):
+{
+  "mode": "ASSIST" | "ASSESS" | "EMERGENCY",
+  "intent": "string",
+  "assistantResponse": "string",
+  "extractedInformation": {
+    "peopleCount": number,
+    "childrenCount": number,
+    "elderlyCount": number,
+    "disabledCount": number,
+    "injuredCount": number,
+    "criticalMedicalNeed": boolean,
+    "waterLevel": "LOW" | "MEDIUM" | "HIGH" | "EXTREME",
+    "emergencyType": "FLOOD" | "MEDICAL" | "TRAPPED" | "STRUCTURAL_DANGER" | "OTHER",
+    "conditions": string[],
+    "spokenLocation": "string (if mentioned)"
+  },
+  "uncertainInformation": ["string"],
+  "missingInformation": ["string"],
+  "shouldCreateOrUpdateSos": boolean
+}`;
+    const formattedHistory = history.map((h) => `${h.role === "user" ? "Citizen" : "Assistant"}: ${h.content}`).join("\n");
+    const prompt = `${systemPrompt}
+
+CONVERSATION HISTORY:
+${formattedHistory}
+
+CURRENT CITIZEN MESSAGE:
+"${message}"
+
+Return JSON:`;
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json"
+      }
+    });
+    const responseText = response.text || "";
+    const parsed = JSON.parse(responseText);
+    const validModes = ["ASSIST", "ASSESS", "EMERGENCY"];
+    const mode = validModes.includes(parsed.mode) ? parsed.mode : "ASSESS";
+    return {
+      mode,
+      intent: parsed.intent || "emergency_voice_processing",
+      assistantResponse: parsed.assistantResponse || (mode === "EMERGENCY" ? "I have logged your emergency distress signal with our response units. Stay in a safe, elevated location." : "I am here with STRIDE Emergency Command. How can I assist you?"),
+      extractedInformation: parsed.extractedInformation || {},
+      uncertainInformation: Array.isArray(parsed.uncertainInformation) ? parsed.uncertainInformation : [],
+      missingInformation: Array.isArray(parsed.missingInformation) ? parsed.missingInformation : [],
+      shouldCreateOrUpdateSos: !!parsed.shouldCreateOrUpdateSos && mode === "EMERGENCY",
+      isFallbackExtractor: false
+    };
+  } catch (err) {
+    console.error("Gemini Voice Service API error (falling back to limited signal extractor):", err.message);
+    return limitedEmergencySignalExtractor(message, history, context);
+  }
+}
+async function processEmergencyAudioInput(audioBuffer, mimeType, history, context) {
+  const apiKey = getGeminiApiKey();
+  if (!audioBuffer || audioBuffer.length === 0) {
+    console.warn("[STRIDE Gemini Audio] Empty audio buffer received");
+    return {
+      transcript: "",
+      mode: "ASSIST",
+      intent: "empty_audio",
+      assistantResponse: "No audio was detected in your recording. Please tap the microphone and speak again, or type your message below.",
+      extractedInformation: {},
+      uncertainInformation: [],
+      missingInformation: [],
+      shouldCreateOrUpdateSos: false,
+      isFallbackExtractor: true
+    };
+  }
+  if (!apiKey) {
+    const presentKeys = Object.keys(process.env).filter(
+      (k) => /gemini|google|key|ai/i.test(k)
+    );
+    console.warn(
+      `[STRIDE Gemini Audio] No Gemini API key detected in environment. Checked: GEMINI_API_KEY, GOOGLE_API_KEY, GOOGLE_GENAI_API_KEY, VITE_GEMINI_API_KEY, VITE_GOOGLE_API_KEY. Detected matching env keys: [${presentKeys.join(", ")}]. Using safe fallback.`
+    );
+    return {
+      transcript: "(Spoken audio received)",
+      mode: "ASSESS",
+      intent: "offline_audio_received",
+      assistantResponse: "Voice audio received. Automated audio transcription requires Gemini API connectivity. If you need emergency rescue, please tap the Emergency SOS button or type below.",
+      extractedInformation: {},
+      uncertainInformation: ["Voice audio received while online transcription service is unconfigured"],
+      missingInformation: ["rescue capability", "location", "people count"],
+      shouldCreateOrUpdateSos: false,
+      isFallbackExtractor: true
+    };
+  }
+  const masked = apiKey.length > 8 ? `${apiKey.slice(0, 4)}...${apiKey.slice(-4)}` : "***";
+  const cleanMimeType = mimeType.split(";")[0].trim() || "audio/webm";
+  console.log(
+    `[STRIDE Gemini Audio] API key resolved (length: ${apiKey.length}, preview: ${masked}). Audio payload: ${audioBuffer.length} bytes, clean MIME: ${cleanMimeType}. Calling gemini-2.5-flash...`
+  );
+  try {
+    const ai = new GoogleGenAI({ apiKey });
+    const systemPrompt = `You are the STRIDE Emergency Voice Assistant for Bengaluru, Karnataka, India during an active flood/disaster.
+You are listening to an audio recording spoken by a citizen.
+Your task:
+1. Transcribe the citizen's spoken words verbatim into the "transcript" field. If audio is unclear or empty, accurately transcribe what is audible or state so.
+2. Determine their intent and mode:
+   - "ASSIST": The citizen is asking general questions, advice, shelter/facility locations, weather, or flood preparedness. Do NOT trigger SOS.
+   - "ASSESS": The citizen mentions rising water, power loss, or potential danger, but hasn't confirmed if they are trapped, injured, or need rescue. Ask a direct clarifying question (e.g., "Can you leave safely or are you trapped?"). Do NOT trigger SOS.
+   - "EMERGENCY": Clear danger, trapped individuals, water rising inside house, injuries, or explicit requests for rescue/boats. Set shouldCreateOrUpdateSos = true immediately.
+3. FACT vs. SPECULATION:
+   - If user confirms: "There are 5 people here, 2 children" -> extract into extractedInformation.
+   - If user speculates: "I think there might be kids downstairs" or "maybe someone is hurt" -> DO NOT add to numbers in extractedInformation. Add to uncertainInformation array, and ask for confirmation in assistantResponse.
+   - NEVER fabricate or assume numbers.
+4. Active STRIDE Context:
+   - Active Disaster: ${context.activeDisaster?.title || "Bengaluru Urban Flood Event"} (${context.activeDisaster?.alertLevel || "HIGH"} alert level)
+   - Citizen Home Address: ${context.citizenHousehold?.address || "Bengaluru"}
+   - Active SOS Status: ${context.activeSos ? `Active SOS #${context.activeSos.id} (Status: ${context.activeSos.rescueStatus}, Priority: ${context.activeSos.priorityScore})` : "No active SOS"}
+   - Nearest Shelters: ${context.nearestShelters.map((s) => `${s.name} (${s.distanceKm}km, ${s.status})`).join(", ") || "None listed"}
+   - Nearest Facilities: ${context.nearestFacilities.map((f) => `${f.name} (${f.distanceKm}km)`).join(", ") || "None listed"}
+5. DO NOT calculate priority scores. Scores are computed solely by the backend deterministic algorithm.
+6. Provide an empathetic, clear, concise assistant response suitable for text-to-speech voice playback.
+
+OUTPUT JSON FORMAT (You MUST return valid JSON matching this schema):
+{
+  "transcript": "string (verbatim transcript of citizen's spoken words in the audio)",
+  "mode": "ASSIST" | "ASSESS" | "EMERGENCY",
+  "intent": "string",
+  "assistantResponse": "string",
+  "extractedInformation": {
+    "peopleCount": number,
+    "childrenCount": number,
+    "elderlyCount": number,
+    "disabledCount": number,
+    "injuredCount": number,
+    "criticalMedicalNeed": boolean,
+    "waterLevel": "LOW" | "MEDIUM" | "HIGH" | "EXTREME",
+    "emergencyType": "FLOOD" | "MEDICAL" | "TRAPPED" | "STRUCTURAL_DANGER" | "OTHER",
+    "conditions": ["string"],
+    "spokenLocation": "string (if mentioned)"
+  },
+  "uncertainInformation": ["string"],
+  "missingInformation": ["string"],
+  "shouldCreateOrUpdateSos": boolean
+}`;
+    const formattedHistory = history.map((h) => `${h.role === "user" ? "Citizen" : "Assistant"}: ${h.content}`).join("\n");
+    const prompt = `${systemPrompt}
+
+CONVERSATION HISTORY:
+${formattedHistory}
+
+Analyze the citizen's audio recording and return the JSON response:`;
+    const cleanMimeType2 = mimeType.split(";")[0].trim() || "audio/webm";
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: [
+        {
+          role: "user",
+          parts: [
+            {
+              inlineData: {
+                mimeType: cleanMimeType2,
+                data: audioBuffer.toString("base64")
+              }
+            },
+            {
+              text: prompt
+            }
+          ]
+        }
+      ],
+      config: {
+        responseMimeType: "application/json"
+      }
+    });
+    const responseText = response.text || "";
+    const parsed = JSON.parse(responseText);
+    const validModes = ["ASSIST", "ASSESS", "EMERGENCY"];
+    const mode = validModes.includes(parsed.mode) ? parsed.mode : "ASSESS";
+    return {
+      transcript: typeof parsed.transcript === "string" ? parsed.transcript : "",
+      mode,
+      intent: parsed.intent || "voice_audio_processing",
+      assistantResponse: parsed.assistantResponse || (mode === "EMERGENCY" ? "I have logged your emergency distress signal with our response units. Stay in a safe, elevated location." : "I am here with STRIDE Emergency Command. How can I assist you?"),
+      extractedInformation: parsed.extractedInformation || {},
+      uncertainInformation: Array.isArray(parsed.uncertainInformation) ? parsed.uncertainInformation : [],
+      missingInformation: Array.isArray(parsed.missingInformation) ? parsed.missingInformation : [],
+      shouldCreateOrUpdateSos: !!parsed.shouldCreateOrUpdateSos && mode === "EMERGENCY",
+      isFallbackExtractor: false
+    };
+  } catch (err) {
+    console.error("[STRIDE Gemini Audio Error] Full failure details:", {
+      message: err?.message,
+      status: err?.status,
+      statusCode: err?.statusCode,
+      code: err?.code,
+      name: err?.name,
+      details: err?.details,
+      stack: err?.stack
+    });
+    return {
+      transcript: "(Spoken audio received)",
+      mode: "ASSESS",
+      intent: "audio_processing_error",
+      assistantResponse: "I was unable to fully process the audio recording. If this is an emergency, please type your message or tap the Emergency SOS button immediately.",
+      extractedInformation: {},
+      uncertainInformation: ["Audio processing encountered an error"],
+      missingInformation: ["rescue capability", "location"],
+      shouldCreateOrUpdateSos: false,
+      isFallbackExtractor: true
+    };
+  }
+}
+
+// src/server/controllers/voiceEmergencyController.ts
+var KNOWN_LOCALITY_COORDS = {
+  indiranagar: [12.9784, 77.6408],
+  koramangala: [12.9352, 77.6245],
+  whitefield: [12.9698, 77.7499],
+  yelahanka: [13.1007, 77.5963],
+  jayanagar: [12.9308, 77.5838],
+  "btm layout": [12.9166, 77.6101],
+  btm: [12.9166, 77.6101],
+  malleshwaram: [13.0031, 77.5643],
+  hebbal: [13.0358, 77.597],
+  "hsr layout": [12.9121, 77.6446],
+  hsr: [12.9121, 77.6446],
+  marathahalli: [12.9591, 77.6974],
+  "electronic city": [12.8452, 77.6602],
+  binnamangala: [12.9815, 77.645],
+  saidapet: [13.0213, 80.2231],
+  "mg road": [12.9756, 77.6066],
+  cubbon: [12.9763, 77.5929],
+  majestic: [12.9767, 77.5713],
+  rajajinagar: [12.9982, 77.553],
+  vijayanagar: [12.9719, 77.5369]
+};
+function detectLocationConflict(gpsLat, gpsLng, spokenLocation) {
+  if (!spokenLocation) return { conflict: false };
+  const lowerSpoken = spokenLocation.toLowerCase();
+  for (const [name, coords] of Object.entries(KNOWN_LOCALITY_COORDS)) {
+    if (lowerSpoken.includes(name)) {
+      const dist = calculateHaversineDistance(gpsLat, gpsLng, coords[0], coords[1]);
+      if (dist > 5) {
+        return { conflict: true, estimatedDistanceKm: parseFloat(dist.toFixed(1)) };
+      }
+    }
+  }
+  return { conflict: false };
+}
+async function applySosLifecycleAndTriage(userId, context, aiResult, messageText, currentLocation, activeRequestId) {
+  let locationConflict = false;
+  const gpsLat = currentLocation?.latitude || context.citizenHousehold?.latitude || 12.9716;
+  const gpsLng = currentLocation?.longitude || context.citizenHousehold?.longitude || 77.5946;
+  if (aiResult.extractedInformation?.spokenLocation) {
+    const conflictCheck = detectLocationConflict(
+      gpsLat,
+      gpsLng,
+      aiResult.extractedInformation.spokenLocation
+    );
+    if (conflictCheck.conflict) {
+      locationConflict = true;
+    }
+  }
+  let activeSosRecord = null;
+  if (aiResult.mode === "EMERGENCY" || aiResult.shouldCreateOrUpdateSos) {
+    let existingReq = null;
+    if (activeRequestId) {
+      existingReq = await database_default.emergencyRequest.findFirst({
+        where: {
+          id: activeRequestId,
+          rescueStatus: { not: "CANCELLED" }
+        },
+        include: {
+          conditions: true,
+          rescueAssignments: { orderBy: { assignedAt: "desc" } },
+          householdMember: {
+            include: { household: { include: { user: true } } }
+          }
+        }
+      });
+    }
+    if (!existingReq && context.citizenHousehold) {
+      const memberIds = context.citizenHousehold.members.map((m) => m.id);
+      existingReq = await database_default.emergencyRequest.findFirst({
+        where: {
+          householdMemberId: { in: memberIds },
+          rescueStatus: { not: "CANCELLED" }
+        },
+        include: {
+          conditions: true,
+          rescueAssignments: { orderBy: { assignedAt: "desc" } },
+          householdMember: {
+            include: { household: { include: { user: true } } }
+          }
+        },
+        orderBy: { createdAt: "desc" }
+      });
+    }
+    const extracted = aiResult.extractedInformation || {};
+    if (existingReq) {
+      const prevFormatted = formatRescueRequest(existingReq);
+      const mergedPeople = Math.max(prevFormatted.peopleCount, extracted.peopleCount || 1);
+      const mergedChildren = Math.max(prevFormatted.childrenCount, extracted.childrenCount || 0);
+      const mergedElderly = Math.max(prevFormatted.elderlyCount, extracted.elderlyCount || 0);
+      const mergedDisabled = Math.max(prevFormatted.disabledCount, extracted.disabledCount || 0);
+      const mergedInjured = Math.max(prevFormatted.injuredCount, extracted.injuredCount || 0);
+      const mergedCritical = prevFormatted.criticalMedicalNeed || !!extracted.criticalMedicalNeed;
+      const mergedWaterLevel = extracted.waterLevel || prevFormatted.waterLevel || "MEDIUM";
+      const mergedEmergencyType = extracted.emergencyType || prevFormatted.emergencyType || "FLOOD";
+      const spokenLoc = extracted.spokenLocation || prevFormatted.spokenLocation;
+      const isConflict = locationConflict || prevFormatted.locationConflict;
+      const currentCondTypes = new Set(existingReq.conditions.map((c) => c.conditionType));
+      currentCondTypes.add("NEED_RESCUE");
+      if (mergedCritical) currentCondTypes.add("SERIOUSLY_UNWELL");
+      if (mergedInjured > 0) currentCondTypes.add("HEAVILY_INJURED");
+      if (mergedChildren > 0) currentCondTypes.add("CHILDREN_INFANTS_PRESENT");
+      if (mergedDisabled > 0) currentCondTypes.add("PHYSICALLY_DISABLED");
+      if (mergedWaterLevel === "HIGH" || mergedWaterLevel === "EXTREME") currentCondTypes.add("WATER_RISING");
+      if (mergedEmergencyType === "TRAPPED") currentCondTypes.add("TRAPPED");
+      if (mergedEmergencyType === "FIRE") currentCondTypes.add("FIRE");
+      if (Array.isArray(extracted.conditions)) {
+        extracted.conditions.forEach((c) => currentCondTypes.add(c));
+      }
+      const breakdown = {
+        criticalMedical: mergedCritical ? 25 : 0,
+        injured: mergedInjured > 0 ? Math.min(25, Number(mergedInjured) * 15) : 0,
+        children: mergedChildren > 0 ? Math.min(15, Number(mergedChildren) * 8) : 0,
+        elderly: mergedElderly > 0 ? Math.min(15, Number(elderlyCountMerged(prevFormatted, extracted)) * 8) : 0,
+        disabled: mergedDisabled > 0 ? Math.min(15, Number(mergedDisabled) * 10) : 0,
+        waterLevel: mergedWaterLevel === "EXTREME" ? 20 : mergedWaterLevel === "HIGH" ? 15 : mergedWaterLevel === "MEDIUM" ? 10 : 5,
+        trappedOrStructural: mergedEmergencyType === "TRAPPED" || mergedEmergencyType === "STRUCTURAL_DANGER" ? 20 : mergedEmergencyType === "FIRE" ? 30 : 0
+      };
+      const calculatedTotal = Object.values(breakdown).reduce((a, b) => a + b, 0);
+      const priorityScore = Math.min(100, Math.max(15, calculatedTotal));
+      const metaTag = `[SRC:VOICE, P:${mergedPeople}, C:${mergedChildren}, E:${mergedElderly}, D:${mergedDisabled}, I:${mergedInjured}, W:${mergedWaterLevel}, T:${mergedEmergencyType}${spokenLoc ? `, SPOKEN_LOC:${spokenLoc}` : ""}${isConflict ? ", CONFLICT:YES" : ", CONFLICT:NO"}]`;
+      const updatedDesc = `${metaTag} ${prevFormatted.description} | Voice update: ${messageText.trim()}`.trim();
+      await database_default.emergencyCondition.deleteMany({
+        where: { emergencyRequestId: existingReq.id }
+      });
+      await database_default.emergencyCondition.createMany({
+        data: Array.from(currentCondTypes).map((c) => ({
+          emergencyRequestId: existingReq.id,
+          conditionType: String(c)
+        }))
+      });
+      const updatedReq = await database_default.emergencyRequest.update({
+        where: { id: existingReq.id },
+        data: {
+          description: updatedDesc,
+          priorityScore,
+          updatedAt: /* @__PURE__ */ new Date()
+        },
+        include: {
+          conditions: true,
+          rescueAssignments: { orderBy: { assignedAt: "desc" } },
+          householdMember: {
+            include: { household: { include: { user: true } } }
+          }
+        }
+      });
+      activeSosRecord = formatRescueRequest(updatedReq, void 0, breakdown);
+    } else {
+      const user = await database_default.user.findUnique({
+        where: { id: userId },
+        include: {
+          households: {
+            include: { members: true }
+          }
+        }
+      });
+      let household = user?.households?.[0];
+      if (!household) {
+        household = await database_default.household.create({
+          data: {
+            userId,
+            name: `${user?.name || "Citizen"} Household`,
+            address: extracted.spokenLocation || "Bengaluru",
+            city: "Bengaluru",
+            state: "Karnataka",
+            latitude: Number(gpsLat) || 12.9716,
+            longitude: Number(gpsLng) || 77.5946,
+            members: {
+              create: {
+                name: user?.name || "Primary Citizen",
+                age: 35,
+                category: "ADULT",
+                relationship: "Self"
+              }
+            }
+          },
+          include: { members: true }
+        });
+      }
+      let member = household.members?.[0];
+      if (!member) {
+        member = await database_default.householdMember.create({
+          data: {
+            householdId: household.id,
+            name: user?.name || "Primary Citizen",
+            age: 35,
+            category: "ADULT",
+            relationship: "Self"
+          }
+        });
+      }
+      const activeDisaster = await database_default.disasterEvent.findFirst({
+        where: { status: { in: ["PREDICTED", "ACTIVE", "WARNING"] } },
+        orderBy: { predictedStartTime: "asc" }
+      }) || await database_default.disasterEvent.findFirst({
+        orderBy: { createdAt: "desc" }
+      });
+      if (!activeDisaster) {
+        throw new Error("No active disaster event found for triage.");
+      }
+      const peopleCount = Math.max(1, extracted.peopleCount || 1);
+      const childrenCount = Math.max(0, extracted.childrenCount || 0);
+      const elderlyCount = Math.max(0, extracted.elderlyCount || 0);
+      const disabledCount = Math.max(0, extracted.disabledCount || 0);
+      const injuredCount = Math.max(0, extracted.injuredCount || 0);
+      const criticalMedicalNeed = !!extracted.criticalMedicalNeed;
+      const waterLevel = extracted.waterLevel || "HIGH";
+      const emergencyType = extracted.emergencyType || "FLOOD";
+      const spokenLoc = extracted.spokenLocation || void 0;
+      const conditionList = ["NEED_RESCUE"];
+      if (criticalMedicalNeed) conditionList.push("SERIOUSLY_UNWELL");
+      if (injuredCount > 0) conditionList.push("HEAVILY_INJURED");
+      if (childrenCount > 0) conditionList.push("CHILDREN_INFANTS_PRESENT");
+      if (disabledCount > 0) conditionList.push("PHYSICALLY_DISABLED");
+      if (waterLevel === "HIGH" || waterLevel === "EXTREME") conditionList.push("WATER_RISING");
+      if (emergencyType === "TRAPPED") conditionList.push("TRAPPED");
+      if (emergencyType === "FIRE") conditionList.push("FIRE");
+      const breakdown = {
+        criticalMedical: criticalMedicalNeed ? 25 : 0,
+        injured: injuredCount > 0 ? Math.min(25, Number(injuredCount) * 15) : 0,
+        children: childrenCount > 0 ? Math.min(15, Number(childrenCount) * 8) : 0,
+        elderly: elderlyCount > 0 ? Math.min(15, Number(elderlyCount) * 8) : 0,
+        disabled: disabledCount > 0 ? Math.min(15, Number(disabledCount) * 10) : 0,
+        waterLevel: waterLevel === "EXTREME" ? 20 : waterLevel === "HIGH" ? 15 : waterLevel === "MEDIUM" ? 10 : 5,
+        trappedOrStructural: emergencyType === "TRAPPED" || emergencyType === "STRUCTURAL_DANGER" ? 20 : emergencyType === "FIRE" ? 30 : 0
+      };
+      const calculatedTotal = Object.values(breakdown).reduce((a, b) => a + b, 0);
+      const priorityScore = Math.min(100, Math.max(15, calculatedTotal));
+      const metaTag = `[SRC:VOICE, P:${peopleCount}, C:${childrenCount}, E:${elderlyCount}, D:${disabledCount}, I:${injuredCount}, W:${waterLevel}, T:${emergencyType}${spokenLoc ? `, SPOKEN_LOC:${spokenLoc}` : ""}${locationConflict ? ", CONFLICT:YES" : ", CONFLICT:NO"}]`;
+      const fullDesc = `${metaTag} ${messageText.trim()}`;
+      const requestRecord = await database_default.emergencyRequest.create({
+        data: {
+          disasterId: activeDisaster.id,
+          householdMemberId: member.id,
+          latitude: Number(gpsLat) || household.latitude,
+          longitude: Number(gpsLng) || household.longitude,
+          address: spokenLoc || household.address || "Bengaluru",
+          description: fullDesc,
+          priorityScore,
+          rescueStatus: "PENDING",
+          conditions: {
+            create: conditionList.map((c) => ({ conditionType: c }))
+          }
+        },
+        include: {
+          conditions: true,
+          rescueAssignments: true,
+          householdMember: {
+            include: { household: { include: { user: true } } }
+          }
+        }
+      });
+      await database_default.emergencyStatus.upsert({
+        where: {
+          disasterId_householdMemberId: {
+            disasterId: activeDisaster.id,
+            householdMemberId: member.id
+          }
+        },
+        update: {
+          status: "IN_DISTRESS",
+          updatedAt: /* @__PURE__ */ new Date()
+        },
+        create: {
+          disasterId: activeDisaster.id,
+          householdMemberId: member.id,
+          status: "IN_DISTRESS"
+        }
+      });
+      activeSosRecord = formatRescueRequest(requestRecord, user, breakdown);
+    }
+  } else if (context.activeSos) {
+    const existingReq = await database_default.emergencyRequest.findUnique({
+      where: { id: context.activeSos.id },
+      include: {
+        conditions: true,
+        rescueAssignments: { orderBy: { assignedAt: "desc" } },
+        householdMember: {
+          include: { household: { include: { user: true } } }
+        }
+      }
+    });
+    if (existingReq) {
+      activeSosRecord = formatRescueRequest(existingReq);
+    }
+  }
+  return { locationConflict, activeSosRecord };
+}
+function elderlyCountMerged(prevFormatted, extracted) {
+  return Math.max(prevFormatted.elderlyCount || 0, extracted.elderlyCount || 0);
+}
+async function handleVoiceEmergencyChat(req, res) {
+  try {
+    const userId = req.user.userId;
+    const {
+      message,
+      history = [],
+      currentLocation,
+      activeRequestId
+    } = req.body;
+    if (!message || typeof message !== "string" || message.trim() === "") {
+      res.status(400).json({ error: "Voice message text is required." });
+      return;
+    }
+    const context = await getStrideContext(userId, currentLocation);
+    const aiResult = await processEmergencyVoiceInput(
+      message.trim(),
+      Array.isArray(history) ? history : [],
+      context
+    );
+    const { locationConflict, activeSosRecord } = await applySosLifecycleAndTriage(
+      userId,
+      context,
+      aiResult,
+      message,
+      currentLocation,
+      activeRequestId
+    );
+    res.json({
+      mode: aiResult.mode,
+      intent: aiResult.intent,
+      assistantResponse: aiResult.assistantResponse,
+      extractedInformation: aiResult.extractedInformation || {},
+      uncertainInformation: aiResult.uncertainInformation || [],
+      missingInformation: aiResult.missingInformation || [],
+      shouldCreateOrUpdateSos: aiResult.shouldCreateOrUpdateSos,
+      locationConflict,
+      activeRequest: activeSosRecord,
+      isFallbackExtractor: aiResult.isFallbackExtractor || false
+    });
+  } catch (err) {
+    console.error("Voice emergency chat controller error:", err);
+    res.status(500).json({ error: err.message || "Internal error processing voice emergency input." });
+  }
+}
+async function handleVoiceEmergencyAudio(req, res) {
+  try {
+    const userId = req.user.userId;
+    const file = req.file;
+    if (!file || !file.buffer || file.buffer.length === 0) {
+      res.status(400).json({ error: "Microphone audio recording file is required." });
+      return;
+    }
+    let history = [];
+    if (req.body.history) {
+      try {
+        history = typeof req.body.history === "string" ? JSON.parse(req.body.history) : req.body.history;
+      } catch {
+        history = [];
+      }
+    }
+    let currentLocation = void 0;
+    if (req.body.currentLocation) {
+      try {
+        currentLocation = typeof req.body.currentLocation === "string" ? JSON.parse(req.body.currentLocation) : req.body.currentLocation;
+      } catch {
+        currentLocation = void 0;
+      }
+    }
+    const activeRequestId = typeof req.body.activeRequestId === "string" && req.body.activeRequestId.trim() !== "" ? req.body.activeRequestId.trim() : void 0;
+    const context = await getStrideContext(userId, currentLocation);
+    const aiResult = await processEmergencyAudioInput(
+      file.buffer,
+      file.mimetype || "audio/webm",
+      Array.isArray(history) ? history : [],
+      context
+    );
+    const messageForTriage = aiResult.transcript && aiResult.transcript.trim() !== "" ? aiResult.transcript.trim() : "Spoken emergency voice audio input";
+    const { locationConflict, activeSosRecord } = await applySosLifecycleAndTriage(
+      userId,
+      context,
+      aiResult,
+      messageForTriage,
+      currentLocation,
+      activeRequestId
+    );
+    res.json({
+      transcript: aiResult.transcript || "",
+      mode: aiResult.mode,
+      intent: aiResult.intent,
+      assistantResponse: aiResult.assistantResponse,
+      extractedInformation: aiResult.extractedInformation || {},
+      uncertainInformation: aiResult.uncertainInformation || [],
+      missingInformation: aiResult.missingInformation || [],
+      shouldCreateOrUpdateSos: aiResult.shouldCreateOrUpdateSos,
+      locationConflict,
+      activeRequest: activeSosRecord,
+      isFallbackExtractor: aiResult.isFallbackExtractor || false
+    });
+  } catch (err) {
+    console.error("Voice emergency audio controller error:", err);
+    res.status(500).json({ error: err.message || "Internal error processing emergency audio input." });
+  }
+}
+
+// src/server/routes/voiceRoutes.ts
+var router9 = Router9();
+var upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 25 * 1024 * 1024
+  }
+});
+router9.post("/voice/emergency-chat", requireAuth, handleVoiceEmergencyChat);
+router9.post("/emergency-chat", requireAuth, handleVoiceEmergencyChat);
+router9.post("/voice/emergency-audio", requireAuth, upload.single("audio"), handleVoiceEmergencyAudio);
+router9.post("/emergency-audio", requireAuth, upload.single("audio"), handleVoiceEmergencyAudio);
+var voiceRoutes_default = router9;
+
 // src/server/app.ts
 function createApp() {
   const app2 = express();
@@ -3182,6 +4109,7 @@ function createApp() {
     app2.use(prefix, mapRoutes_default);
     app2.use(prefix, emergencyRoutes_default);
     app2.use(prefix, notificationRoutes_default);
+    app2.use(prefix, voiceRoutes_default);
   };
   mountRoutes("/api");
   mountRoutes("");

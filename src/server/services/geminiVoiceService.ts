@@ -271,6 +271,38 @@ export function limitedEmergencySignalExtractor(
 }
 
 /**
+ * Safe resolver for Gemini API Key across diverse deployment environments.
+ * Checks GEMINI_API_KEY, GOOGLE_API_KEY, GOOGLE_GENAI_API_KEY, VITE_GEMINI_API_KEY, VITE_GOOGLE_API_KEY.
+ * Trims surrounding whitespace and quotes.
+ */
+export function getGeminiApiKey(): string | undefined {
+  const candidates = [
+    process.env.GEMINI_API_KEY,
+    process.env.GOOGLE_API_KEY,
+    process.env.GOOGLE_GENAI_API_KEY,
+    process.env.VITE_GEMINI_API_KEY,
+    process.env.VITE_GOOGLE_API_KEY,
+  ];
+
+  for (const raw of candidates) {
+    if (raw && typeof raw === 'string') {
+      let cleaned = raw.trim();
+      if (
+        (cleaned.startsWith('"') && cleaned.endsWith('"')) ||
+        (cleaned.startsWith("'") && cleaned.endsWith("'"))
+      ) {
+        cleaned = cleaned.slice(1, -1).trim();
+      }
+      if (cleaned.length > 0) {
+        return cleaned;
+      }
+    }
+  }
+
+  return undefined;
+}
+
+/**
  * Main Gemini-powered emergency processing function.
  * Leverages @google/genai with strict JSON response and graceful fallback.
  */
@@ -279,12 +311,20 @@ export async function processEmergencyVoiceInput(
   history: ChatMessage[],
   context: StrideContextData
 ): Promise<VoiceAssistantOutput> {
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = getGeminiApiKey();
 
   // If no Gemini API key configured, use limited signal extractor
-  if (!apiKey || apiKey.trim() === '') {
+  if (!apiKey) {
+    console.warn(
+      `[STRIDE Gemini Voice] No Gemini API key detected in environment. Checked: GEMINI_API_KEY, GOOGLE_API_KEY, GOOGLE_GENAI_API_KEY, VITE_GEMINI_API_KEY, VITE_GOOGLE_API_KEY. Using deterministic signal extractor.`
+    );
     return limitedEmergencySignalExtractor(message, history, context);
   }
+
+  const masked = apiKey.length > 8 ? `${apiKey.slice(0, 4)}...${apiKey.slice(-4)}` : '***';
+  console.log(
+    `[STRIDE Gemini Voice] API key detected (length: ${apiKey.length}, preview: ${masked}). Processing message with gemini-2.5-flash...`
+  );
 
   try {
     const ai = new GoogleGenAI({ apiKey });
@@ -381,9 +421,10 @@ export async function processEmergencyAudioInput(
   history: ChatMessage[],
   context: StrideContextData
 ): Promise<VoiceAudioAssistantOutput> {
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = getGeminiApiKey();
 
   if (!audioBuffer || audioBuffer.length === 0) {
+    console.warn('[STRIDE Gemini Audio] Empty audio buffer received');
     return {
       transcript: '',
       mode: 'ASSIST',
@@ -399,7 +440,13 @@ export async function processEmergencyAudioInput(
   }
 
   // If no Gemini API key configured, use safe deterministic fallback
-  if (!apiKey || apiKey.trim() === '') {
+  if (!apiKey) {
+    const presentKeys = Object.keys(process.env).filter((k) =>
+      /gemini|google|key|ai/i.test(k)
+    );
+    console.warn(
+      `[STRIDE Gemini Audio] No Gemini API key detected in environment. Checked: GEMINI_API_KEY, GOOGLE_API_KEY, GOOGLE_GENAI_API_KEY, VITE_GEMINI_API_KEY, VITE_GOOGLE_API_KEY. Detected matching env keys: [${presentKeys.join(', ')}]. Using safe fallback.`
+    );
     return {
       transcript: '(Spoken audio received)',
       mode: 'ASSESS',
@@ -413,6 +460,12 @@ export async function processEmergencyAudioInput(
       isFallbackExtractor: true,
     };
   }
+
+  const masked = apiKey.length > 8 ? `${apiKey.slice(0, 4)}...${apiKey.slice(-4)}` : '***';
+  const cleanMimeType = mimeType.split(';')[0].trim() || 'audio/webm';
+  console.log(
+    `[STRIDE Gemini Audio] API key resolved (length: ${apiKey.length}, preview: ${masked}). Audio payload: ${audioBuffer.length} bytes, clean MIME: ${cleanMimeType}. Calling gemini-2.5-flash...`
+  );
 
   try {
     const ai = new GoogleGenAI({ apiKey });
@@ -511,7 +564,15 @@ OUTPUT JSON FORMAT (You MUST return valid JSON matching this schema):
       isFallbackExtractor: false,
     };
   } catch (err: any) {
-    console.error('Gemini Voice Audio API error (falling back to limited handler):', err.message);
+    console.error('[STRIDE Gemini Audio Error] Full failure details:', {
+      message: err?.message,
+      status: err?.status,
+      statusCode: err?.statusCode,
+      code: err?.code,
+      name: err?.name,
+      details: err?.details,
+      stack: err?.stack,
+    });
     return {
       transcript: '(Spoken audio received)',
       mode: 'ASSESS',
