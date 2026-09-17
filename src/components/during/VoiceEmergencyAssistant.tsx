@@ -22,6 +22,7 @@ import {
   Activity,
   Sparkles,
   Square,
+  RotateCcw,
 } from 'lucide-react';
 
 interface VoiceEmergencyAssistantProps {
@@ -93,6 +94,47 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
     }
   }, []);
 
+  // Track modal open transitions to initialize clean conversation history
+  const prevIsOpenRef = useRef(isOpen);
+  useEffect(() => {
+    if (isOpen && !prevIsOpenRef.current) {
+      // Opening a new assistant session initializes clean conversation history
+      setMessages([
+        {
+          id: 'welcome-msg-' + Date.now(),
+          role: 'assistant',
+          content:
+            "Hello, I am the STRIDE Emergency Voice Assistant. You can speak naturally to report an emergency, ask for safety guidance, or find the nearest shelter. How can I help you?",
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          mode: 'ASSIST',
+        },
+      ]);
+      setInputVal('');
+      setCurrentStatus('IDLE');
+      setCurrentMode('ASSIST');
+    }
+    prevIsOpenRef.current = isOpen;
+  }, [isOpen]);
+
+  const resetSession = () => {
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+    setMessages([
+      {
+        id: 'welcome-msg-' + Date.now(),
+        role: 'assistant',
+        content:
+          "Hello, I am the STRIDE Emergency Voice Assistant. You can speak naturally to report an emergency, ask for safety guidance, or find the nearest shelter. How can I help you?",
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        mode: 'ASSIST',
+      },
+    ]);
+    setInputVal('');
+    setCurrentStatus('IDLE');
+    setCurrentMode('ASSIST');
+  };
+
   // Load existing active SOS if passed or in localStorage
   useEffect(() => {
     const existingId = initialActiveRequestId || localStorage.getItem('stride_active_sos_id');
@@ -100,7 +142,6 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
       duringApi.getRequestById(existingId).then((req) => {
         if (req && req.status !== 'CANCELLED' && req.status !== 'RESCUED') {
           setActiveRequest(req);
-          setCurrentMode('EMERGENCY');
         }
       }).catch(() => {});
     }
@@ -458,6 +499,15 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
           </div>
 
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={resetSession}
+              title="Start a fresh conversation"
+              className="p-2 rounded-xl border border-[#C8D9E6] hover:bg-[#F5EFEB] text-[#2F4156] transition cursor-pointer flex items-center gap-1.5 text-xs"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline font-medium">New Session</span>
+            </button>
             <button
               type="button"
               onClick={() => {
