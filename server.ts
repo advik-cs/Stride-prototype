@@ -33,6 +33,7 @@ async function startServer() {
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`STRIDE Server running on http://localhost:${PORT}`);
+    console.log(`Gemini API: ${process.env.GEMINI_API_KEY ? 'CONFIGURED (Active)' : 'NOT CONFIGURED (Limited Emergency Signal Extractor Active)'}`);
   });
 }
 
