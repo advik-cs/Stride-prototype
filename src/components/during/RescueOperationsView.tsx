@@ -23,6 +23,7 @@ import {
   Activity,
   Check,
   Filter,
+  Mic,
 } from 'lucide-react';
 
 interface RescueOperationsViewProps {
@@ -562,9 +563,21 @@ export const RescueOperationsView: React.FC<RescueOperationsViewProps> = ({
                   className="p-5 rounded-2xl bg-blue-50/50 border border-blue-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
                 >
                   <div className="space-y-1.5 flex-1">
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       {getPriorityPill(m.priorityScore, m.priorityLevel)}
                       {getStatusBadge(m.status)}
+                      {m.source === 'VOICE' && (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-100 text-blue-900 border border-blue-200 flex items-center gap-1 shadow-sm">
+                          <Mic className="w-3 h-3 text-blue-600" />
+                          VOICE SOS
+                        </span>
+                      )}
+                      {m.locationConflict && (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-100 text-amber-900 border border-amber-200 flex items-center gap-1 shadow-sm">
+                          <AlertTriangle className="w-3 h-3 text-amber-600" />
+                          Location Discrepancy
+                        </span>
+                      )}
                     </div>
                     <h4 className="text-sm font-bold text-[#2F4156]">{m.address}</h4>
                     <p className="text-xs text-[#567C8D]">"{m.description}"</p>
@@ -675,6 +688,18 @@ export const RescueOperationsView: React.FC<RescueOperationsViewProps> = ({
                           {req.address}
                         </h4>
                         {getStatusBadge(req.status)}
+                        {req.source === 'VOICE' && (
+                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-100 text-blue-900 border border-blue-200 flex items-center gap-1 shadow-sm">
+                            <Mic className="w-3 h-3 text-blue-600" />
+                            VOICE SOS
+                          </span>
+                        )}
+                        {req.locationConflict && (
+                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-100 text-amber-900 border border-amber-200 flex items-center gap-1 shadow-sm" title={req.spokenLocation ? `Spoken: ${req.spokenLocation}` : 'Location Discrepancy'}>
+                            <AlertTriangle className="w-3 h-3 text-amber-600" />
+                            Location Discrepancy {req.spokenLocation ? `(Spoken: ${req.spokenLocation})` : ''}
+                          </span>
+                        )}
                       </div>
 
                       <p className="text-xs text-[#2F4156] bg-white/90 p-2.5 rounded-xl border border-[#C8D9E6]/60 font-medium">

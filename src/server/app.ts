@@ -9,6 +9,7 @@ import facilityRoutes from './routes/facilityRoutes.ts';
 import mapRoutes from './routes/mapRoutes.ts';
 import emergencyRoutes from './routes/emergencyRoutes.ts';
 import notificationRoutes from './routes/notificationRoutes.ts';
+import voiceRoutes from './routes/voiceRoutes.ts';
 import prisma from './config/database.ts';
 
 export function createApp() {
@@ -73,6 +74,7 @@ export function createApp() {
     app.use(prefix, mapRoutes);
     app.use(prefix, emergencyRoutes);
     app.use(prefix, notificationRoutes);
+    app.use(prefix, voiceRoutes);
   };
 
   mountRoutes('/api');

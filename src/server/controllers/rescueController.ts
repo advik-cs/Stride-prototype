@@ -292,7 +292,7 @@ function formatRescueRequest(reqRecord: any, citizenUser?: any, customBreakdown?
   const hasTrapped = condTypes.includes('TRAPPED');
   const hasFire = condTypes.includes('FIRE');
 
-  // Parse optional metadata embedded in description: e.g. [P:4, C:1, E:1, D:0, I:1, W:CHEST_LEVEL, T:FLOOD_TRAPPED]
+  // Parse optional metadata embedded in description: e.g. [P:4, C:1, E:1, D:0, I:1, W:CHEST_LEVEL, T:FLOOD_TRAPPED] or [SRC:VOICE, P:4, ...]
   let rawDesc = reqRecord.description || 'Urgent assistance requested';
   let peopleCount = 1;
   let childrenCount = hasChildren ? 1 : 0;
@@ -301,17 +301,36 @@ function formatRescueRequest(reqRecord: any, citizenUser?: any, customBreakdown?
   let injuredCount = hasInjured ? 1 : 0;
   let waterLevel = hasWaterRising ? 'HIGH' : 'MEDIUM';
   let emergencyType = hasTrapped ? 'TRAPPED' : hasFire ? 'FIRE' : 'FLOOD';
+  let isVoice = /\[(?:SRC:)?VOICE/i.test(rawDesc);
+  let spokenLocation: string | undefined = undefined;
+  let locationConflict = false;
 
-  const metaMatch = rawDesc.match(/\[P:(\d+)(?:,\s*C:(\d+))?(?:,\s*E:(\d+))?(?:,\s*D:(\d+))?(?:,\s*I:(\d+))?(?:,\s*W:([\w_]+))?(?:,\s*T:([\w_]+))?\]/);
+  const metaMatch = rawDesc.match(/\[(?:SRC:([\w_]+),\s*)?P:(\d+)(?:,\s*C:(\d+))?(?:,\s*E:(\d+))?(?:,\s*D:(\d+))?(?:,\s*I:(\d+))?(?:,\s*W:([\w_]+))?(?:,\s*T:([\w_]+))?(?:,\s*SPOKEN_LOC:([^,\]]+))?(?:,\s*CONFLICT:(YES|NO))?\]/i);
   if (metaMatch) {
-    peopleCount = parseInt(metaMatch[1], 10) || 1;
-    if (metaMatch[2] !== undefined) childrenCount = parseInt(metaMatch[2], 10);
-    if (metaMatch[3] !== undefined) elderlyCount = parseInt(metaMatch[3], 10);
-    if (metaMatch[4] !== undefined) disabledCount = parseInt(metaMatch[4], 10);
-    if (metaMatch[5] !== undefined) injuredCount = parseInt(metaMatch[5], 10);
-    if (metaMatch[6]) waterLevel = metaMatch[6];
-    if (metaMatch[7]) emergencyType = metaMatch[7];
+    if (metaMatch[1] && metaMatch[1].toUpperCase() === 'VOICE') isVoice = true;
+    peopleCount = parseInt(metaMatch[2], 10) || 1;
+    if (metaMatch[3] !== undefined) childrenCount = parseInt(metaMatch[3], 10);
+    if (metaMatch[4] !== undefined) elderlyCount = parseInt(metaMatch[4], 10);
+    if (metaMatch[5] !== undefined) disabledCount = parseInt(metaMatch[5], 10);
+    if (metaMatch[6] !== undefined) injuredCount = parseInt(metaMatch[6], 10);
+    if (metaMatch[7]) waterLevel = metaMatch[7];
+    if (metaMatch[8]) emergencyType = metaMatch[8];
+    if (metaMatch[9]) spokenLocation = metaMatch[9].trim();
+    if (metaMatch[10]) locationConflict = metaMatch[10].toUpperCase() === 'YES';
     rawDesc = rawDesc.replace(metaMatch[0], '').trim();
+  } else {
+    // Fallback standard check
+    const simpleMeta = rawDesc.match(/\[P:(\d+)(?:,\s*C:(\d+))?(?:,\s*E:(\d+))?(?:,\s*D:(\d+))?(?:,\s*I:(\d+))?(?:,\s*W:([\w_]+))?(?:,\s*T:([\w_]+))?\]/);
+    if (simpleMeta) {
+      peopleCount = parseInt(simpleMeta[1], 10) || 1;
+      if (simpleMeta[2] !== undefined) childrenCount = parseInt(simpleMeta[2], 10);
+      if (simpleMeta[3] !== undefined) elderlyCount = parseInt(simpleMeta[3], 10);
+      if (simpleMeta[4] !== undefined) disabledCount = parseInt(simpleMeta[4], 10);
+      if (simpleMeta[5] !== undefined) injuredCount = parseInt(simpleMeta[5], 10);
+      if (simpleMeta[6]) waterLevel = simpleMeta[6];
+      if (simpleMeta[7]) emergencyType = simpleMeta[7];
+      rawDesc = rawDesc.replace(simpleMeta[0], '').trim();
+    }
   }
 
   const breakdown = customBreakdown || {
@@ -346,6 +365,9 @@ function formatRescueRequest(reqRecord: any, citizenUser?: any, customBreakdown?
     priorityLevel: level,
     status,
     priorityBreakdown: breakdown,
+    source: isVoice ? 'VOICE' : 'MANUAL',
+    spokenLocation,
+    locationConflict,
     teamId: matchedTeam?.id || latestAssignment?.teamName || null,
     team: latestAssignment
       ? (matchedTeam || {
@@ -371,6 +393,8 @@ function formatRescueRequest(reqRecord: any, citizenUser?: any, customBreakdown?
     updatedAt: reqRecord.updatedAt ? reqRecord.updatedAt.toISOString() : new Date().toISOString(),
   };
 }
+
+export { formatRescueRequest };
 
 export async function createRescueRequest(req: AuthenticatedRequest, res: Response): Promise<void> {
   try {

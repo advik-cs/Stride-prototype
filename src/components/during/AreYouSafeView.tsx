@@ -24,7 +24,10 @@ import {
   Ban,
   Building,
   Info,
+  Mic,
+  Sparkles,
 } from 'lucide-react';
+import { VoiceEmergencyAssistant } from './VoiceEmergencyAssistant.tsx';
 
 interface AreYouSafeViewProps {
   user: User;
@@ -42,6 +45,7 @@ export const AreYouSafeView: React.FC<AreYouSafeViewProps> = ({
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [showDistressForm, setShowDistressForm] = useState(false);
+  const [showVoiceModal, setShowVoiceModal] = useState(false);
   const [myRequests, setMyRequests] = useState<RescueRequest[]>([]);
 
   // Detailed SOS form state matching during-backend contract
@@ -183,6 +187,36 @@ export const AreYouSafeView: React.FC<AreYouSafeViewProps> = ({
         </p>
       </div>
 
+      {/* Voice Emergency Hero Banner */}
+      <div className="p-5 sm:p-6 rounded-3xl bg-gradient-to-r from-[#2F4156] via-[#243445] to-[#1e2b3a] text-white shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-5 border border-[#567C8D]/40">
+        <div className="flex items-start sm:items-center gap-4">
+          <div className="w-12 h-12 rounded-2xl bg-red-600 text-white flex items-center justify-center flex-shrink-0 shadow-md animate-pulse">
+            <Mic className="w-6 h-6" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-base sm:text-lg font-bold font-['Space_Grotesk',sans-serif]">
+                STRIDE Voice Emergency AI Assistant
+              </span>
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-red-600 text-white">
+                SPEAK SOS
+              </span>
+            </div>
+            <p className="text-xs text-[#C8D9E6] mt-1 max-w-lg leading-relaxed">
+              Don't want to type a form? Click below and speak naturally. The AI extracts details, alerts dispatch, and stays with you.
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowVoiceModal(true)}
+          className="px-5 py-3 rounded-2xl bg-red-600 hover:bg-red-700 text-white text-xs sm:text-sm font-bold transition flex items-center gap-2 shadow-lg shadow-red-600/30 cursor-pointer self-start sm:self-auto flex-shrink-0"
+        >
+          <Mic className="w-4 h-4" />
+          <span>{submittedRequest ? 'Update via Voice' : 'Talk to STRIDE'}</span>
+        </button>
+      </div>
+
       {/* Confirmed Safe Banner */}
       {currentStatus === 'SAFE' && !showDistressForm && (
         <div className="p-6 rounded-3xl bg-emerald-50 border border-emerald-200 text-center space-y-3">
@@ -256,22 +290,33 @@ export const AreYouSafeView: React.FC<AreYouSafeViewProps> = ({
             </div>
           )}
 
-          <div className="pt-2 flex items-center justify-between">
-            {submittedRequest.status === 'PENDING' && (
+          <div className="pt-2 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => handleCancelRequest(submittedRequest.id)}
-                className="px-3.5 py-1.5 rounded-xl border border-red-300 text-red-700 hover:bg-red-100 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+                onClick={() => setShowVoiceModal(true)}
+                className="px-3.5 py-2 rounded-xl bg-[#2F4156] text-white hover:bg-[#1f2c3a] text-xs font-bold transition flex items-center gap-1.5 shadow-sm cursor-pointer"
               >
-                <Ban className="w-3.5 h-3.5" />
-                <span>Cancel Request</span>
+                <Mic className="w-3.5 h-3.5 text-red-400" />
+                <span>Update via Voice Assistant</span>
               </button>
-            )}
+
+              {submittedRequest.status === 'PENDING' && (
+                <button
+                  type="button"
+                  onClick={() => handleCancelRequest(submittedRequest.id)}
+                  className="px-3.5 py-2 rounded-xl border border-red-300 text-red-700 hover:bg-red-100 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Ban className="w-3.5 h-3.5" />
+                  <span>Cancel Request</span>
+                </button>
+              )}
+            </div>
 
             <button
               type="button"
               onClick={() => onNavigateTab('rescue')}
-              className="px-4 py-2 rounded-xl bg-red-600 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-md hover:bg-red-700 cursor-pointer ml-auto"
+              className="px-4 py-2 rounded-xl bg-red-600 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-md hover:bg-red-700 cursor-pointer"
             >
               <span>View Rescue Status</span>
               <ArrowRight className="w-3.5 h-3.5" />
@@ -611,6 +656,20 @@ export const AreYouSafeView: React.FC<AreYouSafeViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* Voice Emergency Assistant Modal */}
+      <VoiceEmergencyAssistant
+        isOpen={showVoiceModal}
+        onClose={() => setShowVoiceModal(false)}
+        activeDisaster={activeDisaster}
+        initialActiveRequestId={submittedRequest?.id}
+        onSosUpdated={(updated) => {
+          setSubmittedRequest(updated);
+          setMyRequests([updated]);
+          setCurrentStatus('IN_DISTRESS');
+          localStorage.setItem('stride_active_sos_id', updated.id);
+        }}
+      />
     </div>
   );
 };

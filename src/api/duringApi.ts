@@ -37,7 +37,7 @@ async function duringRequest<T>(endpoint: string, options: RequestInit = {}): Pr
 }
 
 export type WaterLevel = 'LOW' | 'MEDIUM' | 'HIGH' | 'EXTREME';
-export type EmergencyType = 'FLOOD' | 'MEDICAL' | 'TRAPPED' | 'STRUCTURAL_DANGER' | 'OTHER';
+export type EmergencyType = 'FLOOD' | 'MEDICAL' | 'TRAPPED' | 'STRUCTURAL_DANGER' | 'FIRE' | 'OTHER';
 export type PriorityLevel = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
 export type RescueStatus = 'PENDING' | 'ACKNOWLEDGED' | 'ASSIGNED' | 'IN_PROGRESS' | 'RESCUED' | 'CANCELLED';
 export type TeamStatus = 'AVAILABLE' | 'BUSY' | 'OFFLINE';
@@ -103,6 +103,9 @@ export interface RescueRequest {
   rescuedAt?: string | null;
   createdAt: string;
   updatedAt?: string;
+  source?: 'VOICE' | 'MANUAL';
+  spokenLocation?: string;
+  locationConflict?: boolean;
 }
 
 export interface MapRescueRequestMarker {
@@ -208,6 +211,41 @@ export const duringApi = {
   async cancelRequest(id: string): Promise<RescueRequest> {
     return duringRequest<RescueRequest>(`/rescue-requests/${id}/cancel`, {
       method: 'PATCH',
+    });
+  },
+
+  // STRIDE Voice Emergency AI Assistant
+  async voiceEmergencyChat(data: {
+    message: string;
+    history?: Array<{ role: 'user' | 'assistant'; content: string }>;
+    currentLocation?: { latitude: number; longitude: number };
+    activeRequestId?: string;
+  }): Promise<{
+    mode: 'ASSIST' | 'ASSESS' | 'EMERGENCY';
+    intent: string;
+    assistantResponse: string;
+    extractedInformation: {
+      peopleCount?: number;
+      childrenCount?: number;
+      elderlyCount?: number;
+      disabledCount?: number;
+      injuredCount?: number;
+      criticalMedicalNeed?: boolean;
+      waterLevel?: WaterLevel;
+      emergencyType?: EmergencyType;
+      conditions?: string[];
+      spokenLocation?: string;
+    };
+    uncertainInformation: string[];
+    missingInformation: string[];
+    shouldCreateOrUpdateSos: boolean;
+    locationConflict?: boolean;
+    activeRequest?: RescueRequest | null;
+    isFallbackExtractor?: boolean;
+  }> {
+    return duringRequest('/voice/emergency-chat', {
+      method: 'POST',
+      body: JSON.stringify(data),
     });
   },
 

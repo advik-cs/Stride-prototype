@@ -4,6 +4,7 @@ import { DisasterEvent } from '../../services/disasterService.ts';
 import { User } from '../../services/authService.ts';
 import { DuringTab } from '../layout/DashboardLayout.tsx';
 import { LiveWeatherCard } from '../common/LiveWeatherCard.tsx';
+import { VoiceEmergencyAssistant } from './VoiceEmergencyAssistant.tsx';
 import {
   LifeBuoy,
   AlertTriangle,
@@ -15,6 +16,7 @@ import {
   MapPin,
   Clock,
   ShieldCheck,
+  Mic,
 } from 'lucide-react';
 
 interface DuringDashboardViewProps {
@@ -30,6 +32,7 @@ export const DuringDashboardView: React.FC<DuringDashboardViewProps> = ({
 }) => {
   const [status, setStatus] = useState<CommunityStatus | null>(null);
   const [loading, setLoading] = useState(true);
+  const [showVoiceModal, setShowVoiceModal] = useState(false);
 
   useEffect(() => {
     loadCommunityStatus();
@@ -78,18 +81,60 @@ export const DuringDashboardView: React.FC<DuringDashboardViewProps> = ({
           </p>
         </div>
 
-        {/* SOS shortcut button (Citizen only) */}
+        {/* Actions (Citizen only) */}
         {user.role === 'CITIZEN' && (
-          <button
-            type="button"
-            onClick={() => onNavigateTab('safe')}
-            className="px-5 py-3 rounded-2xl bg-[#DC2626] hover:bg-red-700 text-white text-xs font-bold transition flex items-center gap-2 shadow-lg shadow-red-600/20 cursor-pointer animate-pulse"
-          >
-            <LifeBuoy className="w-4 h-4 text-white" />
-            <span>Report Safety / Request SOS</span>
-          </button>
+          <div className="flex flex-wrap items-center gap-2.5">
+            <button
+              type="button"
+              onClick={() => setShowVoiceModal(true)}
+              className="px-4 py-3 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition flex items-center gap-2 shadow-md cursor-pointer"
+            >
+              <Mic className="w-4 h-4 text-white" />
+              <span>Talk to STRIDE</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onNavigateTab('safe')}
+              className="px-5 py-3 rounded-2xl bg-[#DC2626] hover:bg-red-700 text-white text-xs font-bold transition flex items-center gap-2 shadow-lg shadow-red-600/20 cursor-pointer animate-pulse"
+            >
+              <LifeBuoy className="w-4 h-4 text-white" />
+              <span>Report Safety / Request SOS</span>
+            </button>
+          </div>
         )}
       </div>
+
+      {/* CITIZEN VOICE HERO BANNER */}
+      {user.role === 'CITIZEN' && (
+        <div className="p-5 sm:p-6 rounded-3xl bg-gradient-to-r from-[#2F4156] via-[#243445] to-[#1e2b3a] text-white shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-5">
+          <div className="flex items-start sm:items-center gap-4">
+            <div className="w-12 h-12 rounded-2xl bg-red-600 text-white flex items-center justify-center flex-shrink-0 shadow-md animate-pulse">
+              <Mic className="w-6 h-6" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-base sm:text-lg font-bold font-['Space_Grotesk',sans-serif]">
+                  STRIDE Voice Emergency AI Assistant
+                </span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-red-600 text-white">
+                  LIVE AI
+                </span>
+              </div>
+              <p className="text-xs text-[#C8D9E6] mt-1 max-w-xl leading-relaxed">
+                In an emergency, click <strong>"Talk to STRIDE"</strong> and speak naturally. The AI analyzes your distress situation, extracts verified factual details, triggers rapid rescue dispatch, and provides immediate guidance.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowVoiceModal(true)}
+            className="px-5 py-3 rounded-2xl bg-red-600 hover:bg-red-700 text-white text-xs sm:text-sm font-bold transition flex items-center gap-2 shadow-lg shadow-red-600/30 cursor-pointer self-start sm:self-auto flex-shrink-0"
+          >
+            <Mic className="w-4 h-4" />
+            <span>Talk to STRIDE</span>
+          </button>
+        </div>
+      )}
 
       {/* 3 LARGE CLEAN COMMUNITY STATUS CARDS */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -315,6 +360,13 @@ export const DuringDashboardView: React.FC<DuringDashboardViewProps> = ({
           <ArrowRight className="w-5 h-5 text-red-600" />
         </div>
       </div>
+
+      {/* Voice Emergency Assistant Modal */}
+      <VoiceEmergencyAssistant
+        isOpen={showVoiceModal}
+        onClose={() => setShowVoiceModal(false)}
+        activeDisaster={activeDisaster}
+      />
     </div>
   );
 };
