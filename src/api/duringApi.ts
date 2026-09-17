@@ -8,8 +8,9 @@ async function duringRequest<T>(endpoint: string, options: RequestInit = {}): Pr
     localStorage.getItem('stride_during_token') ||
     localStorage.getItem('stride_token') ||
     localStorage.getItem('stride_before_token');
+  const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
+    ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
     ...(options.headers as Record<string, string>),
   };
 
@@ -132,6 +133,31 @@ export interface MapRescueRequestMarker {
   } | null;
 }
 
+export interface VoiceAssistantResponse {
+  transcript?: string;
+  mode: 'ASSIST' | 'ASSESS' | 'EMERGENCY';
+  intent: string;
+  assistantResponse: string;
+  extractedInformation: {
+    peopleCount?: number;
+    childrenCount?: number;
+    elderlyCount?: number;
+    disabledCount?: number;
+    injuredCount?: number;
+    criticalMedicalNeed?: boolean;
+    waterLevel?: WaterLevel;
+    emergencyType?: EmergencyType;
+    conditions?: string[];
+    spokenLocation?: string;
+  };
+  uncertainInformation: string[];
+  missingInformation: string[];
+  shouldCreateOrUpdateSos: boolean;
+  locationConflict?: boolean;
+  activeRequest?: RescueRequest | null;
+  isFallbackExtractor?: boolean;
+}
+
 export const duringApi = {
   // Authentication
   async register(data: {
@@ -214,38 +240,41 @@ export const duringApi = {
     });
   },
 
-  // STRIDE Voice Emergency AI Assistant
+  // STRIDE Voice Emergency AI Assistant (Text fallback / Direct transcript)
   async voiceEmergencyChat(data: {
     message: string;
     history?: Array<{ role: 'user' | 'assistant'; content: string }>;
     currentLocation?: { latitude: number; longitude: number };
     activeRequestId?: string;
-  }): Promise<{
-    mode: 'ASSIST' | 'ASSESS' | 'EMERGENCY';
-    intent: string;
-    assistantResponse: string;
-    extractedInformation: {
-      peopleCount?: number;
-      childrenCount?: number;
-      elderlyCount?: number;
-      disabledCount?: number;
-      injuredCount?: number;
-      criticalMedicalNeed?: boolean;
-      waterLevel?: WaterLevel;
-      emergencyType?: EmergencyType;
-      conditions?: string[];
-      spokenLocation?: string;
-    };
-    uncertainInformation: string[];
-    missingInformation: string[];
-    shouldCreateOrUpdateSos: boolean;
-    locationConflict?: boolean;
-    activeRequest?: RescueRequest | null;
-    isFallbackExtractor?: boolean;
-  }> {
-    return duringRequest('/voice/emergency-chat', {
+  }): Promise<VoiceAssistantResponse> {
+    return duringRequest<VoiceAssistantResponse>('/voice/emergency-chat', {
       method: 'POST',
       body: JSON.stringify(data),
+    });
+  },
+
+  // STRIDE Voice Emergency AI Assistant (Audio recording upload via MediaRecorder)
+  async voiceEmergencyAudio(data: {
+    audioBlob: Blob;
+    history?: Array<{ role: 'user' | 'assistant'; content: string }>;
+    currentLocation?: { latitude: number; longitude: number };
+    activeRequestId?: string;
+  }): Promise<VoiceAssistantResponse & { transcript: string }> {
+    const formData = new FormData();
+    formData.append('audio', data.audioBlob, 'recording.webm');
+    if (data.history && data.history.length > 0) {
+      formData.append('history', JSON.stringify(data.history));
+    }
+    if (data.currentLocation) {
+      formData.append('currentLocation', JSON.stringify(data.currentLocation));
+    }
+    if (data.activeRequestId) {
+      formData.append('activeRequestId', data.activeRequestId);
+    }
+
+    return duringRequest<VoiceAssistantResponse & { transcript: string }>('/voice/emergency-audio', {
+      method: 'POST',
+      body: formData,
     });
   },
 

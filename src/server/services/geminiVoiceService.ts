@@ -27,6 +27,10 @@ export interface VoiceAssistantOutput {
   isFallbackExtractor?: boolean;
 }
 
+export interface VoiceAudioAssistantOutput extends VoiceAssistantOutput {
+  transcript: string;
+}
+
 export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
@@ -364,3 +368,162 @@ OUTPUT JSON FORMAT (You MUST return valid JSON matching this schema):
     return limitedEmergencySignalExtractor(message, history, context);
   }
 }
+
+/**
+ * Multimodal Gemini audio processing function.
+ * Accepts an audio buffer (WebM/Opus, MP4, WAV), transcribes citizen speech verbatim,
+ * determines intent/mode, extracts confirmed emergency facts vs uncertain speculation,
+ * and passes to the STRIDE deterministic priority & SOS triage engine.
+ */
+export async function processEmergencyAudioInput(
+  audioBuffer: Buffer,
+  mimeType: string,
+  history: ChatMessage[],
+  context: StrideContextData
+): Promise<VoiceAudioAssistantOutput> {
+  const apiKey = process.env.GEMINI_API_KEY;
+
+  if (!audioBuffer || audioBuffer.length === 0) {
+    return {
+      transcript: '',
+      mode: 'ASSIST',
+      intent: 'empty_audio',
+      assistantResponse:
+        "No audio was detected in your recording. Please tap the microphone and speak again, or type your message below.",
+      extractedInformation: {},
+      uncertainInformation: [],
+      missingInformation: [],
+      shouldCreateOrUpdateSos: false,
+      isFallbackExtractor: true,
+    };
+  }
+
+  // If no Gemini API key configured, use safe deterministic fallback
+  if (!apiKey || apiKey.trim() === '') {
+    return {
+      transcript: '(Spoken audio received)',
+      mode: 'ASSESS',
+      intent: 'offline_audio_received',
+      assistantResponse:
+        "Voice audio received. Automated audio transcription requires Gemini API connectivity. If you need emergency rescue, please tap the Emergency SOS button or type below.",
+      extractedInformation: {},
+      uncertainInformation: ['Voice audio received while online transcription service is unconfigured'],
+      missingInformation: ['rescue capability', 'location', 'people count'],
+      shouldCreateOrUpdateSos: false,
+      isFallbackExtractor: true,
+    };
+  }
+
+  try {
+    const ai = new GoogleGenAI({ apiKey });
+
+    const systemPrompt = `You are the STRIDE Emergency Voice Assistant for Bengaluru, Karnataka, India during an active flood/disaster.
+You are listening to an audio recording spoken by a citizen.
+Your task:
+1. Transcribe the citizen's spoken words verbatim into the "transcript" field. If audio is unclear or empty, accurately transcribe what is audible or state so.
+2. Determine their intent and mode:
+   - "ASSIST": The citizen is asking general questions, advice, shelter/facility locations, weather, or flood preparedness. Do NOT trigger SOS.
+   - "ASSESS": The citizen mentions rising water, power loss, or potential danger, but hasn't confirmed if they are trapped, injured, or need rescue. Ask a direct clarifying question (e.g., "Can you leave safely or are you trapped?"). Do NOT trigger SOS.
+   - "EMERGENCY": Clear danger, trapped individuals, water rising inside house, injuries, or explicit requests for rescue/boats. Set shouldCreateOrUpdateSos = true immediately.
+3. FACT vs. SPECULATION:
+   - If user confirms: "There are 5 people here, 2 children" -> extract into extractedInformation.
+   - If user speculates: "I think there might be kids downstairs" or "maybe someone is hurt" -> DO NOT add to numbers in extractedInformation. Add to uncertainInformation array, and ask for confirmation in assistantResponse.
+   - NEVER fabricate or assume numbers.
+4. Active STRIDE Context:
+   - Active Disaster: ${context.activeDisaster?.title || 'Bengaluru Urban Flood Event'} (${context.activeDisaster?.alertLevel || 'HIGH'} alert level)
+   - Citizen Home Address: ${context.citizenHousehold?.address || 'Bengaluru'}
+   - Active SOS Status: ${context.activeSos ? `Active SOS #${context.activeSos.id} (Status: ${context.activeSos.rescueStatus}, Priority: ${context.activeSos.priorityScore})` : 'No active SOS'}
+   - Nearest Shelters: ${context.nearestShelters.map((s) => `${s.name} (${s.distanceKm}km, ${s.status})`).join(', ') || 'None listed'}
+   - Nearest Facilities: ${context.nearestFacilities.map((f) => `${f.name} (${f.distanceKm}km)`).join(', ') || 'None listed'}
+5. DO NOT calculate priority scores. Scores are computed solely by the backend deterministic algorithm.
+6. Provide an empathetic, clear, concise assistant response suitable for text-to-speech voice playback.
+
+OUTPUT JSON FORMAT (You MUST return valid JSON matching this schema):
+{
+  "transcript": "string (verbatim transcript of citizen's spoken words in the audio)",
+  "mode": "ASSIST" | "ASSESS" | "EMERGENCY",
+  "intent": "string",
+  "assistantResponse": "string",
+  "extractedInformation": {
+    "peopleCount": number,
+    "childrenCount": number,
+    "elderlyCount": number,
+    "disabledCount": number,
+    "injuredCount": number,
+    "criticalMedicalNeed": boolean,
+    "waterLevel": "LOW" | "MEDIUM" | "HIGH" | "EXTREME",
+    "emergencyType": "FLOOD" | "MEDICAL" | "TRAPPED" | "STRUCTURAL_DANGER" | "OTHER",
+    "conditions": ["string"],
+    "spokenLocation": "string (if mentioned)"
+  },
+  "uncertainInformation": ["string"],
+  "missingInformation": ["string"],
+  "shouldCreateOrUpdateSos": boolean
+}`;
+
+    const formattedHistory = history.map((h) => `${h.role === 'user' ? 'Citizen' : 'Assistant'}: ${h.content}`).join('\n');
+    const prompt = `${systemPrompt}\n\nCONVERSATION HISTORY:\n${formattedHistory}\n\nAnalyze the citizen's audio recording and return the JSON response:`;
+
+    const cleanMimeType = mimeType.split(';')[0].trim() || 'audio/webm';
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            {
+              inlineData: {
+                mimeType: cleanMimeType,
+                data: audioBuffer.toString('base64'),
+              },
+            },
+            {
+              text: prompt,
+            },
+          ],
+        },
+      ],
+      config: {
+        responseMimeType: 'application/json',
+      },
+    });
+
+    const responseText = response.text || '';
+    const parsed = JSON.parse(responseText);
+
+    const validModes: VoiceEmergencyMode[] = ['ASSIST', 'ASSESS', 'EMERGENCY'];
+    const mode: VoiceEmergencyMode = validModes.includes(parsed.mode) ? parsed.mode : 'ASSESS';
+
+    return {
+      transcript: typeof parsed.transcript === 'string' ? parsed.transcript : '',
+      mode,
+      intent: parsed.intent || 'voice_audio_processing',
+      assistantResponse:
+        parsed.assistantResponse ||
+        (mode === 'EMERGENCY'
+          ? "I have logged your emergency distress signal with our response units. Stay in a safe, elevated location."
+          : "I am here with STRIDE Emergency Command. How can I assist you?"),
+      extractedInformation: parsed.extractedInformation || {},
+      uncertainInformation: Array.isArray(parsed.uncertainInformation) ? parsed.uncertainInformation : [],
+      missingInformation: Array.isArray(parsed.missingInformation) ? parsed.missingInformation : [],
+      shouldCreateOrUpdateSos: !!parsed.shouldCreateOrUpdateSos && mode === 'EMERGENCY',
+      isFallbackExtractor: false,
+    };
+  } catch (err: any) {
+    console.error('Gemini Voice Audio API error (falling back to limited handler):', err.message);
+    return {
+      transcript: '(Spoken audio received)',
+      mode: 'ASSESS',
+      intent: 'audio_processing_error',
+      assistantResponse:
+        "I was unable to fully process the audio recording. If this is an emergency, please type your message or tap the Emergency SOS button immediately.",
+      extractedInformation: {},
+      uncertainInformation: ['Audio processing encountered an error'],
+      missingInformation: ['rescue capability', 'location'],
+      shouldCreateOrUpdateSos: false,
+      isFallbackExtractor: true,
+    };
+  }
+}
+

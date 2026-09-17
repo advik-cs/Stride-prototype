@@ -21,6 +21,7 @@ import {
   Flame,
   Activity,
   Sparkles,
+  Square,
 } from 'lucide-react';
 
 interface VoiceEmergencyAssistantProps {
@@ -59,17 +60,19 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
   ]);
 
   const [inputVal, setInputVal] = useState('');
-  const [currentStatus, setCurrentStatus] = useState<'IDLE' | 'LISTENING' | 'THINKING' | 'SPEAKING'>('IDLE');
+  const [currentStatus, setCurrentStatus] = useState<'IDLE' | 'LISTENING' | 'PROCESSING' | 'SPEAKING'>('IDLE');
   const [currentMode, setCurrentMode] = useState<'ASSIST' | 'ASSESS' | 'EMERGENCY'>('ASSIST');
   const [activeRequest, setActiveRequest] = useState<RescueRequest | null>(null);
   const [isMuted, setIsMuted] = useState(false);
-  const [speechSupported, setSpeechSupported] = useState(true);
   const [micError, setMicError] = useState<string | null>(null);
-  const [interimTranscript, setInterimTranscript] = useState('');
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [locationConflict, setLocationConflict] = useState(false);
   const [currentLocation, setCurrentLocation] = useState<{ latitude: number; longitude: number } | null>(null);
 
-  const recognitionRef = useRef<any>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioStreamRef = useRef<MediaStream | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const recordingTimerRef = useRef<any>(null);
   const chatBottomRef = useRef<HTMLDivElement>(null);
 
   // Initialize GPS location
@@ -103,82 +106,19 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
     }
   }, [initialActiveRequestId, isOpen]);
 
-  // Setup Web Speech Recognition
+  // Clean up recording tracks & TTS on unmount
   useEffect(() => {
-    const SpeechRecognition =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-
-    if (!SpeechRecognition) {
-      setSpeechSupported(false);
-      return;
-    }
-
-    try {
-      const recognition = new SpeechRecognition();
-      recognition.continuous = false;
-      recognition.interimResults = true;
-      recognition.lang = 'en-IN';
-
-      recognition.onstart = () => {
-        setCurrentStatus('LISTENING');
-        setMicError(null);
-        setInterimTranscript('');
-      };
-
-      recognition.onresult = (event: any) => {
-        let interim = '';
-        let final = '';
-
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          const trans = event.results[i][0].transcript;
-          if (event.results[i].isFinal) {
-            final += trans;
-          } else {
-            interim += trans;
-          }
-        }
-
-        if (interim) {
-          setInterimTranscript(interim);
-        }
-
-        if (final) {
-          setInterimTranscript('');
-          handleSendMessage(final.trim());
-        }
-      };
-
-      recognition.onerror = (event: any) => {
-        console.warn('Speech recognition event error:', event.error);
-        if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
-          setMicError('Microphone access denied. You can type your emergency message below.');
-        } else if (event.error === 'no-speech') {
-          // benign timeout
-        } else {
-          setMicError(`Speech error: ${event.error}. Please type below.`);
-        }
-        setCurrentStatus('IDLE');
-        setInterimTranscript('');
-      };
-
-      recognition.onend = () => {
-        if (currentStatus === 'LISTENING') {
-          setCurrentStatus('IDLE');
-        }
-        setInterimTranscript('');
-      };
-
-      recognitionRef.current = recognition;
-    } catch (e: any) {
-      console.error('Failed to init speech recognition:', e);
-      setSpeechSupported(false);
-    }
-
     return () => {
-      if (recognitionRef.current) {
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+      }
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
         try {
-          recognitionRef.current.abort();
+          mediaRecorderRef.current.stop();
         } catch {}
+      }
+      if (audioStreamRef.current) {
+        audioStreamRef.current.getTracks().forEach((track) => track.stop());
       }
       if ('speechSynthesis' in window) {
         window.speechSynthesis.cancel();
@@ -189,7 +129,7 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
   // Auto-scroll chat
   useEffect(() => {
     chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, interimTranscript, currentStatus]);
+  }, [messages, currentStatus, recordingSeconds]);
 
   // TTS Helper
   const speakText = (text: string) => {
@@ -212,33 +152,187 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
     }
   };
 
-  const toggleListening = () => {
-    if (!speechSupported) {
-      alert('Speech recognition is not supported in this browser. Please use the text input below.');
-      return;
+  const stopRecording = () => {
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
     }
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      try {
+        mediaRecorderRef.current.stop();
+      } catch (err) {
+        console.warn('Error stopping MediaRecorder:', err);
+      }
+    }
+  };
 
+  const startRecording = async () => {
     if (currentStatus === 'SPEAKING' && 'speechSynthesis' in window) {
       window.speechSynthesis.cancel();
     }
+    setMicError(null);
 
-    if (currentStatus === 'LISTENING') {
-      try {
-        recognitionRef.current?.stop();
-      } catch {}
-      setCurrentStatus('IDLE');
-    } else {
-      try {
-        setMicError(null);
-        recognitionRef.current?.start();
-      } catch (e: any) {
-        console.warn('Recognition start exception:', e);
-        // If already running, abort and restart
-        try {
-          recognitionRef.current?.abort();
-          setTimeout(() => recognitionRef.current?.start(), 150);
-        } catch {}
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        setMicError('Audio recording is not supported in this browser environment. Please type below.');
+        return;
       }
+
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioStreamRef.current = stream;
+
+      let mimeType = 'audio/webm;codecs=opus';
+      if (typeof MediaRecorder.isTypeSupported === 'function') {
+        if (!MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+          if (MediaRecorder.isTypeSupported('audio/webm')) {
+            mimeType = 'audio/webm';
+          } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+            mimeType = 'audio/mp4';
+          } else {
+            mimeType = '';
+          }
+        }
+      }
+
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      mediaRecorderRef.current = recorder;
+      audioChunksRef.current = [];
+
+      recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) {
+          audioChunksRef.current.push(e.data);
+        }
+      };
+
+      recorder.onstop = async () => {
+        const mime = recorder.mimeType || 'audio/webm';
+        const blob = new Blob(audioChunksRef.current, { type: mime });
+        audioChunksRef.current = [];
+
+        // Release hardware mic track
+        if (audioStreamRef.current) {
+          audioStreamRef.current.getTracks().forEach((t) => t.stop());
+          audioStreamRef.current = null;
+        }
+
+        if (blob.size > 0) {
+          await handleAudioUpload(blob);
+        } else {
+          setCurrentStatus('IDLE');
+        }
+      };
+
+      recorder.start(250);
+      setCurrentStatus('LISTENING');
+      setRecordingSeconds(0);
+
+      // Enforce 30s limit for short emergency utterances
+      let secs = 0;
+      if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = setInterval(() => {
+        secs += 1;
+        setRecordingSeconds(secs);
+        if (secs >= 30) {
+          stopRecording();
+        }
+      }, 1000);
+    } catch (err: any) {
+      console.warn('Microphone getUserMedia error:', err);
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        setMicError('Microphone permission denied. Please allow microphone access or type your emergency message below.');
+      } else {
+        setMicError(`Microphone error (${err.message || 'unknown'}). Please type your message below.`);
+      }
+      setCurrentStatus('IDLE');
+    }
+  };
+
+  const toggleRecording = () => {
+    if (currentStatus === 'LISTENING') {
+      stopRecording();
+    } else if (currentStatus === 'IDLE' || currentStatus === 'SPEAKING') {
+      startRecording();
+    }
+  };
+
+  const handleAudioUpload = async (audioBlob: Blob) => {
+    setCurrentStatus('PROCESSING');
+
+    const tempUserMsgId = 'msg-' + Date.now();
+    const tempUserMsg: MessageItem = {
+      id: tempUserMsgId,
+      role: 'user',
+      content: '🎙️ [Analyzing voice recording...]',
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    };
+    setMessages((prev) => [...prev, tempUserMsg]);
+
+    try {
+      const historyPayload = messages
+        .filter((m) => m.id !== 'welcome-msg')
+        .map((m) => ({
+          role: m.role,
+          content: m.content,
+        }));
+
+      const res = await duringApi.voiceEmergencyAudio({
+        audioBlob,
+        history: historyPayload,
+        currentLocation: currentLocation || undefined,
+        activeRequestId: activeRequest?.id || localStorage.getItem('stride_active_sos_id') || undefined,
+      });
+
+      const transcriptText =
+        res.transcript && res.transcript.trim() !== ''
+          ? `🎙️ "${res.transcript.trim()}"`
+          : '🎙️ [Emergency voice message]';
+
+      setMessages((prev) =>
+        prev.map((m) => (m.id === tempUserMsgId ? { ...m, content: transcriptText } : m))
+      );
+
+      setCurrentMode(res.mode);
+
+      if (res.locationConflict) {
+        setLocationConflict(true);
+      }
+
+      if (res.activeRequest) {
+        setActiveRequest(res.activeRequest);
+        localStorage.setItem('stride_active_sos_id', res.activeRequest.id);
+        onSosUpdated?.(res.activeRequest);
+      }
+
+      const assistantMsg: MessageItem = {
+        id: 'msg-asst-' + Date.now(),
+        role: 'assistant',
+        content: res.assistantResponse,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        mode: res.mode,
+        extractedFacts: res.extractedInformation,
+      };
+
+      setMessages((prev) => [...prev, assistantMsg]);
+      setCurrentStatus('IDLE');
+      speakText(res.assistantResponse);
+    } catch (err: any) {
+      console.error('Audio processing error:', err);
+      setCurrentStatus('IDLE');
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === tempUserMsgId ? { ...m, content: '🎙️ [Audio recording could not be processed]' } : m
+        )
+      );
+
+      const errorMsg: MessageItem = {
+        id: 'msg-err-' + Date.now(),
+        role: 'assistant',
+        content:
+          "I had difficulty processing your voice recording. If you are in immediate danger, please type your message below or press the emergency SOS beacon.",
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        mode: 'ASSIST',
+      };
+      setMessages((prev) => [...prev, errorMsg]);
     }
   };
 
@@ -259,14 +353,16 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
 
     setMessages((prev) => [...prev, userMsg]);
     setInputVal('');
-    setCurrentStatus('THINKING');
+    setCurrentStatus('PROCESSING');
 
     try {
       // Prepare history
-      const historyPayload = messages.map((m) => ({
-        role: m.role,
-        content: m.content,
-      }));
+      const historyPayload = messages
+        .filter((m) => m.id !== 'welcome-msg')
+        .map((m) => ({
+          role: m.role,
+          content: m.content,
+        }));
 
       const res = await duringApi.voiceEmergencyChat({
         message: textToSend.trim(),
@@ -510,21 +606,23 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
             );
           })}
 
-          {/* Live Speech Recognition Interim Transcript */}
-          {currentStatus === 'LISTENING' && interimTranscript && (
+          {/* Active Microphone Audio Recording Visualizer */}
+          {currentStatus === 'LISTENING' && (
             <div className="flex gap-3 items-end justify-end">
-              <div className="max-w-[80%] rounded-2xl p-4 text-xs leading-relaxed bg-[#2F4156]/20 text-[#2F4156] border border-dashed border-[#2F4156]/40 italic">
-                <p>"{interimTranscript}..."</p>
-                <div className="text-[10px] text-red-600 font-bold flex items-center gap-1 mt-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-red-600 animate-ping" />
-                  Transcribing spoken speech...
+              <div className="max-w-[80%] rounded-2xl p-4 text-xs leading-relaxed bg-red-50 text-red-900 border border-red-200 shadow-sm animate-pulse">
+                <div className="flex items-center gap-2 font-bold text-red-700 mb-1">
+                  <span className="w-2.5 h-2.5 rounded-full bg-red-600 animate-ping" />
+                  <span>Recording microphone audio ({recordingSeconds}s / 30s)</span>
                 </div>
+                <p className="text-[11px] text-red-800">
+                  Speak naturally about your emergency, trapped individuals, water level, or questions. Tap the button to finish and send.
+                </p>
               </div>
             </div>
           )}
 
-          {/* Thinking indicator */}
-          {currentStatus === 'THINKING' && (
+          {/* Processing indicator */}
+          {currentStatus === 'PROCESSING' && (
             <div className="flex gap-3 items-start">
               <div className="w-8 h-8 rounded-xl bg-[#2F4156] text-white flex items-center justify-center flex-shrink-0 text-xs shadow-sm">
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -539,18 +637,18 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
           <div ref={chatBottomRef} />
         </div>
 
-        {/* State visualizer badge (Listening / Thinking / Speaking) */}
-        <div className="px-6 py-2 bg-[#F5EFEB]/40 border-t border-[#C8D9E6]/60 flex items-center justify-between text-xs">
+        {/* State visualizer badge (Listening / Processing / Speaking / Idle) */}
+        <div className="px-6 py-2.5 bg-[#F5EFEB]/40 border-t border-[#C8D9E6]/60 flex items-center justify-between text-xs">
           <div className="flex items-center gap-2">
             {currentStatus === 'LISTENING' ? (
               <div className="flex items-center gap-2 text-red-600 font-bold">
                 <span className="w-2.5 h-2.5 rounded-full bg-red-600 animate-ping" />
-                <span>Listening... Speak naturally (e.g., "We are trapped upstairs and water is waist deep")</span>
+                <span>Recording audio ({recordingSeconds}s / 30s max) — Tap button to finish</span>
               </div>
-            ) : currentStatus === 'THINKING' ? (
+            ) : currentStatus === 'PROCESSING' ? (
               <div className="flex items-center gap-2 text-blue-600 font-bold">
                 <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600" />
-                <span>Analyzing emergency parameters with Gemini...</span>
+                <span>Analyzing voice audio with Gemini & calculating emergency priority...</span>
               </div>
             ) : currentStatus === 'SPEAKING' ? (
               <div className="flex items-center gap-2 text-emerald-600 font-bold">
@@ -560,7 +658,7 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
             ) : (
               <div className="flex items-center gap-1.5 text-[#567C8D]">
                 <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                <span>Tap the microphone to speak, or type below.</span>
+                <span>Tap microphone to record voice, or type your message below.</span>
               </div>
             )}
           </div>
@@ -573,19 +671,30 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
         {/* Input & Mic Controls */}
         <div className="p-4 sm:p-5 border-t border-[#C8D9E6] bg-white">
           <form onSubmit={handleFormSubmit} className="flex items-center gap-2.5">
-            {/* Big Mic Button */}
+            {/* Big Mic Button (Push-to-talk / Tap-to-record) */}
             <button
               type="button"
-              onClick={toggleListening}
-              className={`w-12 h-12 rounded-2xl flex items-center justify-center text-white transition shadow-md cursor-pointer flex-shrink-0 ${
+              onClick={toggleRecording}
+              disabled={currentStatus === 'PROCESSING'}
+              className={`w-12 h-12 rounded-2xl flex items-center justify-center text-white transition shadow-md cursor-pointer flex-shrink-0 disabled:opacity-50 ${
                 currentStatus === 'LISTENING'
                   ? 'bg-red-600 animate-pulse ring-4 ring-red-200'
+                  : currentStatus === 'PROCESSING'
+                  ? 'bg-amber-600'
                   : 'bg-red-600 hover:bg-red-700'
               }`}
-              title={currentStatus === 'LISTENING' ? 'Stop listening' : 'Start speaking'}
+              title={
+                currentStatus === 'LISTENING'
+                  ? `Stop & Send recording (${30 - recordingSeconds}s remaining)`
+                  : currentStatus === 'PROCESSING'
+                  ? 'Processing recording...'
+                  : 'Start voice recording'
+              }
             >
               {currentStatus === 'LISTENING' ? (
-                <MicOff className="w-5 h-5" />
+                <Square className="w-5 h-5 fill-current" />
+              ) : currentStatus === 'PROCESSING' ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
               ) : (
                 <Mic className="w-5 h-5" />
               )}
@@ -597,18 +706,22 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
                 type="text"
                 value={inputVal}
                 onChange={(e) => setInputVal(e.target.value)}
-                placeholder="Speak or type your message (e.g., We're trapped upstairs)..."
-                disabled={currentStatus === 'THINKING'}
-                className="w-full pl-4 pr-10 py-3 rounded-2xl border border-[#C8D9E6] focus:border-red-500 focus:ring-2 focus:ring-red-100 outline-none text-xs text-[#2F4156] placeholder-[#567C8D] transition"
+                placeholder={
+                  currentStatus === 'LISTENING'
+                    ? 'Recording voice audio... tap button to finish.'
+                    : "Speak or type your message (e.g., We're trapped upstairs)..."
+                }
+                disabled={currentStatus === 'PROCESSING' || currentStatus === 'LISTENING'}
+                className="w-full pl-4 pr-10 py-3 rounded-2xl border border-[#C8D9E6] focus:border-red-500 focus:ring-2 focus:ring-red-100 outline-none text-xs text-[#2F4156] placeholder-[#567C8D] transition disabled:bg-gray-50"
               />
             </div>
 
             {/* Send Button */}
             <button
               type="submit"
-              disabled={!inputVal.trim() || currentStatus === 'THINKING'}
+              disabled={!inputVal.trim() || currentStatus === 'PROCESSING' || currentStatus === 'LISTENING'}
               className="w-12 h-12 rounded-2xl bg-[#2F4156] hover:bg-[#1f2c3a] disabled:opacity-40 text-white flex items-center justify-center transition shadow-sm cursor-pointer flex-shrink-0"
-              title="Send message"
+              title="Send text message"
             >
               <Send className="w-4 h-4" />
             </button>
