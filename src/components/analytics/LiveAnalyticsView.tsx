@@ -252,11 +252,11 @@ export const LiveAnalyticsView: React.FC<LiveAnalyticsViewProps> = ({
         {/* TAB 1: FULL COMMAND CENTER (ARRANGES ALL GRAPHS IN DASHBOARD) */}
         {activeTab === 'ALL' && (
           <div className="space-y-8">
-            {/* Top Row: Headcount Donut & Demographics Logistics */}
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-8 items-start">
-              <BuildingAccountabilityChart />
-              <VulnerableDemographicsChart activeZone={activeDisaster?.title || 'Active Operational Basin'} />
-            </div>
+            {/* 1. Civilian Accountability (Full Width) */}
+            <BuildingAccountabilityChart />
+
+            {/* 2. Vulnerable Demographics & Supply Logistics (Full Width, directly below) */}
+            <VulnerableDemographicsChart activeZone={activeDisaster?.title || 'Active Operational Basin'} />
 
             {/* Middle Row: Building Risk Matrix Scatter Plot */}
             <BuildingRiskMatrix />
