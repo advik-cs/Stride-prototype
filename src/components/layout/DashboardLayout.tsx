@@ -33,6 +33,7 @@ export type BeforeTab =
   | 'map'
   | 'household'
   | 'shelters'
+  | 'hospitals'
   | 'reconfirmation'
   | 'occupancy'
   | 'threats'
@@ -42,6 +43,8 @@ export type DuringTab =
   | 'dashboard'
   | 'safe'
   | 'buildings'
+  | 'shelters'
+  | 'hospitals'
   | 'maps'
   | 'rescue'
   | 'occupancy'
@@ -115,6 +118,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
     { id: 'map', label: t('navigation.map'), icon: MapIcon },
     ...(user.role === 'CITIZEN' ? [{ id: 'household', label: t('navigation.household'), icon: Users }] : []),
     { id: 'shelters', label: t('navigation.shelterInfo'), icon: Tent },
+    { id: 'hospitals', label: t('navigation.hospitalInfo') || 'Hospital Information', icon: Building2 },
     ...(user.role === 'CITIZEN' ? [{ id: 'reconfirmation', label: t('navigation.reconfirmation'), icon: CheckCircle2 }] : []),
     ...(user.role !== 'CITIZEN' ? [{ id: 'occupancy', label: t('navigation.occupancy'), icon: Building2 }] : []),
     { id: 'threats', label: t('navigation.threats'), icon: AlertOctagon },
@@ -125,6 +129,8 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
     ...(user.role !== 'CITIZEN' ? [{ id: 'weather', label: t('navigation.operationalWeather') || 'Operational Weather', icon: CloudRain }] : []),
     ...(user.role === 'CITIZEN' ? [{ id: 'safe', label: t('navigation.safe'), icon: LifeBuoy }] : []),
     ...(user.role !== 'CITIZEN' ? [{ id: 'buildings', label: t('navigation.buildings'), icon: Building2 }] : []),
+    { id: 'shelters', label: t('navigation.shelterInfo'), icon: Tent },
+    { id: 'hospitals', label: t('navigation.hospitalInfo') || 'Hospital Information', icon: Building2 },
     { id: 'maps', label: t('navigation.maps'), icon: MapIcon },
     { id: 'rescue', label: t('navigation.rescue'), icon: Radio },
     ...(user.role !== 'CITIZEN' ? [

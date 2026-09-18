@@ -76,6 +76,8 @@ export const en = {
   'navigation.household': 'Household Members',
   'navigation.shelters': 'Shelter Information',
   'navigation.shelterInfo': 'Shelter Information',
+  'navigation.hospitals': 'Hospital Information',
+  'navigation.hospitalInfo': 'Hospital Information',
   'navigation.reconfirmation': 'Reconfirmation',
   'navigation.occupancy': 'Expected Occupancy',
   'navigation.threats': 'Predicted Threats',

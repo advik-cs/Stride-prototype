@@ -24,6 +24,7 @@ import { DuringMapView } from './components/during/DuringMapView.tsx';
 import { RescueOperationsView } from './components/during/RescueOperationsView.tsx';
 import { OperationalWeatherView } from './components/common/OperationalWeatherView.tsx';
 import { FloodXView } from './components/floodx/FloodXView.tsx';
+import { HospitalInformationView } from './components/hospital/HospitalInformationView.tsx';
 
 import { Loader2 } from 'lucide-react';
 
@@ -226,6 +227,15 @@ export default function App() {
             />
           )}
 
+          {beforeTab === 'hospitals' && (
+            <HospitalInformationView
+              user={currentUser}
+              activeDisaster={activeDisaster}
+              mode="BEFORE"
+              onNavigateTab={(tab) => setBeforeTab(tab as any)}
+            />
+          )}
+
           {beforeTab === 'reconfirmation' && currentUser.role === 'CITIZEN' && (
             <ReconfirmationView
               user={currentUser}
@@ -282,6 +292,22 @@ export default function App() {
             <DuringBuildingsView
               user={currentUser}
               activeDisaster={activeDisaster}
+            />
+          )}
+
+          {duringTab === 'shelters' && (
+            <ShelterSelectionView
+              user={currentUser}
+              activeDisaster={activeDisaster}
+            />
+          )}
+
+          {duringTab === 'hospitals' && (
+            <HospitalInformationView
+              user={currentUser}
+              activeDisaster={activeDisaster}
+              mode="DURING"
+              onNavigateTab={(tab) => setDuringTab(tab as any)}
             />
           )}
 

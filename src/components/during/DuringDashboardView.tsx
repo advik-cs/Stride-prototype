@@ -17,6 +17,8 @@ import {
   Clock,
   ShieldCheck,
   Mic,
+  Tent,
+  Activity,
 } from 'lucide-react';
 
 interface DuringDashboardViewProps {
@@ -317,7 +319,7 @@ export const DuringDashboardView: React.FC<DuringDashboardViewProps> = ({
       </div>
 
       {/* Quick Navigation Panels */}
-      <div className={`grid grid-cols-1 ${user.role !== 'CITIZEN' ? 'md:grid-cols-2' : ''} gap-6`}>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {user.role !== 'CITIZEN' && (
           <div
             onClick={() => onNavigateTab('buildings')}
@@ -329,7 +331,7 @@ export const DuringDashboardView: React.FC<DuringDashboardViewProps> = ({
               </div>
               <div>
                 <h4 className="text-sm font-bold text-[#2F4156]">
-                  Building Intelligence Dashboard
+                  Building Intelligence
                 </h4>
                 <p className="text-xs text-[#567C8D]">
                   Inspect safe, in distress, and unaccounted counts for each structure.
@@ -341,11 +343,51 @@ export const DuringDashboardView: React.FC<DuringDashboardViewProps> = ({
         )}
 
         <div
-          onClick={() => onNavigateTab('maps')}
+          onClick={() => onNavigateTab('shelters')}
+          className="bg-white rounded-3xl p-6 border border-[#C8D9E6]/70 shadow-sm hover:shadow-md transition cursor-pointer flex items-center justify-between"
+        >
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-2xl bg-emerald-50 flex items-center justify-center text-emerald-700">
+              <Tent className="w-6 h-6" />
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-[#2F4156]">
+                Shelter Information
+              </h4>
+              <p className="text-xs text-[#567C8D]">
+                Find designated emergency shelters, live occupancy, and available capacity.
+              </p>
+            </div>
+          </div>
+          <ArrowRight className="w-5 h-5 text-emerald-700" />
+        </div>
+
+        <div
+          onClick={() => onNavigateTab('hospitals')}
           className="bg-white rounded-3xl p-6 border border-[#C8D9E6]/70 shadow-sm hover:shadow-md transition cursor-pointer flex items-center justify-between"
         >
           <div className="flex items-center gap-4">
             <div className="w-12 h-12 rounded-2xl bg-red-50 flex items-center justify-center text-red-600">
+              <Activity className="w-6 h-6" />
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-[#2F4156]">
+                Hospital Information
+              </h4>
+              <p className="text-xs text-[#567C8D]">
+                Locate emergency rooms, simulated bed capacities, and casualty intake facilities.
+              </p>
+            </div>
+          </div>
+          <ArrowRight className="w-5 h-5 text-red-600" />
+        </div>
+
+        <div
+          onClick={() => onNavigateTab('maps')}
+          className="bg-white rounded-3xl p-6 border border-[#C8D9E6]/70 shadow-sm hover:shadow-md transition cursor-pointer flex items-center justify-between"
+        >
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-2xl bg-blue-50 flex items-center justify-center text-blue-600">
               <MapPin className="w-6 h-6" />
             </div>
             <div>
@@ -357,7 +399,7 @@ export const DuringDashboardView: React.FC<DuringDashboardViewProps> = ({
               </p>
             </div>
           </div>
-          <ArrowRight className="w-5 h-5 text-red-600" />
+          <ArrowRight className="w-5 h-5 text-blue-600" />
         </div>
       </div>
 

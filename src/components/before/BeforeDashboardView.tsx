@@ -15,6 +15,7 @@ import {
   Clock,
   Building2,
   ExternalLink,
+  Activity,
 } from 'lucide-react';
 
 interface BeforeDashboardViewProps {
@@ -118,8 +119,8 @@ export const BeforeDashboardView: React.FC<BeforeDashboardViewProps> = ({
         </div>
       )}
 
-      {/* Summary Cards Grid (4 cards for Citizen, 3 cards for Authority) */}
-      <div className={`grid grid-cols-1 sm:grid-cols-2 ${isAuthority ? 'lg:grid-cols-3' : 'lg:grid-cols-4'} gap-6`}>
+      {/* Summary Cards Grid */}
+      <div className={`grid grid-cols-1 sm:grid-cols-2 ${isAuthority ? 'lg:grid-cols-4' : 'lg:grid-cols-3 xl:grid-cols-5'} gap-6`}>
         {/* Card 1: Registered Household (NON-AUTHORITY ONLY) */}
         {!isAuthority && (
           <div className="bg-white rounded-3xl p-6 border border-[#C8D9E6]/60 shadow-sm hover:shadow-md transition">
@@ -208,6 +209,37 @@ export const BeforeDashboardView: React.FC<BeforeDashboardViewProps> = ({
             <span>Available: {shelters.filter((s) => s.status === 'AVAILABLE').length}</span>
             <span className="text-amber-600 font-bold">
               Near full: {shelters.filter((s) => s.status === 'NEAR_CAPACITY' || s.status === 'OVER_CAPACITY').length}
+            </span>
+          </div>
+        </div>
+
+        {/* Card: Hospital Information (ALL ROLES) */}
+        <div className="bg-white rounded-3xl p-6 border border-[#C8D9E6]/60 shadow-sm hover:shadow-md transition">
+          <div className="flex items-center justify-between mb-4">
+            <div className="w-10 h-10 rounded-xl bg-red-50 flex items-center justify-center text-red-600">
+              <Activity className="w-5 h-5" />
+            </div>
+            <button
+              type="button"
+              onClick={() => onNavigateTab('hospitals')}
+              className="text-[11px] font-bold text-[#567C8D] hover:text-[#2F4156] flex items-center gap-1"
+            >
+              View All <ArrowRight className="w-3 h-3" />
+            </button>
+          </div>
+          <p className="text-xs font-bold uppercase tracking-wider text-[#567C8D]">
+            Hospital Information
+          </p>
+          <div className="mt-2 flex items-baseline gap-2">
+            <span className="text-3xl font-bold font-['Space_Grotesk',sans-serif] text-[#2F4156]">
+              10
+            </span>
+            <span className="text-xs font-semibold text-[#567C8D]">Medical Facilities</span>
+          </div>
+          <div className="mt-4 pt-3 border-t border-[#F5EFEB] text-[11px] text-[#567C8D] flex items-center justify-between">
+            <span>24/7 Emergency Care</span>
+            <span className="text-emerald-700 font-bold">
+              Active Trauma
             </span>
           </div>
         </div>
@@ -335,6 +367,28 @@ export const BeforeDashboardView: React.FC<BeforeDashboardViewProps> = ({
               <ChevronRight className="w-4 h-4 text-[#567C8D]" />
             </div>
 
+            <div
+              onClick={() => onNavigateTab('hospitals')}
+              className="p-4 rounded-2xl bg-[#F5EFEB]/60 hover:bg-[#F5EFEB] border border-[#C8D9E6]/40 flex items-center justify-between cursor-pointer transition"
+            >
+              <div className="flex items-center gap-3.5">
+                <div className="w-9 h-9 rounded-xl bg-white flex items-center justify-center text-red-600 shadow-sm">
+                  <Activity className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-[#2F4156]">
+                    {isAuthority ? '2. Review Hospital & Medical Network' : '3. Check Nearby Hospital Information'}
+                  </h4>
+                  <p className="text-[11px] text-[#567C8D]">
+                    {isAuthority
+                      ? 'Review hospital locations, simulated bed telemetry, and emergency departments'
+                      : 'Explore nearby hospitals, emergency readiness, and doctor availability before onset'}
+                  </p>
+                </div>
+              </div>
+              <ChevronRight className="w-4 h-4 text-[#567C8D]" />
+            </div>
+
             {!isAuthority ? (
               <div
                 onClick={() => onNavigateTab('reconfirmation')}
@@ -346,7 +400,7 @@ export const BeforeDashboardView: React.FC<BeforeDashboardViewProps> = ({
                   </div>
                   <div>
                     <h4 className="text-xs font-bold text-[#2F4156]">
-                      3. Reconfirm 30-Hour Location Status
+                      4. Reconfirm 30-Hour Location Status
                     </h4>
                     <p className="text-[11px] text-[#567C8D]">
                       Validate that your emergency intentions have not changed
@@ -366,7 +420,7 @@ export const BeforeDashboardView: React.FC<BeforeDashboardViewProps> = ({
                   </div>
                   <div>
                     <h4 className="text-xs font-bold text-[#2F4156]">
-                      2. Inspect Expected Building Occupancy
+                      3. Inspect Expected Building Occupancy
                     </h4>
                     <p className="text-[11px] text-[#567C8D]">
                       Monitor structural census, population distribution, and shelter demand
