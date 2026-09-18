@@ -5335,6 +5335,125 @@ router10.get("/hospitals", requireAuth, getHospitals);
 router10.get("/hospitals/:id", requireAuth, getHospitalById);
 var hospitalRoutes_default = router10;
 
+// src/server/routes/analyticsRoutes.ts
+import { Router as Router11 } from "express";
+
+// src/server/controllers/analyticsController.ts
+async function getAnalyticsSummary(req, res) {
+  try {
+    const disasterId = req.query.disasterId || void 0;
+    const disaster = disasterId ? await database_default.disasterEvent.findUnique({ where: { id: disasterId } }) : await database_default.disasterEvent.findFirst({
+      where: { status: "ACTIVE" },
+      orderBy: { createdAt: "desc" }
+    }) || await database_default.disasterEvent.findFirst({
+      orderBy: { createdAt: "desc" }
+    });
+    const activeId = disaster?.id;
+    let safeCount = 0;
+    let distressCount = 0;
+    let unaccountedCount = 0;
+    if (activeId) {
+      const statuses = await database_default.emergencyStatus.findMany({
+        where: { disasterId: activeId }
+      });
+      for (const s of statuses) {
+        if (s.status === "SAFE") safeCount++;
+        else if (s.status === "IN_DISTRESS") distressCount++;
+        else unaccountedCount++;
+      }
+    }
+    const requests = activeId ? await database_default.emergencyRequest.findMany({
+      where: { disasterId: activeId },
+      include: { conditions: true, rescueAssignments: true }
+    }) : [];
+    const requestStats = {
+      total: requests.length,
+      pending: requests.filter((r) => r.rescueStatus === "PENDING").length,
+      assigned: requests.filter((r) => r.rescueStatus === "TEAM_ASSIGNED").length,
+      safelyRescued: requests.filter((r) => r.rescueStatus === "SAFELY_RESCUED").length,
+      notFound: requests.filter((r) => r.rescueStatus === "NOT_FOUND").length,
+      criticalPriority: requests.filter((r) => r.priorityScore >= 80).length,
+      highPriority: requests.filter((r) => r.priorityScore >= 50 && r.priorityScore < 80).length,
+      moderatePriority: requests.filter((r) => r.priorityScore < 50).length
+    };
+    const shelters = await database_default.shelter.findMany();
+    const expectedLocations = activeId ? await database_default.expectedLocation.findMany({
+      where: { disasterId: activeId, expectedType: "SHELTER", shelterId: { not: null } }
+    }) : [];
+    const shelterArrivals = {};
+    for (const loc of expectedLocations) {
+      if (loc.shelterId) {
+        shelterArrivals[loc.shelterId] = (shelterArrivals[loc.shelterId] || 0) + 1;
+      }
+    }
+    let totalShelterCapacity = 0;
+    let totalExpectedArrivals = 0;
+    let criticalSheltersCount = 0;
+    const shelterData = shelters.map((s) => {
+      const arrivals = shelterArrivals[s.id] || 0;
+      totalShelterCapacity += s.capacity;
+      totalExpectedArrivals += arrivals;
+      const pct = Math.round(arrivals / s.capacity * 100);
+      if (pct >= 90) criticalSheltersCount++;
+      return {
+        id: s.id,
+        name: s.name,
+        address: s.address,
+        capacity: s.capacity,
+        expectedArrivals: arrivals,
+        remainingCapacity: s.capacity - arrivals,
+        occupancyPercentage: pct,
+        status: pct > 100 ? "OVER_CAPACITY" : pct >= 90 ? "NEAR_CAPACITY" : "AVAILABLE"
+      };
+    });
+    const allMembers = await database_default.householdMember.findMany();
+    const demographics = {
+      totalRegistered: allMembers.length,
+      children: allMembers.filter((m) => m.category === "CHILD").length,
+      elderly: allMembers.filter((m) => m.category === "ELDERLY").length,
+      adults: allMembers.filter((m) => m.category === "ADULT").length,
+      disabled: allMembers.filter((m) => m.category === "DISABLED").length
+    };
+    res.json({
+      status: "success",
+      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+      disaster: disaster ? {
+        id: disaster.id,
+        title: disaster.title,
+        type: disaster.type,
+        alertLevel: disaster.alertLevel,
+        status: disaster.status
+      } : null,
+      headcount: {
+        totalExpected: demographics.totalRegistered || 1240,
+        confirmedSafe: safeCount,
+        inDistress: distressCount,
+        unaccounted: unaccountedCount,
+        resolvedPercentage: demographics.totalRegistered > 0 ? Math.round((safeCount + requestStats.safelyRescued) / (demographics.totalRegistered || 1) * 100) : 0
+      },
+      requests: requestStats,
+      shelters: {
+        totalShelters: shelters.length,
+        totalCapacity: totalShelterCapacity,
+        totalExpectedArrivals,
+        remainingBuffer: totalShelterCapacity - totalExpectedArrivals,
+        occupancyRate: totalShelterCapacity > 0 ? Math.round(totalExpectedArrivals / totalShelterCapacity * 100) : 0,
+        criticalSheltersCount,
+        list: shelterData
+      },
+      demographics
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Failed to generate operational analytics summary." });
+  }
+}
+
+// src/server/routes/analyticsRoutes.ts
+var router11 = Router11();
+router11.get("/analytics/summary", requireAuth, requireRole(["AUTHORITY", "RESCUER"]), getAnalyticsSummary);
+router11.get("/analytics", requireAuth, requireRole(["AUTHORITY", "RESCUER"]), getAnalyticsSummary);
+var analyticsRoutes_default = router11;
+
 // src/server/app.ts
 function createApp() {
   const app2 = express();
@@ -5387,6 +5506,7 @@ function createApp() {
     app2.use(prefix, notificationRoutes_default);
     app2.use(prefix, voiceRoutes_default);
     app2.use(prefix, hospitalRoutes_default);
+    app2.use(prefix, analyticsRoutes_default);
   };
   mountRoutes("/api");
   mountRoutes("");

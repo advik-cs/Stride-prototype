@@ -87,6 +87,7 @@ export const en = {
   'navigation.buildings': 'Buildings',
   'navigation.maps': 'Maps',
   'navigation.rescue': 'Rescue Status',
+  'navigation.liveAnalytics': 'Live Analytics',
 
   'nav.essentials': 'Essentials',
   'nav.household': 'Household Members',

@@ -25,6 +25,7 @@ import { RescueOperationsView } from './components/during/RescueOperationsView.t
 import { OperationalWeatherView } from './components/common/OperationalWeatherView.tsx';
 import { FloodXView } from './components/floodx/FloodXView.tsx';
 import { HospitalInformationView } from './components/hospital/HospitalInformationView.tsx';
+import { LiveAnalyticsView } from './components/analytics/LiveAnalyticsView.tsx';
 
 import { Loader2 } from 'lucide-react';
 
@@ -43,12 +44,30 @@ export default function App() {
         }
         return 'FLOODX';
       }
+      if (p === '/analytics' || p === '/during/analytics' || window.location.hash === '#analytics') {
+        const stored = authService.getStoredUser();
+        if (stored?.role === 'CITIZEN') {
+          return 'BEFORE';
+        }
+        return 'DURING';
+      }
       if (p === '/during' || window.location.hash === '#during') return 'DURING';
     }
     return 'BEFORE';
   });
   const [beforeTab, setBeforeTab] = useState<BeforeTab>('dashboard');
-  const [duringTab, setDuringTab] = useState<DuringTab>('dashboard');
+  const [duringTab, setDuringTab] = useState<DuringTab>(() => {
+    if (typeof window !== 'undefined') {
+      const p = window.location.pathname.toLowerCase();
+      if (p === '/analytics' || p === '/during/analytics' || window.location.hash === '#analytics') {
+        const stored = authService.getStoredUser();
+        if (stored && stored.role !== 'CITIZEN') {
+          return 'analytics';
+        }
+      }
+    }
+    return 'dashboard';
+  });
 
   const [disasters, setDisasters] = useState<DisasterEvent[]>([]);
   const [activeDisaster, setActiveDisaster] = useState<DisasterEvent | null>(null);
@@ -65,6 +84,16 @@ export default function App() {
           return;
         }
         setMode('FLOODX');
+      } else if (p === '/analytics' || p === '/during/analytics' || window.location.hash === '#analytics') {
+        const stored = authService.getStoredUser();
+        if (stored?.role === 'CITIZEN') {
+          setMode('BEFORE');
+          setDuringTab('dashboard');
+          window.history.replaceState(null, '', '/before');
+          return;
+        }
+        setMode('DURING');
+        setDuringTab('analytics');
       } else if (p === '/during' || window.location.hash === '#during') {
         setMode('DURING');
       } else {
@@ -77,9 +106,16 @@ export default function App() {
     const user = authService.getStoredUser();
     if (user) {
       setCurrentUser(user);
-      if (user.role === 'CITIZEN' && (window.location.pathname.toLowerCase() === '/floodx' || window.location.hash === '#floodx')) {
-        setMode('BEFORE');
-        window.history.replaceState(null, '', '/before');
+      if (user.role === 'CITIZEN') {
+        const currentPath = window.location.pathname.toLowerCase();
+        if (currentPath === '/floodx' || window.location.hash === '#floodx') {
+          setMode('BEFORE');
+          window.history.replaceState(null, '', '/before');
+        } else if (currentPath === '/analytics' || currentPath === '/during/analytics' || window.location.hash === '#analytics') {
+          setMode('BEFORE');
+          setDuringTab('dashboard');
+          window.history.replaceState(null, '', '/before');
+        }
       }
     }
     setAuthChecking(false);
@@ -97,6 +133,18 @@ export default function App() {
       }
     }
   }, [currentUser?.role, mode]);
+
+  // Protect Live Analytics tab: Citizen can NEVER access, and only available during DURING mode
+  useEffect(() => {
+    if (duringTab === 'analytics') {
+      if (currentUser?.role === 'CITIZEN' || mode !== 'DURING') {
+        setDuringTab('dashboard');
+        if (typeof window !== 'undefined') {
+          window.history.replaceState(null, '', mode === 'DURING' ? '/during' : '/before');
+        }
+      }
+    }
+  }, [currentUser?.role, mode, duringTab]);
 
   // Protect buildings tab from citizen access
   useEffect(() => {
@@ -340,6 +388,14 @@ export default function App() {
             <OperationalWeatherView
               user={currentUser}
               activeDisaster={activeDisaster}
+            />
+          )}
+
+          {duringTab === 'analytics' && currentUser.role !== 'CITIZEN' && mode === 'DURING' && (
+            <LiveAnalyticsView
+              user={currentUser}
+              activeDisaster={activeDisaster}
+              onNavigateTab={(t) => setDuringTab(t)}
             />
           )}
         </>

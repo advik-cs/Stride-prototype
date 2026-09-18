@@ -23,6 +23,7 @@ import {
   ChevronRight,
   Waves,
   CloudRain,
+  BarChart3,
 } from 'lucide-react';
 
 export type DisasterMode = 'BEFORE' | 'DURING' | 'FLOODX';
@@ -48,7 +49,8 @@ export type DuringTab =
   | 'maps'
   | 'rescue'
   | 'occupancy'
-  | 'weather';
+  | 'weather'
+  | 'analytics';
 
 interface DashboardLayoutProps {
   user: User;
@@ -135,6 +137,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
     { id: 'rescue', label: t('navigation.rescue'), icon: Radio },
     ...(user.role !== 'CITIZEN' ? [
       { id: 'occupancy', label: t('navigation.occupancy'), icon: Building2 },
+      { id: 'analytics', label: t('navigation.liveAnalytics') || 'Live Analytics', icon: BarChart3 },
     ] : []),
   ];
 
