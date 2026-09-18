@@ -1,7 +1,7 @@
 <div align="center">
 
 # 🌊 STRIDE
-### Smart Triage & Real-Time Incident Dispatch Engine
+### Sensor Trend Intelligence for Detection & Evaluation
 
 **Next-Generation Disaster Management, Multi-Role Command Intelligence & Deterministic Emergency Response**
 
@@ -53,7 +53,7 @@
 
 Urban disasters such as sudden inundations, flash floods, and cyclonic storms overwhelm civic infrastructure within minutes. The difference between survival and mass casualty lies in the speed and accuracy of incident triage. 
 
-**STRIDE (Smart Triage & Real-Time Incident Dispatch Engine)** is an integrated disaster-management intelligence and emergency-response platform designed for high-density metropolitan ecosystems (demonstrated with live canonical data for Bengaluru, Karnataka). STRIDE connects **Citizens**, **Emergency Operations Command (Authorities)**, and **First Responders (Rescuers)** across the disaster lifecycle: from proactive household preparedness and vulnerability indexing **BEFORE** an event, to AI-assisted voice triage, deterministic priority ranking, tactical dispatch, and live civilian accountability **DURING** an active crisis.
+**STRIDE (Sensor Trend Intelligence for Detection & Evaluation)** is an integrated disaster-management intelligence and emergency-response platform designed for high-density metropolitan ecosystems (demonstrated with live canonical data for Bengaluru, Karnataka). STRIDE connects **Citizens**, **Emergency Operations Command (Authorities)**, and **First Responders (Rescuers)** across the disaster lifecycle: from proactive household preparedness and vulnerability indexing **BEFORE** an event, to AI-assisted voice triage, deterministic priority ranking, tactical dispatch, and live civilian accountability **DURING** an active crisis.
 
 ---
 
@@ -735,7 +735,7 @@ For hackathon judges, evaluators, and reviewers, the login portal (`/login`) inc
 
 <div align="center">
 
-**STRIDE — Smart Triage & Real-Time Incident Dispatch Engine**  
+**STRIDE — Sensor Trend Intelligence for Detection & Evaluation**  
 *Built for Hackathons, Incident Commanders, First Responders, and Civilians.*
 
 </div>
