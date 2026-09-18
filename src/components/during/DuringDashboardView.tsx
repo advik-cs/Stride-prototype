@@ -375,7 +375,7 @@ export const DuringDashboardView: React.FC<DuringDashboardViewProps> = ({
                 Hospital Information
               </h4>
               <p className="text-xs text-[#567C8D]">
-                Locate emergency rooms, simulated bed capacities, and casualty intake facilities.
+                Locate emergency rooms, bed capacities, and casualty intake facilities.
               </p>
             </div>
           </div>

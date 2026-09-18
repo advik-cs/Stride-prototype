@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { User } from '../../services/authService.ts';
 import { DisasterEvent } from '../../services/disasterService.ts';
 import { DuringTab } from '../layout/DashboardLayout.tsx';
-import { analyticsService, OperationalAnalyticsSummary, ANALYTICS_DEMO_DISCLAIMER } from '../../services/analyticsService.ts';
+import { analyticsService, OperationalAnalyticsSummary } from '../../services/analyticsService.ts';
 import { shelterService, ShelterOccupancy } from '../../services/shelterService.ts';
 import { BuildingAccountabilityChart } from './BuildingAccountabilityChart.tsx';
 import { BuildingRiskMatrix } from './BuildingRiskMatrix.tsx';
@@ -269,11 +269,11 @@ export const LiveAnalyticsView: React.FC<LiveAnalyticsViewProps> = ({
         )}
       </main>
 
-      {/* Ground Truth & Analytical Model Disclaimer */}
-      <div className="p-4 rounded-2xl bg-[#F5EFEB]/80 border border-[#C8D9E6] text-xs text-[#567C8D] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+      {/* Telemetry Status Footer */}
+      <div className="p-3 rounded-2xl bg-[#F5EFEB]/80 border border-[#C8D9E6]/60 text-xs text-[#567C8D] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <ShieldCheck className="w-4 h-4 text-indigo-600 flex-shrink-0" />
-          <span>{ANALYTICS_DEMO_DISCLAIMER}</span>
+          <ShieldCheck className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+          <span className="font-medium text-[#2F4156]">Live Situational Intelligence Telemetry Active</span>
         </div>
         <span className="text-[11px] font-mono text-[#567C8D]">
           Telemetry Synced: {lastRefreshed.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}

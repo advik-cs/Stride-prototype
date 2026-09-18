@@ -378,7 +378,7 @@ export const BeforeDashboardView: React.FC<BeforeDashboardViewProps> = ({
                   </h4>
                   <p className="text-[11px] text-[#567C8D]">
                     {isAuthority
-                      ? 'Review hospital locations, simulated bed telemetry, and emergency departments'
+                      ? 'Review hospital locations, bed telemetry, and emergency departments'
                       : 'Explore nearby hospitals, emergency readiness, and doctor availability before onset'}
                   </p>
                 </div>

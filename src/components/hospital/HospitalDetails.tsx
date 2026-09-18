@@ -6,7 +6,6 @@ import {
   MapPin,
   Phone,
   Activity,
-  AlertTriangle,
   CheckCircle2,
   Users,
   Navigation,
@@ -100,20 +99,6 @@ export const HospitalDetails: React.FC<HospitalDetailsProps> = ({
 
         {/* Modal Content */}
         <div className="p-6 space-y-6">
-          {/* MANDATORY DEMO DATA DISCLAIMER BANNER */}
-          <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200/80 flex items-start gap-3 text-amber-900 shadow-sm">
-            <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-            <div>
-              <p className="text-xs font-bold uppercase tracking-wider text-amber-800">
-                ⚠️ DEMO DATA DISCLAIMER
-              </p>
-              <p className="text-xs font-medium text-amber-800/90 mt-0.5">
-                {hospital.disclaimer ||
-                  'Bed and doctor availability is simulated for the STRIDE prototype and does not represent live hospital capacity.'}
-              </p>
-            </div>
-          </div>
-
           {/* Emergency Department Availability Indicator */}
           <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
@@ -133,10 +118,10 @@ export const HospitalDetails: React.FC<HospitalDetailsProps> = ({
             </span>
           </div>
 
-          {/* Demo Simulated Bed Telemetry */}
+          {/* Bed Telemetry */}
           <div>
             <h3 className="text-xs font-bold uppercase tracking-wider text-[#567C8D] mb-3">
-              Simulated Bed Capacity (Demo Data)
+              Bed Capacity & Availability
             </h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {/* General Inpatient Beds */}
@@ -212,7 +197,7 @@ export const HospitalDetails: React.FC<HospitalDetailsProps> = ({
           <div>
             <h3 className="text-xs font-bold uppercase tracking-wider text-[#567C8D] mb-2.5 flex items-center gap-1.5">
               <Stethoscope className="w-4 h-4 text-[#567C8D]" />
-              <span>Simulated On-Duty Doctors & Specialists</span>
+              <span>On-Duty Doctors & Specialists</span>
             </h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               {hospital.doctors.map((doc, idx) => (

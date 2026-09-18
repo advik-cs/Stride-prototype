@@ -170,12 +170,12 @@ export const HospitalList: React.FC<HospitalListProps> = ({
                   </span>
                 </div>
 
-                {/* Simulated Telemetry Row */}
+                {/* Bed Telemetry Row */}
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-4 pt-3 border-t border-[#F5EFEB]">
-                  {/* Demo Available Beds */}
+                  {/* Available Beds */}
                   <div className="p-2.5 rounded-2xl bg-[#F5EFEB]/50">
                     <span className="text-[10px] font-bold uppercase tracking-wider text-[#567C8D] block">
-                      Demo Beds
+                      Available Beds
                     </span>
                     <p className="text-base font-bold font-['Space_Grotesk'] text-[#2F4156] mt-0.5">
                       <span
@@ -193,10 +193,10 @@ export const HospitalList: React.FC<HospitalListProps> = ({
                     </p>
                   </div>
 
-                  {/* Demo ICU Beds */}
+                  {/* ICU Beds */}
                   <div className="p-2.5 rounded-2xl bg-[#F5EFEB]/50">
                     <span className="text-[10px] font-bold uppercase tracking-wider text-[#567C8D] block">
-                      Demo ICU Beds
+                      ICU Beds
                     </span>
                     <p className="text-base font-bold font-['Space_Grotesk'] text-[#2F4156] mt-0.5">
                       <span className="text-blue-700">{h.icuBedsAvailable}</span>

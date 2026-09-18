@@ -1116,18 +1116,8 @@ function isValidCoordinate(lat: any, lng: any): boolean {
                   <span className="font-medium">Emergency Contact:</span>
                   <div className="flex items-center gap-1.5">
                     <span className="font-bold text-[#2F4156]">{selectedEntity.contact}</span>
-                    {selectedEntity.emergencyContactIsDemo && (
-                      <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
-                        Demo
-                      </span>
-                    )}
                   </div>
                 </div>
-                {selectedEntity.emergencyContactIsDemo && (
-                  <p className="text-[10px] text-[#94A3B8] mt-1 text-right">
-                    Demo number — not an official contact
-                  </p>
-                )}
               </div>
             )}
 

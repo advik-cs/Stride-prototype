@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { hospitalService, Hospital, DEMO_DATA_DISCLAIMER } from '../../services/hospitalService.ts';
+import { hospitalService, Hospital } from '../../services/hospitalService.ts';
 import { User } from '../../services/authService.ts';
 import { DisasterEvent } from '../../services/disasterService.ts';
 import { HospitalList } from './HospitalList.tsx';
@@ -84,7 +84,7 @@ export const HospitalInformationView: React.FC<HospitalInformationViewProps> = (
           </h1>
           <p className="text-xs sm:text-sm text-[#567C8D] mt-1">
             {isCitizen
-              ? 'Locate nearby medical centers, emergency trauma facilities, and simulated bed availability before and during emergencies.'
+              ? 'Locate nearby medical centers, emergency trauma facilities, and bed availability before and during emergencies.'
               : 'Jurisdiction-wide hospital capacity, emergency readiness, and specialized medical resource intelligence.'}
           </p>
         </div>
@@ -109,7 +109,7 @@ export const HospitalInformationView: React.FC<HospitalInformationViewProps> = (
               className={`p-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
                 activeLayout === 'LIST' ? 'bg-[#2F4156] text-white shadow-xs' : 'text-[#567C8D] hover:text-[#2F4156]'
               }`}
-              title="Directory List View"
+              title="List Directory View"
             >
               <LayoutList className="w-3.5 h-3.5" />
               <span className="hidden md:inline">List</span>
@@ -138,19 +138,6 @@ export const HospitalInformationView: React.FC<HospitalInformationViewProps> = (
         </div>
       </div>
 
-      {/* MANDATORY PROMINENT DEMO DATA DISCLAIMER */}
-      <div className="p-4 rounded-3xl bg-amber-50 border border-amber-200 flex items-start gap-3.5 text-amber-900 shadow-xs">
-        <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-        <div>
-          <h4 className="text-xs font-extrabold uppercase tracking-wider text-amber-900">
-            ⚠️ DEMO DATA DISCLAIMER
-          </h4>
-          <p className="text-xs font-medium text-amber-800/90 mt-0.5">
-            {DEMO_DATA_DISCLAIMER}
-          </p>
-        </div>
-      </div>
-
       {/* Telemetry Overview Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Total Hospitals */}
@@ -166,30 +153,30 @@ export const HospitalInformationView: React.FC<HospitalInformationViewProps> = (
           </span>
         </div>
 
-        {/* Demo Simulated Available Beds */}
+        {/* Available Beds */}
         <div className="p-5 rounded-3xl bg-white border border-[#C8D9E6]/60 shadow-xs">
           <span className="text-[10px] font-bold uppercase tracking-wider text-[#567C8D] block">
-            Simulated Available Beds
+            Available Beds
           </span>
           <p className="text-2xl font-bold font-['Space_Grotesk'] text-emerald-700 mt-1">
             {totalAvailableBeds}
             <span className="text-xs font-normal text-[#567C8D] ml-1.5">/ {totalTotalBeds} Total</span>
           </p>
           <span className="text-[11px] text-[#567C8D] mt-0.5 block">
-            Simulated demo capacity
+            Operational inpatient capacity
           </span>
         </div>
 
-        {/* Demo Simulated ICU Beds */}
+        {/* ICU Beds */}
         <div className="p-5 rounded-3xl bg-white border border-[#C8D9E6]/60 shadow-xs">
           <span className="text-[10px] font-bold uppercase tracking-wider text-[#567C8D] block">
-            Simulated ICU Beds
+            ICU Beds
           </span>
           <p className="text-2xl font-bold font-['Space_Grotesk'] text-blue-700 mt-1">
             {totalIcuBeds}
           </p>
           <span className="text-[11px] text-[#567C8D] mt-0.5 block">
-            Critical care beds available (Demo)
+            Critical care beds available
           </span>
         </div>
 
@@ -212,7 +199,7 @@ export const HospitalInformationView: React.FC<HospitalInformationViewProps> = (
         <div className="bg-white rounded-3xl p-16 text-center border border-[#C8D9E6]/60 shadow-xs">
           <Loader2 className="w-8 h-8 text-[#567C8D] animate-spin mx-auto mb-3" />
           <p className="text-sm font-bold text-[#2F4156]">Loading canonical hospital directory...</p>
-          <p className="text-xs text-[#567C8D] mt-1">Retrieving simulated bed telemetry and real facility locations.</p>
+          <p className="text-xs text-[#567C8D] mt-1">Retrieving bed telemetry and facility locations.</p>
         </div>
       ) : (
         <>

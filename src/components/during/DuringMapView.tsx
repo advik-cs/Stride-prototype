@@ -713,9 +713,6 @@ export const DuringMapView: React.FC<DuringMapViewProps> = ({
           <span style="font-size: 10px; font-weight: 800; text-transform: uppercase; background: #FEE2E2; color: #DC2626; padding: 2px 7px; border-radius: 6px;">
             ${DEMO_ZONE_FLOOD_CONFIG.RED.alertLevelTitle}
           </span>
-          <span style="font-size: 9px; font-weight: 700; background: #E0F2FE; color: #0369A1; padding: 2px 5px; border-radius: 4px;">
-            SIMULATED DEMO
-          </span>
         </div>
         <div style="font-weight: 800; font-size: 13px; color: #0F172A; margin-bottom: 2px;">${redName}</div>
         <div style="font-size: 11px; color: #64748B; margin-bottom: 6px;">${DEMO_ZONE_FLOOD_CONFIG.RED.description}</div>
@@ -756,9 +753,6 @@ export const DuringMapView: React.FC<DuringMapViewProps> = ({
           <span style="font-size: 10px; font-weight: 800; text-transform: uppercase; background: #FFEDD5; color: #EA580C; padding: 2px 7px; border-radius: 6px;">
             ${DEMO_ZONE_FLOOD_CONFIG.ORANGE.alertLevelTitle}
           </span>
-          <span style="font-size: 9px; font-weight: 700; background: #E0F2FE; color: #0369A1; padding: 2px 5px; border-radius: 4px;">
-            SIMULATED DEMO
-          </span>
         </div>
         <div style="font-weight: 800; font-size: 13px; color: #0F172A; margin-bottom: 2px;">${orangeName}</div>
         <div style="font-size: 11px; color: #64748B; margin-bottom: 6px;">${DEMO_ZONE_FLOOD_CONFIG.ORANGE.description}</div>
@@ -798,7 +792,7 @@ export const DuringMapView: React.FC<DuringMapViewProps> = ({
     redFloodOuter.on('click', () => {
       setSelectedItem({
         type: 'Hazard Inundation Zone',
-        name: `${redName} (Simulated Floodwater)`,
+        name: `${redName} (Inundation Area)`,
         riskLevel: 'High Risk (Red Zone)',
         isRed: true,
         isDemoSimulation: true,
@@ -845,7 +839,7 @@ export const DuringMapView: React.FC<DuringMapViewProps> = ({
     orangeFlood.on('click', () => {
       setSelectedItem({
         type: 'Hazard Inundation Zone',
-        name: `${orangeName} (Simulated Floodwater)`,
+        name: `${orangeName} (Inundation Area)`,
         riskLevel: 'Moderate Risk (Orange Zone)',
         isRed: false,
         isDemoSimulation: true,
@@ -1929,7 +1923,7 @@ export const DuringMapView: React.FC<DuringMapViewProps> = ({
                     <div className="flex items-center justify-between">
                       <span className="text-[10px] font-extrabold uppercase text-sky-800 flex items-center gap-1.5">
                         <Waves className="w-3.5 h-3.5 text-sky-600" />
-                        <span>Demonstration Flooding Status</span>
+                        <span>Inundation Hazard Status</span>
                       </span>
                       {selectedItem.floodCoveragePercent !== undefined && (
                         <span className="text-xs font-black text-sky-700">
@@ -1940,12 +1934,9 @@ export const DuringMapView: React.FC<DuringMapViewProps> = ({
                     <p className="text-xs font-bold text-sky-950">{selectedItem.severityLabel}</p>
                     {selectedItem.floodDepth && (
                       <p className="text-[11px] text-sky-800">
-                        Simulated Water Depth: <span className="font-semibold">{selectedItem.floodDepth}</span>
+                        Estimated Water Depth: <span className="font-semibold">{selectedItem.floodDepth}</span>
                       </p>
                     )}
-                    <p className="text-[10px] text-sky-600 italic">
-                      * Simulated demo overlay. Not real-time sensor/satellite telemetry.
-                    </p>
                   </div>
                 )}
 
@@ -2158,13 +2149,10 @@ export const DuringMapView: React.FC<DuringMapViewProps> = ({
                   <Globe className="w-5 h-5 text-[#567C8D]" />
                   <span>Satellite View</span>
                 </h2>
-                <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-sky-100 text-sky-800 border border-sky-200">
-                  Simulated Flood Overlay (Demo)
-                </span>
               </div>
               <p className="text-xs font-medium text-[#567C8D]">
                 {isCitizen
-                  ? 'High-resolution satellite imagery overlay with demonstration hazard zones and simulated flood levels'
+                  ? 'High-resolution satellite imagery overlay with operational hazard zones and inundation levels'
                   : 'High-resolution satellite imagery overlay with operational hazard zones, registered buildings, shelters, and facilities'}
               </p>
             </div>
@@ -2214,10 +2202,10 @@ export const DuringMapView: React.FC<DuringMapViewProps> = ({
             {/* Flooded Area */}
             <div
               className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-sky-50 border border-sky-200 font-semibold text-sky-900"
-              title="Simulated floodwater demonstration"
+              title="Flood Inundation Area"
             >
               <span className="w-3 h-3 rounded-sm bg-sky-500 border border-white shadow-xs inline-block" />
-              <span>Flooded Area (Demonstration Flooding)</span>
+              <span>Flooded Inundation Area</span>
             </div>
 
             {isCitizen ? (

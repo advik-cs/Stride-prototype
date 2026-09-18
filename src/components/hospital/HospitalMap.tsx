@@ -193,7 +193,7 @@ export const HospitalMap: React.FC<HospitalMapProps> = ({
         <p style="font-size: 11px; color: #567C8D; margin: 0 0 6px 0;">${h.address}</p>
         <div style="background: #F5EFEB; border-radius: 8px; padding: 6px 8px; font-size: 11px; color: #2F4156; margin-bottom: 6px;">
           <div>Distance: ${distStr}</div>
-          <div style="margin-top: 2px;">Simulated Available Beds: <strong style="color: ${markerColor}">${h.availableBeds}</strong> / ${h.totalBeds}</div>
+          <div style="margin-top: 2px;">Available Beds: <strong style="color: ${markerColor}">${h.availableBeds}</strong> / ${h.totalBeds}</div>
         </div>
         <button id="open-hosp-${h.id}" style="
           width: 100%;
