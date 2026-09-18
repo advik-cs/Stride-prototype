@@ -200,6 +200,7 @@ export const HouseholdMembersView: React.FC<HouseholdMembersViewProps> = ({
 
       console.log('[HouseholdMembersView] Saving disaster plans payload:', { locations: plans });
       await disasterService.setExpectedLocations(targetDisaster.id, plans);
+      await householdService.completeOnboarding().catch(() => {});
       await loadHouseholdAndPlans();
       setSaveSuccess(true);
 

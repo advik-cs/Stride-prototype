@@ -34,6 +34,7 @@ model Household {
   longitude      Float
   userId         String
   user           User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  onboardingCompleted Boolean        @default(false)
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt
 

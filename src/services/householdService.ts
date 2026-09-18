@@ -48,6 +48,10 @@ export const householdService = {
     return beforeApi.getHouseholdOnboardingStatus();
   },
 
+  async completeOnboarding(): Promise<{ success: boolean; completed: boolean }> {
+    return beforeApi.completeHouseholdOnboarding();
+  },
+
   async addMember(
     householdId: string,
     member: { name: string; age: number; relationship: string; category?: string }

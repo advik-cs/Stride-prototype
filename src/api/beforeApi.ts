@@ -272,6 +272,22 @@ export const beforeApi = {
     }
   },
 
+  async completeHouseholdOnboarding(): Promise<{ success: boolean; completed: boolean }> {
+    try {
+      return await beforeRequest<{ success: boolean; completed: boolean }>('/households/onboarding-complete', {
+        method: 'POST',
+      });
+    } catch {
+      try {
+        return await beforeRequest<{ success: boolean; completed: boolean }>('/citizen/onboarding-complete', {
+          method: 'POST',
+        });
+      } catch {
+        return { success: false, completed: false };
+      }
+    }
+  },
+
   // Disasters
   async getDisasters(): Promise<DisasterEvent[]> {
     return beforeRequest<DisasterEvent[]>('/disasters');

@@ -128,13 +128,9 @@ export const BeforeDashboardView: React.FC<BeforeDashboardViewProps> = ({
               <div className="w-10 h-10 rounded-xl bg-[#C8D9E6]/30 flex items-center justify-center text-[#2F4156]">
                 <Users className="w-5 h-5" />
               </div>
-              <button
-                type="button"
-                onClick={() => onNavigateTab('household')}
-                className="text-[11px] font-bold text-[#567C8D] hover:text-[#2F4156] flex items-center gap-1"
-              >
-                Manage <ArrowRight className="w-3 h-3" />
-              </button>
+              <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                Verified
+              </span>
             </div>
             <p className="text-xs font-bold uppercase tracking-wider text-[#567C8D]">
               Registered Household
@@ -325,23 +321,24 @@ export const BeforeDashboardView: React.FC<BeforeDashboardViewProps> = ({
           <div className="space-y-3">
             {!isAuthority && (
               <div
-                onClick={() => onNavigateTab('household')}
-                className="p-4 rounded-2xl bg-[#F5EFEB]/60 hover:bg-[#F5EFEB] border border-[#C8D9E6]/40 flex items-center justify-between cursor-pointer transition"
+                className="p-4 rounded-2xl bg-emerald-50/50 border border-emerald-200/70 flex items-center justify-between transition"
               >
                 <div className="flex items-center gap-3.5">
-                  <div className="w-9 h-9 rounded-xl bg-white flex items-center justify-center text-[#2F4156] shadow-sm">
-                    <Users className="w-4 h-4" />
+                  <div className="w-9 h-9 rounded-xl bg-white flex items-center justify-center text-emerald-600 shadow-sm border border-emerald-100">
+                    <CheckCircle2 className="w-4 h-4" />
                   </div>
                   <div>
                     <h4 className="text-xs font-bold text-[#2F4156]">
-                      1. Review Household Members & Plans
+                      1. Household Safety Plan Registered
                     </h4>
-                    <p className="text-[11px] text-[#567C8D]">
-                      Set expected location (Home, Shelter, Other City) for each person
+                    <p className="text-[11px] text-emerald-700 font-medium">
+                      Completed during initial onboarding
                     </p>
                   </div>
                 </div>
-                <ChevronRight className="w-4 h-4 text-[#567C8D]" />
+                <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-800 bg-white px-2 py-0.5 rounded-full border border-emerald-200">
+                  Completed
+                </span>
               </div>
             )}
 

@@ -708,25 +708,23 @@ async function getHouseholdOnboardingStatus(req, res) {
     const household = await database_default.household.findFirst({
       where: { userId: user.userId },
       include: {
-        members: {
-          include: {
-            expectedLocations: true
-          }
-        }
+        members: true
       }
     });
-    if (!household || household.members.length === 0) {
-      res.json({ completed: false, reason: "NO_HOUSEHOLD_OR_MEMBERS" });
+    if (!household || household.members.length === 0 || !household.onboardingCompleted) {
+      res.json({
+        completed: false,
+        householdId: household?.id || null,
+        totalMembers: household?.members.length || 0,
+        onboardingCompleted: Boolean(household?.onboardingCompleted)
+      });
       return;
     }
-    const hasSavedPlan = household.members.some(
-      (m) => m.expectedLocations && m.expectedLocations.length > 0
-    );
     res.json({
-      completed: hasSavedPlan,
+      completed: true,
       householdId: household.id,
       totalMembers: household.members.length,
-      hasSavedPlan
+      onboardingCompleted: true
     });
   } catch (error) {
     res.status(500).json({ error: error.message || "Failed to check onboarding status." });
@@ -742,17 +740,17 @@ async function completeHouseholdOnboarding(req, res) {
     const household = await database_default.household.findFirst({
       where: { userId: user.userId },
       include: {
-        members: {
-          include: {
-            expectedLocations: true
-          }
-        }
+        members: true
       }
     });
     if (!household || household.members.length === 0) {
       res.status(400).json({ error: "Household and members must be created before completing onboarding." });
       return;
     }
+    await database_default.household.update({
+      where: { id: household.id },
+      data: { onboardingCompleted: true }
+    });
     res.json({ success: true, completed: true, householdId: household.id });
   } catch (error) {
     res.status(500).json({ error: error.message || "Failed to complete household onboarding." });
@@ -1091,6 +1089,16 @@ async function setExpectedLocations(req, res) {
         }
       });
       results.push(record);
+    }
+    if (req.user?.userId) {
+      try {
+        await database_default.household.updateMany({
+          where: { userId: req.user.userId },
+          data: { onboardingCompleted: true }
+        });
+      } catch (markErr) {
+        console.warn("Failed to auto-mark household onboardingCompleted in setExpectedLocations:", markErr);
+      }
     }
     res.json({ message: "Expected locations updated successfully", results });
   } catch (error) {

@@ -330,6 +330,18 @@ export async function setExpectedLocations(req: AuthenticatedRequest, res: Respo
       results.push(record);
     }
 
+    // If user is a citizen, mark household onboarding as completed
+    if (req.user?.userId) {
+      try {
+        await prisma.household.updateMany({
+          where: { userId: req.user.userId },
+          data: { onboardingCompleted: true },
+        });
+      } catch (markErr) {
+        console.warn('Failed to auto-mark household onboardingCompleted in setExpectedLocations:', markErr);
+      }
+    }
+
     res.json({ message: 'Expected locations updated successfully', results });
   } catch (error: any) {
     res.status(500).json({ error: error.message || 'Failed to update expected locations.' });

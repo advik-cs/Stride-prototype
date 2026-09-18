@@ -34,7 +34,7 @@ import { Loader2 } from 'lucide-react';
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [authChecking, setAuthChecking] = useState(true);
-  const [onboardingCompleted, setOnboardingCompleted] = useState<boolean>(true);
+  const [onboardingCompleted, setOnboardingCompleted] = useState<boolean>(false);
   const [onboardingChecking, setOnboardingChecking] = useState<boolean>(false);
 
   // Disaster Mode & Tabs (synchronized with URL)
@@ -111,6 +111,7 @@ export default function App() {
     if (user) {
       setCurrentUser(user);
       if (user.role === 'CITIZEN') {
+        setOnboardingChecking(true);
         const currentPath = window.location.pathname.toLowerCase();
         if (currentPath === '/floodx' || window.location.hash === '#floodx') {
           setMode('BEFORE');
@@ -157,9 +158,16 @@ export default function App() {
     }
   }, [currentUser?.role, duringTab]);
 
-  // Protect household and reconfirmation tabs from non-citizen access in BEFORE mode
+  // Household is no longer a normal BEFORE tab (exclusively used by HouseholdOnboardingGate)
   useEffect(() => {
-    if (currentUser?.role !== 'CITIZEN' && (beforeTab === 'household' || beforeTab === 'reconfirmation')) {
+    if (beforeTab === 'household') {
+      setBeforeTab('dashboard');
+    }
+  }, [beforeTab]);
+
+  // Protect reconfirmation tab from non-citizen access in BEFORE mode
+  useEffect(() => {
+    if (currentUser?.role !== 'CITIZEN' && beforeTab === 'reconfirmation') {
       setBeforeTab('dashboard');
     }
   }, [currentUser?.role, beforeTab]);
@@ -233,7 +241,7 @@ export default function App() {
   const handleLogout = () => {
     authService.logout();
     setCurrentUser(null);
-    setOnboardingCompleted(true);
+    setOnboardingCompleted(false);
     setOnboardingChecking(false);
   };
 
@@ -313,13 +321,6 @@ export default function App() {
                 activeDisaster={activeDisaster}
               />
             </ErrorBoundary>
-          )}
-
-          {beforeTab === 'household' && currentUser.role === 'CITIZEN' && (
-            <HouseholdMembersView
-              user={currentUser}
-              activeDisaster={activeDisaster}
-            />
           )}
 
           {beforeTab === 'shelters' && (

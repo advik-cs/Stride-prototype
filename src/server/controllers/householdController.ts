@@ -403,7 +403,7 @@ export async function getHouseholdDisasterOccupancy(
  * A citizen has completed onboarding if:
  * 1. Their household exists in the database.
  * 2. It has at least 1 registered member.
- * 3. At least one member has a saved disaster expected location plan.
+ * 3. The household's onboardingCompleted field is explicitly true.
  */
 export async function getHouseholdOnboardingStatus(req: AuthenticatedRequest, res: Response): Promise<void> {
   try {
@@ -416,29 +416,25 @@ export async function getHouseholdOnboardingStatus(req: AuthenticatedRequest, re
     const household = await prisma.household.findFirst({
       where: { userId: user.userId },
       include: {
-        members: {
-          include: {
-            expectedLocations: true,
-          },
-        },
+        members: true,
       },
     });
 
-    if (!household || household.members.length === 0) {
-      res.json({ completed: false, reason: 'NO_HOUSEHOLD_OR_MEMBERS' });
+    if (!household || household.members.length === 0 || !household.onboardingCompleted) {
+      res.json({
+        completed: false,
+        householdId: household?.id || null,
+        totalMembers: household?.members.length || 0,
+        onboardingCompleted: Boolean(household?.onboardingCompleted),
+      });
       return;
     }
 
-    // A household is completed if at least one member has a saved disaster expected location
-    const hasSavedPlan = household.members.some(
-      (m) => m.expectedLocations && m.expectedLocations.length > 0
-    );
-
     res.json({
-      completed: hasSavedPlan,
+      completed: true,
       householdId: household.id,
       totalMembers: household.members.length,
-      hasSavedPlan,
+      onboardingCompleted: true,
     });
   } catch (error: any) {
     res.status(500).json({ error: error.message || 'Failed to check onboarding status.' });
@@ -459,11 +455,7 @@ export async function completeHouseholdOnboarding(req: AuthenticatedRequest, res
     const household = await prisma.household.findFirst({
       where: { userId: user.userId },
       include: {
-        members: {
-          include: {
-            expectedLocations: true,
-          },
-        },
+        members: true,
       },
     });
 
@@ -471,6 +463,11 @@ export async function completeHouseholdOnboarding(req: AuthenticatedRequest, res
       res.status(400).json({ error: 'Household and members must be created before completing onboarding.' });
       return;
     }
+
+    await prisma.household.update({
+      where: { id: household.id },
+      data: { onboardingCompleted: true },
+    });
 
     res.json({ success: true, completed: true, householdId: household.id });
   } catch (error: any) {

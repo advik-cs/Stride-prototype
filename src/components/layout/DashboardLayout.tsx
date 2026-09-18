@@ -118,7 +118,6 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
     ...(user.role !== 'CITIZEN' ? [{ id: 'weather', label: t('navigation.operationalWeather') || 'Operational Weather', icon: CloudRain }] : []),
     ...(user.role === 'CITIZEN' ? [{ id: 'essentials', label: t('navigation.essentials'), icon: ShieldCheck }] : []),
     { id: 'map', label: t('navigation.map'), icon: MapIcon },
-    ...(user.role === 'CITIZEN' ? [{ id: 'household', label: t('navigation.household'), icon: Users }] : []),
     { id: 'shelters', label: t('navigation.shelterInfo'), icon: Tent },
     { id: 'hospitals', label: t('navigation.hospitalInfo') || 'Hospital Information', icon: Building2 },
     ...(user.role === 'CITIZEN' ? [{ id: 'reconfirmation', label: t('navigation.reconfirmation'), icon: CheckCircle2 }] : []),
