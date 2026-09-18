@@ -69,6 +69,9 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [locationConflict, setLocationConflict] = useState(false);
   const [currentLocation, setCurrentLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [sessionId, setSessionId] = useState<string>(
+    () => `sess-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`
+  );
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioStreamRef = useRef<MediaStream | null>(null);
@@ -78,6 +81,7 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
   const isRecordingRef = useRef(false);
   const hasStoppedRef = useRef(false);
   const isSubmittingAudioRef = useRef(false);
+  const isSubmittingTextRef = useRef(false);
 
   // Initialize GPS location
   useEffect(() => {
@@ -102,6 +106,7 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
   useEffect(() => {
     if (isOpen && !prevIsOpenRef.current) {
       // Opening a new assistant session initializes clean conversation history
+      setSessionId(`sess-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`);
       setMessages([
         {
           id: 'welcome-msg-' + Date.now(),
@@ -118,6 +123,7 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
       isRecordingRef.current = false;
       hasStoppedRef.current = false;
       isSubmittingAudioRef.current = false;
+      isSubmittingTextRef.current = false;
     }
     prevIsOpenRef.current = isOpen;
   }, [isOpen]);
@@ -126,6 +132,7 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
     }
+    setSessionId(`sess-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`);
     setMessages([
       {
         id: 'welcome-msg-' + Date.now(),
@@ -142,6 +149,7 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
     isRecordingRef.current = false;
     hasStoppedRef.current = false;
     isSubmittingAudioRef.current = false;
+    isSubmittingTextRef.current = false;
   };
 
   // Load existing active SOS if passed or in localStorage
@@ -349,17 +357,24 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
 
     try {
       const historyPayload = messages
-        .filter((m) => m.id !== 'welcome-msg')
+        .filter(
+          (m) =>
+            m.id !== 'welcome-msg' &&
+            !m.content.includes('[Analyzing') &&
+            !m.content.includes('[Audio recording')
+        )
         .map((m) => ({
           role: m.role,
-          content: m.content,
-        }));
+          content: m.content.replace(/^🎙️\s*"?|"?$/g, '').trim(),
+        }))
+        .filter((m) => m.content.length > 0);
 
       const res = await duringApi.voiceEmergencyAudio({
         audioBlob,
         history: historyPayload,
         currentLocation: currentLocation || undefined,
         activeRequestId: activeRequest?.id || localStorage.getItem('stride_active_sos_id') || undefined,
+        sessionId,
         clientRequestId,
       });
 
@@ -420,17 +435,28 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
   };
 
   const handleSendMessage = async (textToSend: string) => {
-    if (!textToSend || !textToSend.trim()) return;
+    if (
+      !textToSend ||
+      !textToSend.trim() ||
+      isSubmittingTextRef.current ||
+      currentStatus === 'PROCESSING'
+    ) {
+      return;
+    }
+    isSubmittingTextRef.current = true;
+
+    const clientRequestId = 'req-txt-' + Date.now() + '-' + Math.random().toString(36).substring(2, 8);
 
     // Cancel speech if speaking
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
     }
 
+    const trimmedText = textToSend.trim();
     const userMsg: MessageItem = {
       id: 'msg-' + Date.now(),
       role: 'user',
-      content: textToSend.trim(),
+      content: trimmedText,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     };
 
@@ -439,19 +465,27 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
     setCurrentStatus('PROCESSING');
 
     try {
-      // Prepare history
+      // Prepare history strictly excluding the welcome message, processing messages, and stripping voice prefixes
       const historyPayload = messages
-        .filter((m) => m.id !== 'welcome-msg')
+        .filter(
+          (m) =>
+            m.id !== 'welcome-msg' &&
+            !m.content.includes('[Analyzing') &&
+            !m.content.includes('[Audio recording')
+        )
         .map((m) => ({
           role: m.role,
-          content: m.content,
-        }));
+          content: m.content.replace(/^🎙️\s*"?|"?$/g, '').trim(),
+        }))
+        .filter((m) => m.content.length > 0);
 
       const res = await duringApi.voiceEmergencyChat({
-        message: textToSend.trim(),
+        message: trimmedText,
         history: historyPayload,
         currentLocation: currentLocation || undefined,
         activeRequestId: activeRequest?.id || localStorage.getItem('stride_active_sos_id') || undefined,
+        sessionId,
+        clientRequestId,
       });
 
       setCurrentMode(res.mode);
@@ -492,6 +526,8 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
         mode: 'ASSIST',
       };
       setMessages((prev) => [...prev, errorMsg]);
+    } finally {
+      isSubmittingTextRef.current = false;
     }
   };
 

@@ -150,12 +150,27 @@ export interface VoiceAssistantResponse {
     conditions?: string[];
     spokenLocation?: string;
   };
+  existingIncidentFacts?: {
+    peopleCount?: number;
+    childrenCount?: number;
+    elderlyCount?: number;
+    disabledCount?: number;
+    injuredCount?: number;
+    criticalMedicalNeed?: boolean;
+    waterLevel?: WaterLevel;
+    emergencyType?: EmergencyType;
+    conditions?: string[];
+    spokenLocation?: string;
+  };
   uncertainInformation: string[];
   missingInformation: string[];
+  questionTarget?: string;
   shouldCreateOrUpdateSos: boolean;
   locationConflict?: boolean;
   activeRequest?: RescueRequest | null;
   isFallbackExtractor?: boolean;
+  sessionId?: string;
+  clientRequestId?: string;
 }
 
 export const duringApi = {
@@ -246,6 +261,8 @@ export const duringApi = {
     history?: Array<{ role: 'user' | 'assistant'; content: string }>;
     currentLocation?: { latitude: number; longitude: number };
     activeRequestId?: string;
+    sessionId?: string;
+    clientRequestId?: string;
   }): Promise<VoiceAssistantResponse> {
     return duringRequest<VoiceAssistantResponse>('/voice/emergency-chat', {
       method: 'POST',
@@ -259,10 +276,14 @@ export const duringApi = {
     history?: Array<{ role: 'user' | 'assistant'; content: string }>;
     currentLocation?: { latitude: number; longitude: number };
     activeRequestId?: string;
+    sessionId?: string;
     clientRequestId?: string;
   }): Promise<VoiceAssistantResponse & { transcript: string }> {
     const formData = new FormData();
     formData.append('audio', data.audioBlob, 'recording.webm');
+    if (data.sessionId) {
+      formData.append('sessionId', data.sessionId);
+    }
     if (data.clientRequestId) {
       formData.append('clientRequestId', data.clientRequestId);
     }

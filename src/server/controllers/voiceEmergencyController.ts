@@ -351,17 +351,43 @@ export async function applySosLifecycleAndTriage(
 
       activeSosRecord = formatRescueRequest(requestRecord, user, breakdown);
     }
-  } else if (context.activeSos) {
-    const existingReq = await prisma.emergencyRequest.findUnique({
-      where: { id: context.activeSos.id },
-      include: {
-        conditions: true,
-        rescueAssignments: { orderBy: { assignedAt: 'desc' } },
-        householdMember: {
-          include: { household: { include: { user: true } } },
+  } else {
+    // If NOT emergency, still fetch the active SOS record if one exists, to return status to user
+    let existingReq = null;
+    if (activeRequestId) {
+      existingReq = await prisma.emergencyRequest.findFirst({
+        where: {
+          id: activeRequestId,
+          rescueStatus: { not: 'CANCELLED' },
         },
-      },
-    });
+        include: {
+          conditions: true,
+          rescueAssignments: { orderBy: { assignedAt: 'desc' } },
+          householdMember: {
+            include: { household: { include: { user: true } } },
+          },
+        },
+      });
+    }
+
+    if (!existingReq && context.citizenHousehold) {
+      const memberIds = context.citizenHousehold.members.map((m) => m.id);
+      existingReq = await prisma.emergencyRequest.findFirst({
+        where: {
+          householdMemberId: { in: memberIds },
+          rescueStatus: { not: 'CANCELLED' },
+        },
+        include: {
+          conditions: true,
+          rescueAssignments: { orderBy: { assignedAt: 'desc' } },
+          householdMember: {
+            include: { household: { include: { user: true } } },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+    }
+
     if (existingReq) {
       activeSosRecord = formatRescueRequest(existingReq);
     }
@@ -385,6 +411,8 @@ export async function handleVoiceEmergencyChat(
       history = [],
       currentLocation,
       activeRequestId,
+      sessionId,
+      clientRequestId,
     } = req.body;
 
     if (!message || typeof message !== 'string' || message.trim() === '') {
@@ -392,14 +420,63 @@ export async function handleVoiceEmergencyChat(
       return;
     }
 
+    const sId =
+      (typeof sessionId === 'string' && sessionId.trim()) ||
+      `sess-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+
+    const reqId =
+      (typeof clientRequestId === 'string' && clientRequestId.trim()) ||
+      (typeof req.headers['x-request-id'] === 'string' && req.headers['x-request-id'].trim()) ||
+      `req-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+
     // 1. Gather authentic STRIDE context
     const context = await getStrideContext(userId, currentLocation);
 
-    // 2. Call Gemini voice service (with limited emergency signal extractor fallback)
+    // Fetch existing incident facts if active SOS exists
+    let existingIncidentFacts: any = undefined;
+    const effectiveSosId = activeRequestId || context.activeSos?.id;
+    if (effectiveSosId) {
+      const existingSos = await prisma.emergencyRequest.findFirst({
+        where: { id: effectiveSosId, rescueStatus: { not: 'CANCELLED' } },
+        include: { conditions: true },
+      });
+      if (existingSos) {
+        const prev = formatRescueRequest(existingSos);
+        existingIncidentFacts = {
+          peopleCount: prev.peopleCount,
+          childrenCount: prev.childrenCount,
+          elderlyCount: prev.elderlyCount,
+          disabledCount: prev.disabledCount,
+          injuredCount: prev.injuredCount,
+          criticalMedicalNeed: prev.criticalMedicalNeed,
+          waterLevel: prev.waterLevel,
+          emergencyType: prev.emergencyType,
+          spokenLocation: prev.spokenLocation,
+          conditions: existingSos.conditions
+            ? existingSos.conditions.map((c: any) => c.conditionType)
+            : [],
+        };
+      }
+    }
+
+    // Safe diagnostic logging (Requirement 12)
+    console.log('[STRIDE Voice Emergency Diagnostic - Chat Request]', {
+      sessionId: sId,
+      clientRequestId: reqId,
+      activeRequestId: effectiveSosId || null,
+      currentMessage: message.trim(),
+      historyCount: Array.isArray(history) ? history.length : 0,
+      last3History: Array.isArray(history) ? history.slice(-3) : [],
+      existingSosFacts: existingIncidentFacts || null,
+    });
+
+    // 2. Call Gemini voice service (with conversational progression & fallback)
     const aiResult: VoiceAssistantOutput = await processEmergencyVoiceInput(
       message.trim(),
       Array.isArray(history) ? history : [],
-      context
+      context,
+      existingIncidentFacts,
+      reqId
     );
 
     // 3. Apply unified SOS triage and lifecycle management
@@ -412,13 +489,30 @@ export async function handleVoiceEmergencyChat(
       activeRequestId
     );
 
+    console.log('[STRIDE Voice Emergency Diagnostic - Chat Response]', {
+      sessionId: sId,
+      clientRequestId: reqId,
+      activeRequestId: effectiveSosId || null,
+      extractedCurrentUserFacts: aiResult.extractedInformation || {},
+      uncertainInfo: aiResult.uncertainInformation || [],
+      missingInfo: aiResult.missingInformation || [],
+      questionTarget: aiResult.questionTarget || null,
+      assistantResponse: aiResult.assistantResponse,
+      mode: aiResult.mode,
+      isFallback: aiResult.isFallbackExtractor || false,
+    });
+
     res.json({
+      sessionId: sId,
+      clientRequestId: reqId,
       mode: aiResult.mode,
       intent: aiResult.intent,
       assistantResponse: aiResult.assistantResponse,
       extractedInformation: aiResult.extractedInformation || {},
+      existingIncidentFacts,
       uncertainInformation: aiResult.uncertainInformation || [],
       missingInformation: aiResult.missingInformation || [],
+      questionTarget: aiResult.questionTarget || undefined,
       shouldCreateOrUpdateSos: aiResult.shouldCreateOrUpdateSos,
       locationConflict,
       activeRequest: activeSosRecord,
@@ -443,13 +537,17 @@ export async function handleVoiceEmergencyAudio(
       return;
     }
 
+    const sId =
+      (typeof req.body.sessionId === 'string' && req.body.sessionId.trim()) ||
+      `sess-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+
     const clientRequestId =
       (typeof req.body.clientRequestId === 'string' && req.body.clientRequestId.trim()) ||
       (typeof req.headers['x-request-id'] === 'string' && req.headers['x-request-id'].trim()) ||
       `req-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
 
     console.log(
-      `[STRIDE Voice Emergency Audio] Request received. clientRequestId: ${clientRequestId}, user: ${userId}, size: ${file.buffer.length} bytes, mimetype: ${file.mimetype}`
+      `[STRIDE Voice Emergency Audio] Request received. sessionId: ${sId}, clientRequestId: ${clientRequestId}, user: ${userId}, size: ${file.buffer.length} bytes, mimetype: ${file.mimetype}`
     );
 
     // Parse history, currentLocation, activeRequestId from multipart FormData
@@ -482,19 +580,48 @@ export async function handleVoiceEmergencyAudio(
     // 1. Gather authentic STRIDE context
     const context = await getStrideContext(userId, currentLocation);
 
+    // Fetch existing incident facts if active SOS exists
+    let existingIncidentFacts: any = undefined;
+    const effectiveSosId = activeRequestId || context.activeSos?.id;
+    if (effectiveSosId) {
+      const existingSos = await prisma.emergencyRequest.findFirst({
+        where: { id: effectiveSosId, rescueStatus: { not: 'CANCELLED' } },
+        include: { conditions: true },
+      });
+      if (existingSos) {
+        const prev = formatRescueRequest(existingSos);
+        existingIncidentFacts = {
+          peopleCount: prev.peopleCount,
+          childrenCount: prev.childrenCount,
+          elderlyCount: prev.elderlyCount,
+          disabledCount: prev.disabledCount,
+          injuredCount: prev.injuredCount,
+          criticalMedicalNeed: prev.criticalMedicalNeed,
+          waterLevel: prev.waterLevel,
+          emergencyType: prev.emergencyType,
+          spokenLocation: prev.spokenLocation,
+          conditions: existingSos.conditions
+            ? existingSos.conditions.map((c: any) => c.conditionType)
+            : [],
+        };
+      }
+    }
+
     // 2. Call Gemini multimodal audio service
     const aiResult: VoiceAudioAssistantOutput = await processEmergencyAudioInput(
       file.buffer,
       file.mimetype || 'audio/webm',
       Array.isArray(history) ? history : [],
       context,
+      existingIncidentFacts,
       clientRequestId
     );
 
     // 3. Apply unified SOS triage and lifecycle management
-    const messageForTriage = aiResult.transcript && aiResult.transcript.trim() !== ''
-      ? aiResult.transcript.trim()
-      : 'Spoken emergency voice audio input';
+    const messageForTriage =
+      aiResult.transcript && aiResult.transcript.trim() !== ''
+        ? aiResult.transcript.trim()
+        : 'Spoken emergency voice audio input';
 
     const { locationConflict, activeSosRecord } = await applySosLifecycleAndTriage(
       userId,
@@ -506,14 +633,17 @@ export async function handleVoiceEmergencyAudio(
     );
 
     res.json({
+      sessionId: sId,
       clientRequestId,
       transcript: aiResult.transcript || '',
       mode: aiResult.mode,
       intent: aiResult.intent,
       assistantResponse: aiResult.assistantResponse,
       extractedInformation: aiResult.extractedInformation || {},
+      existingIncidentFacts,
       uncertainInformation: aiResult.uncertainInformation || [],
       missingInformation: aiResult.missingInformation || [],
+      questionTarget: aiResult.questionTarget || undefined,
       shouldCreateOrUpdateSos: aiResult.shouldCreateOrUpdateSos,
       locationConflict,
       activeRequest: activeSosRecord,
