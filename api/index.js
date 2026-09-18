@@ -3594,7 +3594,7 @@ function limitedEmergencySignalExtractor(message, history, context, existingInci
       isFallbackExtractor: true
     };
   }
-  const isEmergencyTrigger = hasTrappedExplicit || hasInjured || hasRisingWater && !isQuestion || hasFire || hasExplicitRescueCall || extracted.peopleCount !== void 0 && (lower.includes("trapped") || lower.includes("water") || lower.includes("rescue") || lower.includes("help")) || extracted.emergencyType === "TRAPPED" || context.activeSos && (hasInjured || hasTrappedExplicit || hasGeneralStuck);
+  const isEmergencyTrigger = hasTrappedExplicit || hasInjured || hasRisingWater && !isQuestion || hasFire || hasExplicitRescueCall || extracted.peopleCount !== void 0 || extracted.emergencyType === "TRAPPED" || context.activeSos && (hasInjured || hasTrappedExplicit || hasGeneralStuck);
   if (isEmergencyTrigger) {
     if (!conditions.includes("NEED_RESCUE")) {
       conditions.unshift("NEED_RESCUE");

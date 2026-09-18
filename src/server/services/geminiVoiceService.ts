@@ -649,7 +649,7 @@ export function limitedEmergencySignalExtractor(
     (hasRisingWater && !isQuestion) ||
     hasFire ||
     hasExplicitRescueCall ||
-    (extracted.peopleCount !== undefined && (lower.includes('trapped') || lower.includes('water') || lower.includes('rescue') || lower.includes('help'))) ||
+    extracted.peopleCount !== undefined ||
     (extracted.emergencyType === 'TRAPPED') ||
     (context.activeSos && (hasInjured || hasTrappedExplicit || hasGeneralStuck));
 
