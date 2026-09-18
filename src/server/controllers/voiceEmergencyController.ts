@@ -517,7 +517,6 @@ export async function handleVoiceEmergencyChat(
       activeRequestId
     );
 
-    // Rule 9 Structured Diagnostic Logging
     console.log('==================================================');
     console.log('[STRIDE Voice Emergency Diagnostic Turn - Text]');
     console.log('sessionId:', sId);
@@ -526,8 +525,20 @@ export async function handleVoiceEmergencyChat(
     console.log('CURRENT USER:', message.trim());
     console.log('HISTORY:', Array.isArray(history) ? history.slice(-3) : []);
     console.log('EXISTING INCIDENT (Context only, NOT current-turn facts):', existingIncidentFacts || 'None');
+    console.log('CONFIRMED FACTS:', existingIncidentFacts || {});
     console.log('TRANSCRIPT:', message.trim());
     console.log('CURRENT-TURN EXTRACTION (Authoritative for this turn):', aiResult.extractedInformation || {});
+    console.log('RESPONSE GENERATION INPUT:', {
+      currentUserUtterance: message.trim(),
+      confirmedIncidentFacts: existingIncidentFacts || null,
+      extractedCurrentTurnFacts: aiResult.extractedInformation || {},
+    });
+    console.log('RESPONSE GENERATION OUTPUT:', {
+      mode: aiResult.mode,
+      intent: aiResult.intent,
+      assistantResponse: aiResult.assistantResponse,
+    });
+    console.log('FINAL UI MESSAGE:', aiResult.assistantResponse);
     console.log('SOS BEFORE:', sosBeforeSummary ? JSON.stringify(sosBeforeSummary) : 'None');
     console.log('SOS UPDATE:', sosUpdateSummary ? JSON.stringify(sosUpdateSummary) : 'None');
     console.log('SOS AFTER:', sosAfterSummary ? JSON.stringify(sosAfterSummary) : 'None');
@@ -669,7 +680,6 @@ export async function handleVoiceEmergencyAudio(
       activeRequestId
     );
 
-    // Rule 9 Structured Diagnostic Logging
     console.log('==================================================');
     console.log('[STRIDE Voice Emergency Diagnostic Turn - Audio]');
     console.log('sessionId:', sId);
@@ -678,8 +688,20 @@ export async function handleVoiceEmergencyAudio(
     console.log('CURRENT USER: [Voice Recording]');
     console.log('HISTORY:', Array.isArray(history) ? history.slice(-3) : []);
     console.log('EXISTING INCIDENT (Context only, NOT current-turn facts):', existingIncidentFacts || 'None');
+    console.log('CONFIRMED FACTS:', existingIncidentFacts || {});
     console.log('TRANSCRIPT:', aiResult.transcript || 'None');
     console.log('CURRENT-TURN EXTRACTION (Authoritative for this turn):', aiResult.extractedInformation || {});
+    console.log('RESPONSE GENERATION INPUT:', {
+      currentUserUtterance: aiResult.transcript || '[Voice Recording]',
+      confirmedIncidentFacts: existingIncidentFacts || null,
+      extractedCurrentTurnFacts: aiResult.extractedInformation || {},
+    });
+    console.log('RESPONSE GENERATION OUTPUT:', {
+      mode: aiResult.mode,
+      intent: aiResult.intent,
+      assistantResponse: aiResult.assistantResponse,
+    });
+    console.log('FINAL UI MESSAGE:', aiResult.assistantResponse);
     console.log('SOS BEFORE:', sosBeforeSummary ? JSON.stringify(sosBeforeSummary) : 'None');
     console.log('SOS UPDATE:', sosUpdateSummary ? JSON.stringify(sosUpdateSummary) : 'None');
     console.log('SOS AFTER:', sosAfterSummary ? JSON.stringify(sosAfterSummary) : 'None');

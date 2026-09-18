@@ -33,6 +33,18 @@ export interface VoiceAudioAssistantOutput extends VoiceAssistantOutput {
   transcript: string;
 }
 
+export interface GroundedResponseInput {
+  currentUserUtterance: string;
+  confirmedIncidentFacts?: ExtractedEmergencyInfo;
+  extractedCurrentTurnFacts?: ExtractedEmergencyInfo;
+  uncertainInformation?: string[];
+  missingInformation?: string[];
+  conversationHistory?: ChatMessage[];
+  context?: StrideContextData;
+  intent?: string;
+  mode?: VoiceEmergencyMode;
+}
+
 export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
@@ -226,7 +238,14 @@ export function extractCurrentTurnFacts(
     conditions.push('FIRE');
   } else if (mentionsInjury && !lower.includes('flood') && !lower.includes('water')) {
     extracted.emergencyType = 'MEDICAL';
-  } else if (lower.includes('flood') || lower.includes('water')) {
+  } else if (
+    (lower.includes('flood') || lower.includes('water')) &&
+    !lower.startsWith('what should') &&
+    !lower.startsWith('what to do') &&
+    !lower.startsWith('how to') &&
+    !lower.startsWith('how do') &&
+    !lower.startsWith('what can')
+  ) {
     extracted.emergencyType = 'FLOOD';
   }
 
@@ -243,6 +262,255 @@ export function extractCurrentTurnFacts(
   }
 
   return { extracted, uncertain, conditions };
+}
+
+/**
+ * Deterministic anti-hallucination response validator.
+ * Ensures the assistant NEVER mentions or invents specific hazards (floodwaters, rising water, fire, etc.)
+ * unless explicitly mentioned in the current turn or confirmed in active database SOS facts.
+ */
+export function validateGroundedResponse(
+  candidateResponse: string,
+  currentUserUtterance: string,
+  confirmedFacts?: ExtractedEmergencyInfo,
+  mode: VoiceEmergencyMode = 'ASSESS'
+): string {
+  if (!candidateResponse || typeof candidateResponse !== 'string') {
+    return "I am here to help. Could you describe what is happening right now?";
+  }
+
+  const utteranceLower = (currentUserUtterance || '').toLowerCase();
+  const candidateLower = candidateResponse.toLowerCase();
+
+  const userMentionsFlood =
+    utteranceLower.includes('flood') ||
+    utteranceLower.includes('water') ||
+    utteranceLower.includes('submerged') ||
+    utteranceLower.includes('drown');
+
+  const confirmedFlood =
+    !!confirmedFacts &&
+    (confirmedFacts.waterLevel !== undefined ||
+      confirmedFacts.emergencyType === 'FLOOD' ||
+      (Array.isArray(confirmedFacts.conditions) &&
+        confirmedFacts.conditions.some((c) => c.includes('WATER'))));
+
+  const floodMentionAllowed = userMentionsFlood || confirmedFlood;
+
+  // Check if response mentions flood/water hazards
+  const responseMentionsFlood =
+    /\b(flood|floods|flooding|floodwater|floodwaters|moving water|rising water|water level|water levels)\b/i.test(
+      candidateLower
+    );
+
+  if (responseMentionsFlood && !floodMentionAllowed) {
+    console.warn(
+      `[STRIDE Grounding Validator] Ungrounded flood/water detected in response: "${candidateResponse}". Substituting safe grounded response.`
+    );
+    if (mode === 'EMERGENCY') {
+      return "I have logged your emergency distress signal with disaster response teams. Please stay in a safe location. Are there any injuries or immediate medical needs?";
+    }
+    if (mode === 'ASSIST') {
+      return "I am here to help. Could you tell me what situation or emergency you are facing right now so I can provide the right assistance?";
+    }
+    return "Could you describe the situation or danger you are facing? Are you in immediate danger right now?";
+  }
+
+  const userMentionsFire =
+    utteranceLower.includes('fire') ||
+    utteranceLower.includes('smoke') ||
+    utteranceLower.includes('burn');
+
+  const confirmedFire =
+    !!confirmedFacts &&
+    (confirmedFacts.emergencyType === 'FIRE' ||
+      (Array.isArray(confirmedFacts.conditions) &&
+        confirmedFacts.conditions.some((c) => c.includes('FIRE'))));
+
+  const fireMentionAllowed = userMentionsFire || confirmedFire;
+
+  const responseMentionsFire = /\b(fire|smoke|burning|flames)\b/i.test(candidateLower);
+
+  if (responseMentionsFire && !fireMentionAllowed) {
+    console.warn(
+      `[STRIDE Grounding Validator] Ungrounded fire hazard detected in response: "${candidateResponse}". Substituting safe grounded response.`
+    );
+    if (mode === 'EMERGENCY') {
+      return "I have logged your emergency distress signal with disaster response teams. Please stay in a safe location. Are there any injuries or immediate medical needs?";
+    }
+    return "Could you describe the situation or danger you are facing? Are you in immediate danger right now?";
+  }
+
+  return candidateResponse;
+}
+
+/**
+ * Canonical Grounded Response Generator.
+ * Creates responses strictly anchored to confirmed facts and user utterances.
+ * Never assumes a hazard type or disaster scenario without confirmed evidence.
+ */
+export function generateGroundedResponse(input: GroundedResponseInput): string {
+  const lower = (input.currentUserUtterance || '').toLowerCase().trim();
+  const history = input.conversationHistory || [];
+  const previousAssistantMsgs = history.filter((h) => h.role === 'assistant');
+  const lastAssistantMsg =
+    previousAssistantMsgs.length > 0
+      ? previousAssistantMsgs[previousAssistantMsgs.length - 1].content.toLowerCase()
+      : '';
+
+  const confirmed = input.confirmedIncidentFacts;
+  const currentExtracted = input.extractedCurrentTurnFacts || {};
+  const hasActiveSos = !!input.context?.activeSos;
+  const activeSosId = input.context?.activeSos?.id;
+
+  const userMentionsFlood =
+    lower.includes('flood') || lower.includes('water') || lower.includes('submerged');
+  const confirmedFlood =
+    !!confirmed &&
+    (confirmed.waterLevel !== undefined ||
+      confirmed.emergencyType === 'FLOOD' ||
+      (Array.isArray(confirmed.conditions) &&
+        confirmed.conditions.some((c) => c.includes('WATER'))));
+
+  // 1. Explicit questions about safety/guidance
+  if (lower.includes('what should i do') || lower.includes('what to do') || lower.includes('should we do')) {
+    if (userMentionsFlood || confirmedFlood) {
+      return "If there is flooding or rising water, move immediately to higher ground or upper floors. Disconnect main electrical breakers if safe to do so. Avoid walking or driving through moving water, and prepare essential emergency supplies. Are you in immediate danger?";
+    }
+    if (lower.includes('fire')) {
+      return "If there is a fire, evacuate immediately to open air away from the building. Stay low under smoke, do not use elevators, and alert others. Are you or anyone with you injured?";
+    }
+    if (hasActiveSos) {
+      return "For your safety, remain in the safest, most secure location available and await rescue dispatch. If your situation changes or anyone becomes injured, let me know immediately.";
+    }
+    return "Please stay in the safest spot available right now. Tell me what emergency or danger you are facing so I can provide the right guidance or dispatch rescue.";
+  }
+
+  // 2. Generic help / capability requests ("can you help me", "who are you", etc.)
+  if (
+    lower.startsWith('can you help') ||
+    lower.startsWith('how can you help') ||
+    lower.startsWith('what can you do') ||
+    lower === 'help' ||
+    lower === 'can you help' ||
+    lower.includes('who are you')
+  ) {
+    if (hasActiveSos) {
+      return `Your rescue request (#${activeSosId}) is active with emergency dispatch. How can I assist you further?`;
+    }
+    if (lower.includes('what can you do')) {
+      return "I can help dispatch emergency rescue teams, direct you to open shelters and hospitals, or guide you through emergency procedures. Are you in immediate need of assistance right now?";
+    }
+    return "I am here to help. You can report an emergency, request rescue assistance, find an evacuation shelter, or ask disaster safety questions. What situation or emergency are you facing right now?";
+  }
+
+  // 3. Shelters & facilities inquiries
+  if (lower.includes('shelter') && input.context?.nearestShelters && input.context.nearestShelters.length > 0) {
+    const s = input.context.nearestShelters[0];
+    return `The nearest shelter is ${s.name} at ${s.address} (${s.distanceKm} km away, status: ${s.status}).`;
+  }
+  if (lower.includes('hospital') && input.context?.nearestFacilities && input.context.nearestFacilities.length > 0) {
+    const f = input.context.nearestFacilities[0];
+    return `The nearest medical facility is ${f.name} at ${f.address} (${f.distanceKm} km away).`;
+  }
+  if (lower.includes('electricity') || lower.includes('power')) {
+    return "Turn off the main electrical breaker immediately if it is safe to reach. Do not touch electrical switches or appliances if standing in water or wet areas.";
+  }
+
+  // 4. Affirmations ("ok", "okay", "yes")
+  const isAffirmation = /^(ok|okay|k|yes|yeah|yep|sure|fine|alright|right|y|correct)\b/i.test(lower);
+  if (isAffirmation) {
+    if (lastAssistantMsg.includes('require emergency rescue assistance') || lastAssistantMsg.includes('require rescue')) {
+      return "Understood, your request for rescue assistance is noted. Just tell me one thing: are you trapped right now? You can answer yes or no.";
+    }
+    if (lastAssistantMsg.includes('are you trapped right now') || lastAssistantMsg.includes('are you trapped')) {
+      return "Understood. Are you able to move to a safer place right now? You can answer yes or no.";
+    }
+    if (lastAssistantMsg.includes('able to move to a safer place')) {
+      return "Understood. If safe to do so, please move to a safer location or an emergency shelter. Do you need directions to the nearest shelter?";
+    }
+    if (lastAssistantMsg.includes('describe the situation') || lastAssistantMsg.includes('danger you are facing')) {
+      return "That's okay. Just tell me one thing: are you trapped right now? You can answer yes or no.";
+    }
+    if (lastAssistantMsg.includes('immediate need of assistance right now') || lastAssistantMsg.includes('facing an emergency')) {
+      return "Are you currently in immediate danger or facing an emergency? You can answer yes or no.";
+    }
+    return hasActiveSos
+      ? "That's okay. Just tell me one thing: are you trapped right now? You can answer yes or no."
+      : "Understood. Are you in immediate danger right now? You can answer yes or no.";
+  }
+
+  // 5. Negatives ("no", "nope")
+  const isNegative = /^(no|nope|nah|not really|negative)\b/i.test(lower);
+  if (isNegative) {
+    if (lastAssistantMsg.includes('are you trapped right now') || lastAssistantMsg.includes('are you trapped')) {
+      return "Understood, you are not trapped. Are you or anyone with you injured or in need of medical help? Yes or no.";
+    }
+    if (lastAssistantMsg.includes('able to move to a safer place')) {
+      return "Understood. If you cannot move safely, please stay where you are in the safest, most secure spot available. Are you in immediate danger right now? Yes or no.";
+    }
+    if (lastAssistantMsg.includes('require emergency rescue assistance')) {
+      return "Understood. I am here to provide disaster guidance, shelter locations, or emergency assistance whenever you need them. Stay safe.";
+    }
+  }
+
+  // 6. Cannot describe / uncertain
+  const isCannotDescribe =
+    lower.includes('cant describe') ||
+    lower.includes("can't describe") ||
+    lower.includes('cannot describe') ||
+    lower.includes('no idea') ||
+    lower.includes('cant talk') ||
+    lower.includes("can't talk") ||
+    lower === 'dont know' ||
+    lower === "don't know" ||
+    lower === "i don't know" ||
+    lower === "i dont know";
+
+  if (isCannotDescribe) {
+    if (lastAssistantMsg.includes('able to move to a safer place')) {
+      return "That's okay. You don't need to describe it. Are you or anyone with you injured right now? Yes or no.";
+    }
+    if (lastAssistantMsg.includes('immediate danger') || lastAssistantMsg.includes('facing an emergency')) {
+      return "That's okay. Are you in a safe place right now? You can answer yes or no.";
+    }
+    return "That's okay. You don't need to describe it. Are you able to move to a safer place? Yes or no.";
+  }
+
+  // 7. Active SOS updates with confirmed facts
+  if (hasActiveSos && Object.keys(currentExtracted).length > 0) {
+    if (currentExtracted.peopleCount !== undefined) {
+      return `I have updated your active emergency distress signal (#${activeSosId}) to ${currentExtracted.peopleCount} people. Are any of the people injured? You can answer yes or no.`;
+    }
+    if (currentExtracted.injuredCount !== undefined) {
+      return `I have noted the medical injury on your active emergency signal (#${activeSosId}). Emergency dispatch has been notified. Are you or anyone with you able to move safely? Yes or no.`;
+    }
+    if (currentExtracted.childrenCount !== undefined) {
+      return `I have updated your active emergency signal (#${activeSosId}) to include ${currentExtracted.childrenCount} children. Dispatch teams have been informed. Are you all in a safe location? Yes or no.`;
+    }
+    return `I have updated your active emergency distress signal (#${activeSosId}) with these details and notified dispatch teams. Please stay calm and remain in a safe location.`;
+  }
+
+  // 8. Emergency creation with confirmed facts
+  if (currentExtracted.peopleCount !== undefined) {
+    return `I have logged your emergency distress request for ${currentExtracted.peopleCount} people. Dispatch teams are triaging your location. Are any of the ${currentExtracted.peopleCount} people injured? You can answer yes or no.`;
+  }
+
+  if (lower.includes('trapped') || currentExtracted.emergencyType === 'TRAPPED') {
+    return "I have logged your emergency distress request as trapped. Dispatch teams are triaging your location. How many people are with you right now, and are there any injuries?";
+  }
+
+  if (userMentionsFlood) {
+    return "I hear that water is affecting your location. Are you able to move to a higher floor or safe area right now, or are you trapped or in immediate danger?";
+  }
+
+  // 9. Ambiguous or general distress
+  if (lower.includes('stuck') || lower.includes('need help')) {
+    return "I understand you are stuck and need help. Can you tell me what you are stuck in, what immediate danger you are facing, and your current location?";
+  }
+
+  // Default clarification
+  return "Could you describe the situation or danger you are facing? Are you trapped, injured, or able to move to safety?";
 }
 
 /**
@@ -331,11 +599,14 @@ export function limitedEmergencySignalExtractor(
     lower.includes('who are you');
 
   if ((isPureGreeting || isCapabilityInquiry) && !isAffirmation && !hasExtractedFacts) {
+    const respText = isPureGreeting
+      ? "Hello! I am the STRIDE Emergency Voice Assistant. You can speak naturally to report an emergency, ask for disaster safety guidance, or find the nearest evacuation shelter. How can I help you?"
+      : "I can help dispatch emergency rescue teams, direct you to open shelters and hospitals, or guide you through emergency procedures. Are you in immediate need of assistance right now?";
+
     return {
       mode: 'ASSIST',
       intent: isPureGreeting ? 'greeting' : 'capability_inquiry',
-      assistantResponse:
-        "Hello! I am the STRIDE Emergency Voice Assistant. You can speak naturally to report an emergency, ask for disaster safety guidance, or find the nearest evacuation shelter. How can I help you?",
+      assistantResponse: validateGroundedResponse(respText, message, existingIncidentFacts, 'ASSIST'),
       extractedInformation: {},
       existingIncidentFacts,
       uncertainInformation: [],
@@ -348,18 +619,20 @@ export function limitedEmergencySignalExtractor(
 
   // 3. Conversational adaptation: User cannot or refuses to describe
   if (isCannotDescribe && !hasExtractedFacts) {
-    let resp =
-      "That's okay. You don't need to describe it. Are you able to move to a safer place? Yes or no.";
-    let target = 'safety_mobility';
-    if (lastAssistantLower.includes('able to move to a safer place')) {
-      resp =
-        "That's okay. You don't need to describe it. Are you or anyone with you injured right now? Yes or no.";
-      target = 'medical_need';
-    }
+    const resp = generateGroundedResponse({
+      currentUserUtterance: message,
+      confirmedIncidentFacts: existingIncidentFacts,
+      extractedCurrentTurnFacts: extracted,
+      conversationHistory: history,
+      context,
+      mode: 'ASSESS',
+      intent: 'cannot_describe_adaptation',
+    });
+    const target = lastAssistantLower.includes('able to move') ? 'medical_need' : 'safety_mobility';
     return {
       mode: 'ASSESS',
       intent: 'cannot_describe_adaptation',
-      assistantResponse: resp,
+      assistantResponse: validateGroundedResponse(resp, message, existingIncidentFacts, 'ASSESS'),
       extractedInformation: {},
       existingIncidentFacts,
       uncertainInformation: [],
@@ -431,7 +704,7 @@ export function limitedEmergencySignalExtractor(
         mode: 'ASSIST',
         intent: 'shelter_guidance_offer',
         assistantResponse:
-          "Understood. If safe to do so, please move toward higher ground or an emergency shelter. Do you need directions to the nearest shelter?",
+          "Understood. If safe to do so, please move to a safer location or an emergency shelter. Do you need directions to the nearest shelter?",
         extractedInformation: {},
         existingIncidentFacts,
         uncertainInformation: [],
@@ -442,13 +715,19 @@ export function limitedEmergencySignalExtractor(
       };
     }
 
-    const defaultResp = context.activeSos
-      ? "That's okay. Just tell me one thing: are you trapped right now? You can answer yes or no."
-      : "Understood. Are you in immediate danger right now? You can answer yes or no.";
+    const defaultResp = generateGroundedResponse({
+      currentUserUtterance: message,
+      confirmedIncidentFacts: existingIncidentFacts,
+      extractedCurrentTurnFacts: extracted,
+      conversationHistory: history,
+      context,
+      mode: 'ASSESS',
+      intent: 'general_affirmation_followup',
+    });
     return {
       mode: 'ASSESS',
       intent: 'general_affirmation_followup',
-      assistantResponse: defaultResp,
+      assistantResponse: validateGroundedResponse(defaultResp, message, existingIncidentFacts, 'ASSESS'),
       extractedInformation: {},
       existingIncidentFacts,
       uncertainInformation: [],
@@ -485,7 +764,7 @@ export function limitedEmergencySignalExtractor(
         mode: 'ASSESS',
         intent: 'immobile_safety_check',
         assistantResponse:
-          "Understood. If you cannot move safely, please stay where you are in the safest, most elevated spot available. Are you in immediate danger right now? Yes or no.",
+          "Understood. If you cannot move safely, please stay where you are in the safest, most secure spot available. Are you in immediate danger right now? Yes or no.",
         extractedInformation: {},
         existingIncidentFacts,
         uncertainInformation: [],
@@ -501,7 +780,23 @@ export function limitedEmergencySignalExtractor(
         mode: 'ASSIST',
         intent: 'decline_rescue_assistance',
         assistantResponse:
-          "Understood. I am here to provide disaster guidance, shelter locations, or weather updates whenever you need them. Stay safe.",
+          "Understood. I am here to provide disaster guidance, shelter locations, or emergency assistance whenever you need them. Stay safe.",
+        extractedInformation: {},
+        existingIncidentFacts,
+        uncertainInformation: [],
+        missingInformation: [],
+        questionTarget: 'none',
+        shouldCreateOrUpdateSos: false,
+        isFallbackExtractor: true,
+      };
+    }
+
+    if (lastAssistantLower.includes('immediate danger') || lastAssistantLower.includes('facing an emergency')) {
+      return {
+        mode: 'ASSIST',
+        intent: 'not_in_immediate_danger',
+        assistantResponse:
+          "Understood. If you need safety instructions, shelter information, or emergency rescue at any time, just let me know. Stay safe.",
         extractedInformation: {},
         existingIncidentFacts,
         uncertainInformation: [],
@@ -575,30 +870,32 @@ export function limitedEmergencySignalExtractor(
     lower.includes('evacuate us') ||
     lower.includes('emergency need help');
 
-  // Informational query: If citizen is asking for guidance and did NOT provide new emergency facts
-  if (isQuestion && !hasTrappedExplicit && !hasInjured && !hasExplicitRescueCall && !hasRisingWater && !hasFire && !hasExtractedFacts) {
-    let resp = context.activeSos
-      ? "For your safety, remain in the safest, highest spot available and await rescue dispatch. If water levels rise or anyone becomes injured, let me know immediately."
-      : "For your safety during this disaster event, please stay on higher ground and avoid entering moving floodwaters. Do you require emergency rescue assistance?";
+  const hasCriticalEmergencyFacts =
+    extracted.peopleCount !== undefined ||
+    extracted.injuredCount !== undefined ||
+    extracted.childrenCount !== undefined ||
+    extracted.elderlyCount !== undefined ||
+    extracted.disabledCount !== undefined ||
+    extracted.criticalMedicalNeed !== undefined;
 
-    if (lower.includes('what should i do') && (lower.includes('flood') || lower.includes('flooding'))) {
-      resp =
-        "If there is flooding, move immediately to higher ground or upper floors. Disconnect main electrical breakers if safe to do so. Avoid walking or driving through moving water, and prepare essential emergency supplies. Are you in immediate danger?";
-    } else if (lower.includes('shelter') && context.nearestShelters.length > 0) {
-      const s = context.nearestShelters[0];
-      resp = `The nearest shelter is ${s.name} at ${s.address} (${s.distanceKm} km away, status: ${s.status}).`;
-    } else if (lower.includes('hospital') && context.nearestFacilities.length > 0) {
-      const f = context.nearestFacilities[0];
-      resp = `The nearest medical facility is ${f.name} at ${f.address} (${f.distanceKm} km away).`;
-    } else if (lower.includes('electricity') || lower.includes('power')) {
-      resp =
-        "If water enters your home, turn off the main electrical breaker immediately if it is safe to reach. Do not touch electrical switches or appliances while standing in water.";
-    }
+  // Informational query: If citizen is asking for guidance and did NOT provide new emergency facts
+  if (isQuestion && !hasTrappedExplicit && !hasInjured && !hasExplicitRescueCall && !hasRisingWater && !hasFire && !hasCriticalEmergencyFacts) {
+    const rawResp = generateGroundedResponse({
+      currentUserUtterance: message,
+      confirmedIncidentFacts: existingIncidentFacts,
+      extractedCurrentTurnFacts: extracted,
+      conversationHistory: history,
+      context,
+      mode: 'ASSIST',
+      intent: 'general_inquiry',
+    });
+
+    const validated = validateGroundedResponse(rawResp, message, existingIncidentFacts, 'ASSIST');
 
     return {
       mode: 'ASSIST',
       intent: 'general_inquiry',
-      assistantResponse: resp,
+      assistantResponse: validated,
       extractedInformation: {},
       existingIncidentFacts,
       uncertainInformation: [],
@@ -621,7 +918,7 @@ export function limitedEmergencySignalExtractor(
       assistantMsg = `I have noted the medical injury on your active emergency signal (#${context.activeSos.id}). Emergency dispatch has been notified. Are you or anyone with you able to move safely? Yes or no.`;
       target = 'safety_mobility';
     } else if (extracted.childrenCount !== undefined) {
-      assistantMsg = `I have updated your active emergency signal (#${context.activeSos.id}) to include ${extracted.childrenCount} children. Dispatch teams have been informed. Are you all on an upper floor? Yes or no.`;
+      assistantMsg = `I have updated your active emergency signal (#${context.activeSos.id}) to include ${extracted.childrenCount} children. Dispatch teams have been informed. Are you all in a safe location? Yes or no.`;
       target = 'safety_mobility';
     } else {
       assistantMsg = `I have updated your active emergency distress signal (#${context.activeSos.id}) with these details and notified dispatch teams. Please stay calm and remain in a safe location.`;
@@ -631,7 +928,7 @@ export function limitedEmergencySignalExtractor(
     return {
       mode: 'EMERGENCY',
       intent: 'emergency_sos_dispatch',
-      assistantResponse: assistantMsg,
+      assistantResponse: validateGroundedResponse(assistantMsg, message, existingIncidentFacts, 'EMERGENCY'),
       extractedInformation: extracted,
       existingIncidentFacts,
       uncertainInformation: uncertain,
@@ -663,20 +960,32 @@ export function limitedEmergencySignalExtractor(
     let target = 'medical_need';
 
     if (context.activeSos) {
-      assistantMsg = `I have updated your active emergency distress signal (#${context.activeSos.id}) with these details and notified dispatch teams. Please stay calm and remain in a safe location.`;
+      assistantMsg = generateGroundedResponse({
+        currentUserUtterance: message,
+        confirmedIncidentFacts: existingIncidentFacts,
+        extractedCurrentTurnFacts: extracted,
+        conversationHistory: history,
+        context,
+        mode: 'EMERGENCY',
+        intent: 'emergency_sos_dispatch',
+      });
     } else if (extracted.peopleCount !== undefined) {
       assistantMsg = `I have logged your emergency distress request for ${extracted.peopleCount} people. Dispatch teams are triaging your location. Are any of the ${extracted.peopleCount} people injured? You can answer yes or no.`;
       target = 'medical_need';
+    } else if (hasTrappedExplicit || extracted.emergencyType === 'TRAPPED') {
+      assistantMsg =
+        "I have logged your emergency distress request as trapped. Dispatch teams are triaging your location. How many people are with you right now, and are there any injuries?";
+      target = 'vulnerabilities';
     } else {
       assistantMsg =
-        "I have sent your emergency distress request to the disaster response command center. Our teams are triaging your location. Please stay in a safe, elevated spot. Are there any other people or specific medical needs?";
+        "I have sent your emergency distress request to the disaster response command center. Our teams are triaging your location. Please stay in a safe location. Are there any other people or specific medical needs?";
       target = 'vulnerabilities';
     }
 
     return {
       mode: 'EMERGENCY',
       intent: 'emergency_sos_dispatch',
-      assistantResponse: assistantMsg,
+      assistantResponse: validateGroundedResponse(assistantMsg, message, existingIncidentFacts, 'EMERGENCY'),
       extractedInformation: extracted,
       existingIncidentFacts,
       uncertainInformation: uncertain,
@@ -729,7 +1038,7 @@ export function limitedEmergencySignalExtractor(
   return {
     mode: 'ASSESS',
     intent: 'assess_potential_danger',
-    assistantResponse: assessResponse,
+    assistantResponse: validateGroundedResponse(assessResponse, message, existingIncidentFacts, 'ASSESS'),
     extractedInformation: extracted,
     existingIncidentFacts,
     uncertainInformation: uncertain,
@@ -891,10 +1200,16 @@ CRITICAL CONVERSATION GROUNDING AND CONTEXT ISOLATION RULES:
      * Use ONLY confirmed facts already established. NEVER fabricate facts.
    - Ask ONE question at a time. Do not overwhelm the user with multiple simultaneous questions.
    - Specify "questionTarget" in JSON (e.g. "trapped_status", "safety_mobility", "medical_need", "people_count", "location", or "none").
-4. NEVER assume, hallucinate, or state that water is entering, rising, or flooding UNLESS:
-   - The citizen explicitly mentions water, flood, or submerged conditions in CURRENT CITIZEN MESSAGE or recent CONVERSATION HISTORY, OR
-   - The citizen explicitly asks a question about flood safety.
-   If the citizen says "hi im stuck i need help", they did NOT mention water! Ask what they are stuck in, what danger they are facing, and their current location. DO NOT claim that water is entering their area!
+4. STRICT HAZARD GROUNDING & ANTI-HALLUCINATION:
+   - NEVER assume, hallucinate, or state that water is entering, rising, or flooding UNLESS:
+     a) The citizen explicitly mentions water, flood, or submerged conditions in CURRENT CITIZEN MESSAGE, OR
+     b) Floodwater is confirmed in EXISTING INCIDENT FACTS (e.g. waterLevel is HIGH/MEDIUM/EXTREME or emergencyType is FLOOD), OR
+     c) The citizen explicitly asks a question about flood safety (e.g. "what should I do during a flood?").
+   - NEVER assume fire, smoke, earthquake, or any other disaster type unless mentioned or confirmed.
+   - DO NOT use the Active Disaster title to assume the citizen is experiencing that hazard! The Active Disaster is general city-wide context, NOT the citizen's individual situation.
+   - If the citizen says "can you help me" or "what should I do?", they did NOT mention water or a flood! NEVER tell them to avoid moving floodwaters or stay on higher ground unless water was actually mentioned or confirmed!
+   - If the citizen says "we are trapped upstairs", acknowledge that they are trapped, but DO NOT claim that there is floodwater or a flood!
+   - If the citizen says "we are 4 people", acknowledge 4 people, but DO NOT invent a flood or disaster!
 5. INTENT & MODE RULES:
    - "ASSIST": The citizen is greeting, asking what you can do, or asking general guidance/shelters/hospitals/weather/flood preparedness. Do NOT trigger SOS (shouldCreateOrUpdateSos = false).
    - "ASSESS": The citizen expresses ambiguous distress ("hi im stuck i need help", "ok") without confirmed trapped individuals or injuries. Ask a direct clarifying question. Do NOT trigger SOS (shouldCreateOrUpdateSos = false).
@@ -969,14 +1284,23 @@ Return JSON:`;
     const validModes: VoiceEmergencyMode[] = ['ASSIST', 'ASSESS', 'EMERGENCY'];
     const mode: VoiceEmergencyMode = parsed && validModes.includes(parsed.mode) ? parsed.mode : 'ASSESS';
 
+    const rawResponse =
+      parsed?.assistantResponse ||
+      (mode === 'EMERGENCY'
+        ? "I have logged your emergency distress signal with our response units. Stay in a safe location."
+        : "I am here with STRIDE Emergency Command. How can I assist you?");
+
+    const validatedResponse = validateGroundedResponse(
+      rawResponse,
+      message,
+      existingIncidentFacts,
+      mode
+    );
+
     return {
       mode,
       intent: parsed?.intent || 'emergency_voice_processing',
-      assistantResponse:
-        parsed?.assistantResponse ||
-        (mode === 'EMERGENCY'
-          ? "I have logged your emergency distress signal with our response units. Stay in a safe, elevated location."
-          : "I am here with STRIDE Emergency Command. How can I assist you?"),
+      assistantResponse: validatedResponse,
       extractedInformation: parsed?.extractedInformation || {},
       existingIncidentFacts,
       uncertainInformation: Array.isArray(parsed?.uncertainInformation) ? parsed.uncertainInformation : [],

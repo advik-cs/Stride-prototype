@@ -385,7 +385,9 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
           (m) =>
             m.id !== 'welcome-msg' &&
             !m.content.includes('[Analyzing') &&
-            !m.content.includes('[Audio recording')
+            !m.content.includes('[Audio recording') &&
+            !m.content.includes("couldn't understand the recording") &&
+            !m.content.includes("couldn't understand")
         )
         .map((m) => ({
           role: m.role,
@@ -408,10 +410,25 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
         res.transcript.toLowerCase().includes("couldn't understand") ||
         res.transcript.toLowerCase().includes('requires gemini api');
 
-      const transcriptText = !isFailedTranscript
-        ? `🎤 "${res.transcript.trim()}"`
-        : "STRIDE couldn't understand the recording. Please try again.";
+      if (isFailedTranscript) {
+        // Remove temporary analyzing user message completely (zero user messages generated on failure)
+        setMessages((prev) => prev.filter((m) => m.id !== tempUserMsgId));
 
+        const failureAssistantMsg: MessageItem = {
+          id: 'msg-asst-' + Date.now(),
+          role: 'assistant',
+          content: "STRIDE couldn't understand the recording. Please try again.",
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          mode: 'ASSIST',
+        };
+        setMessages((prev) => [...prev, failureAssistantMsg]);
+        setCurrentMode('ASSIST');
+        setCurrentStatus('IDLE');
+        speakText("STRIDE couldn't understand the recording. Please try again.");
+        return;
+      }
+
+      const transcriptText = `🎤 "${res.transcript.trim()}"`;
       setMessages((prev) =>
         prev.map((m) => (m.id === tempUserMsgId ? { ...m, content: transcriptText } : m))
       );
@@ -443,17 +460,13 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
     } catch (err: any) {
       console.error('Audio processing error:', err);
       setCurrentStatus('IDLE');
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === tempUserMsgId ? { ...m, content: "STRIDE couldn't understand the recording. Please try again." } : m
-        )
-      );
+      // Remove temporary analyzing user message completely
+      setMessages((prev) => prev.filter((m) => m.id !== tempUserMsgId));
 
       const errorMsg: MessageItem = {
         id: 'msg-err-' + Date.now(),
         role: 'assistant',
-        content:
-          "STRIDE couldn't understand the recording. Please try again or type your emergency details.",
+        content: "STRIDE couldn't understand the recording. Please try again.",
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         mode: 'ASSIST',
       };
@@ -500,7 +513,9 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
           (m) =>
             m.id !== 'welcome-msg' &&
             !m.content.includes('[Analyzing') &&
-            !m.content.includes('[Audio recording')
+            !m.content.includes('[Audio recording') &&
+            !m.content.includes("couldn't understand the recording") &&
+            !m.content.includes("couldn't understand")
         )
         .map((m) => ({
           role: m.role,
