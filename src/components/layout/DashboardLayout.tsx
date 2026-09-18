@@ -290,6 +290,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
             duringNavItems.map((item) => {
               const Icon = item.icon;
               const isActive = activeDuringTab === item.id;
+              const isAnalytics = item.id === 'analytics';
               return (
                 <button
                   key={item.id}
@@ -308,7 +309,27 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
                         isActive ? 'text-white' : 'text-[#567C8D]'
                       }`}
                     />
-                    <span>{item.label}</span>
+                    <span className="flex items-center gap-1.5">
+                      <span>{item.label}</span>
+                      {isAnalytics && (
+                        <span
+                          className="relative flex h-2 w-2 flex-shrink-0"
+                          title="Live"
+                          aria-label="Live"
+                        >
+                          <span
+                            className={`animate-ping absolute inline-flex h-full w-full rounded-full ${
+                              isActive ? 'bg-white opacity-75' : 'bg-red-400 opacity-75'
+                            }`}
+                          />
+                          <span
+                            className={`relative inline-flex rounded-full h-2 w-2 ${
+                              isActive ? 'bg-white' : 'bg-red-600'
+                            }`}
+                          />
+                        </span>
+                      )}
+                    </span>
                   </div>
                   {isActive && <ChevronRight className="w-3.5 h-3.5 text-white" />}
                 </button>

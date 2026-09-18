@@ -80,8 +80,16 @@ export const LiveAnalyticsView: React.FC<LiveAnalyticsViewProps> = ({
               {isAuthority ? '🏛️ Authority Command Intelligence' : '🚑 Rescuer Tactical Field Matrix'}
             </span>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-bold font-['Space_Grotesk',sans-serif] text-[#2F4156] tracking-tight mt-1">
-            📊 Live Analytics
+          <h1 className="text-2xl sm:text-3xl font-bold font-['Space_Grotesk',sans-serif] text-[#2F4156] tracking-tight mt-1 flex items-center gap-2.5">
+            <span>📊 Live Analytics</span>
+            <span
+              className="relative flex h-2.5 w-2.5 flex-shrink-0"
+              title="Live"
+              aria-label="Live"
+            >
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-600" />
+            </span>
           </h1>
           <p className="text-sm font-medium text-[#567C8D] mt-1">
             Disaster & Rescue Intelligence &mdash; Real-time civilian accountability, flood risk matrix, demographic logistics, and shelter capacity tracking.
