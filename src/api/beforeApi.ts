@@ -253,6 +253,25 @@ export const beforeApi = {
     });
   },
 
+  async updateHousehold(householdId: string, data: { name?: string; address?: string; city?: string; state?: string }) {
+    return beforeRequest<Household>(`/households/${householdId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async getHouseholdOnboardingStatus(): Promise<{ completed: boolean }> {
+    try {
+      return await beforeRequest<{ completed: boolean }>('/households/onboarding-status');
+    } catch {
+      try {
+        return await beforeRequest<{ completed: boolean }>('/citizen/onboarding-status');
+      } catch {
+        return { completed: false };
+      }
+    }
+  },
+
   // Disasters
   async getDisasters(): Promise<DisasterEvent[]> {
     return beforeRequest<DisasterEvent[]>('/disasters');

@@ -397,3 +397,84 @@ export async function getHouseholdDisasterOccupancy(
     res.status(500).json({ error: error.message || 'Failed to fetch household occupancy.' });
   }
 }
+
+/**
+ * Check if the authenticated citizen has completed mandatory household onboarding.
+ * A citizen has completed onboarding if:
+ * 1. Their household exists in the database.
+ * 2. It has at least 1 registered member.
+ * 3. At least one member has a saved disaster expected location plan.
+ */
+export async function getHouseholdOnboardingStatus(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const user = req.user!;
+    if (user.role !== 'CITIZEN') {
+      res.json({ completed: true });
+      return;
+    }
+
+    const household = await prisma.household.findFirst({
+      where: { userId: user.userId },
+      include: {
+        members: {
+          include: {
+            expectedLocations: true,
+          },
+        },
+      },
+    });
+
+    if (!household || household.members.length === 0) {
+      res.json({ completed: false, reason: 'NO_HOUSEHOLD_OR_MEMBERS' });
+      return;
+    }
+
+    // A household is completed if at least one member has a saved disaster expected location
+    const hasSavedPlan = household.members.some(
+      (m) => m.expectedLocations && m.expectedLocations.length > 0
+    );
+
+    res.json({
+      completed: hasSavedPlan,
+      householdId: household.id,
+      totalMembers: household.members.length,
+      hasSavedPlan,
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to check onboarding status.' });
+  }
+}
+
+/**
+ * Explicitly verify and mark onboarding complete after save
+ */
+export async function completeHouseholdOnboarding(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const user = req.user!;
+    if (user.role !== 'CITIZEN') {
+      res.json({ success: true, completed: true });
+      return;
+    }
+
+    const household = await prisma.household.findFirst({
+      where: { userId: user.userId },
+      include: {
+        members: {
+          include: {
+            expectedLocations: true,
+          },
+        },
+      },
+    });
+
+    if (!household || household.members.length === 0) {
+      res.status(400).json({ error: 'Household and members must be created before completing onboarding.' });
+      return;
+    }
+
+    res.json({ success: true, completed: true, householdId: household.id });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to complete household onboarding.' });
+  }
+}
+

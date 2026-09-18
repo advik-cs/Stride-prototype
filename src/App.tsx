@@ -26,12 +26,16 @@ import { OperationalWeatherView } from './components/common/OperationalWeatherVi
 import { FloodXView } from './components/floodx/FloodXView.tsx';
 import { HospitalInformationView } from './components/hospital/HospitalInformationView.tsx';
 import { LiveAnalyticsView } from './components/analytics/LiveAnalyticsView.tsx';
+import { HouseholdOnboardingGate } from './components/citizen/HouseholdOnboardingGate.tsx';
+import { householdService } from './services/householdService.ts';
 
 import { Loader2 } from 'lucide-react';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [authChecking, setAuthChecking] = useState(true);
+  const [onboardingCompleted, setOnboardingCompleted] = useState<boolean>(true);
+  const [onboardingChecking, setOnboardingChecking] = useState<boolean>(false);
 
   // Disaster Mode & Tabs (synchronized with URL)
   const [mode, setMode] = useState<DisasterMode>(() => {
@@ -167,6 +171,36 @@ export default function App() {
     }
   }, [currentUser?.role, duringTab]);
 
+  useEffect(() => {
+    if (currentUser?.role === 'CITIZEN') {
+      checkOnboarding();
+    } else {
+      setOnboardingCompleted(true);
+      setOnboardingChecking(false);
+    }
+  }, [currentUser?.id, currentUser?.role]);
+
+  const checkOnboarding = async () => {
+    setOnboardingChecking(true);
+    try {
+      const res = await householdService.getOnboardingStatus();
+      setOnboardingCompleted(Boolean(res.completed));
+    } catch {
+      setOnboardingCompleted(false);
+    } finally {
+      setOnboardingChecking(false);
+    }
+  };
+
+  const handleOnboardingComplete = () => {
+    setOnboardingCompleted(true);
+    setMode('BEFORE');
+    setBeforeTab('dashboard');
+    if (typeof window !== 'undefined') {
+      window.history.replaceState(null, '', '/before');
+    }
+  };
+
   const loadDisasters = async () => {
     try {
       const list = await disasterService.getDisasters();
@@ -181,11 +215,17 @@ export default function App() {
 
   const handleLoginSuccess = (user: User) => {
     setCurrentUser(user);
-    if (user.role === 'CITIZEN' && mode === 'FLOODX') {
-      setMode('BEFORE');
-      if (typeof window !== 'undefined') {
-        window.history.replaceState(null, '', '/before');
+    if (user.role === 'CITIZEN') {
+      if (mode === 'FLOODX') {
+        setMode('BEFORE');
+        if (typeof window !== 'undefined') {
+          window.history.replaceState(null, '', '/before');
+        }
       }
+      checkOnboarding();
+    } else {
+      setOnboardingCompleted(true);
+      setOnboardingChecking(false);
     }
     loadDisasters();
   };
@@ -193,6 +233,8 @@ export default function App() {
   const handleLogout = () => {
     authService.logout();
     setCurrentUser(null);
+    setOnboardingCompleted(true);
+    setOnboardingChecking(false);
   };
 
   // Switch mode and update browser URL path
@@ -208,7 +250,7 @@ export default function App() {
     }
   };
 
-  if (authChecking) {
+  if (authChecking || (currentUser?.role === 'CITIZEN' && onboardingChecking)) {
     return (
       <div className="min-h-screen bg-[#F5EFEB] flex items-center justify-center">
         <Loader2 className="w-8 h-8 animate-spin text-[#2F4156]" />
@@ -218,6 +260,18 @@ export default function App() {
 
   if (!currentUser) {
     return <LoginPage onLoginSuccess={handleLoginSuccess} />;
+  }
+
+  // MANDATORY CITIZEN HOUSEHOLD ONBOARDING GATE
+  if (currentUser.role === 'CITIZEN' && !onboardingCompleted) {
+    return (
+      <HouseholdOnboardingGate
+        user={currentUser}
+        activeDisaster={activeDisaster || (disasters.length > 0 ? disasters[0] : null)}
+        onOnboardingComplete={handleOnboardingComplete}
+        onLogout={handleLogout}
+      />
+    );
   }
 
   return (

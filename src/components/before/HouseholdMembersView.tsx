@@ -23,11 +23,15 @@ import {
 interface HouseholdMembersViewProps {
   user: User;
   activeDisaster: DisasterEvent | null;
+  isOnboarding?: boolean;
+  onOnboardingComplete?: () => void;
 }
 
 export const HouseholdMembersView: React.FC<HouseholdMembersViewProps> = ({
   user,
   activeDisaster,
+  isOnboarding = false,
+  onOnboardingComplete,
 }) => {
   const { t } = useLanguage();
   const [household, setHousehold] = useState<Household | null>(null);
@@ -38,6 +42,12 @@ export const HouseholdMembersView: React.FC<HouseholdMembersViewProps> = ({
   const [loading, setLoading] = useState(true);
   const [savingPlan, setSavingPlan] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+
+  // Address Editing State
+  const [isEditingAddress, setIsEditingAddress] = useState(false);
+  const [editAddressValue, setEditAddressValue] = useState('');
+  const [editNameValue, setEditNameValue] = useState('');
+  const [savingAddress, setSavingAddress] = useState(false);
 
   // Add Member Modal State
   const [showAddModal, setShowAddModal] = useState(false);
@@ -53,17 +63,22 @@ export const HouseholdMembersView: React.FC<HouseholdMembersViewProps> = ({
   const loadHouseholdAndPlans = async () => {
     setLoading(true);
     try {
-      const [hh, sList] = await Promise.all([
+      const [hh, sList, dList] = await Promise.all([
         householdService.getMyHousehold().catch(() => null),
         shelterService.getShelters().catch(() => []),
+        disasterService.getDisasters().catch(() => []),
       ]);
+
+      const effectiveDisaster = activeDisaster || (dList.length > 0 ? dList[0] : null);
 
       if (hh) {
         setHousehold(hh);
+        setEditAddressValue(hh.address || '');
+        setEditNameValue(hh.name || '');
 
         // Pre-populate expected locations if disaster active
-        if (activeDisaster) {
-          const locs = await disasterService.getExpectedLocations(activeDisaster.id).catch(() => []);
+        if (effectiveDisaster) {
+          const locs = await disasterService.getExpectedLocations(effectiveDisaster.id).catch(() => []);
           const map: Record<string, any> = {};
           locs.forEach((l: any) => {
             const memberId = l.householdMemberId || l.memberId;
@@ -135,7 +150,17 @@ export const HouseholdMembersView: React.FC<HouseholdMembersViewProps> = ({
   };
 
   const handleSaveDisasterPlan = async () => {
-    if (!activeDisaster || !household) return;
+    let targetDisaster = activeDisaster;
+    if (!targetDisaster) {
+      const dList = await disasterService.getDisasters().catch(() => []);
+      if (dList.length > 0) targetDisaster = dList[0];
+    }
+
+    if (!targetDisaster || !household) {
+      alert('Disaster coordination scenario is loading. Please try again in a moment.');
+      return;
+    }
+
     setSavingPlan(true);
     setSaveSuccess(false);
     try {
@@ -174,15 +199,40 @@ export const HouseholdMembersView: React.FC<HouseholdMembersViewProps> = ({
       });
 
       console.log('[HouseholdMembersView] Saving disaster plans payload:', { locations: plans });
-      await disasterService.setExpectedLocations(activeDisaster.id, plans);
+      await disasterService.setExpectedLocations(targetDisaster.id, plans);
       await loadHouseholdAndPlans();
       setSaveSuccess(true);
-      setTimeout(() => setSaveSuccess(false), 3000);
+
+      if (onOnboardingComplete) {
+        setTimeout(() => {
+          onOnboardingComplete();
+        }, 700);
+      } else {
+        setTimeout(() => setSaveSuccess(false), 3000);
+      }
     } catch (err: any) {
       console.error('[HouseholdMembersView] Save disaster plans error:', err);
       alert('Failed to save disaster plans: ' + (err.message || err));
     } finally {
       setSavingPlan(false);
+    }
+  };
+
+  const handleSaveAddress = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!household || !editAddressValue.trim()) return;
+    setSavingAddress(true);
+    try {
+      const updated = await householdService.updateHousehold(household.id, {
+        address: editAddressValue.trim(),
+        name: editNameValue.trim() || household.name,
+      });
+      setHousehold(updated);
+      setIsEditingAddress(false);
+    } catch (err: any) {
+      alert(err.message || 'Failed to update household address.');
+    } finally {
+      setSavingAddress(false);
     }
   };
 
@@ -256,38 +306,79 @@ export const HouseholdMembersView: React.FC<HouseholdMembersViewProps> = ({
           <h1 className="text-2xl sm:text-3xl font-bold font-['Space_Grotesk',sans-serif] text-[#2F4156] tracking-tight">
             {t('household.title')}
           </h1>
-          <p className="text-sm font-medium text-[#567C8D] mt-1">
-            Registered address: {household?.address || 'Your Registered Home'}
-          </p>
+          {isEditingAddress ? (
+            <form onSubmit={handleSaveAddress} className="mt-2 flex flex-wrap items-center gap-2">
+              <input
+                type="text"
+                value={editAddressValue}
+                onChange={(e) => setEditAddressValue(e.target.value)}
+                placeholder="Enter street address & ward"
+                className="px-3 py-1.5 rounded-xl border border-[#C8D9E6] text-xs font-semibold text-[#2F4156] bg-white outline-none"
+                required
+              />
+              <button
+                type="submit"
+                disabled={savingAddress}
+                className="px-3 py-1.5 rounded-xl bg-[#2F4156] text-white text-xs font-bold hover:bg-[#1F2D3D]"
+              >
+                {savingAddress ? 'Saving...' : 'Save'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsEditingAddress(false)}
+                className="px-3 py-1.5 rounded-xl bg-white border border-[#C8D9E6] text-xs font-semibold text-[#567C8D]"
+              >
+                Cancel
+              </button>
+            </form>
+          ) : (
+            <p className="text-sm font-medium text-[#567C8D] mt-1 flex items-center gap-2">
+              <span>Registered address: {household?.address || 'Your Registered Home'}</span>
+              <button
+                type="button"
+                onClick={() => setIsEditingAddress(true)}
+                className="text-[11px] font-bold text-indigo-600 hover:underline cursor-pointer"
+                title="Edit address"
+              >
+                (Edit)
+              </button>
+            </p>
+          )}
         </div>
 
         <div className="flex items-center gap-3">
           <button
             type="button"
             onClick={() => setShowAddModal(true)}
-            className="px-4 py-2.5 rounded-xl bg-white border border-[#C8D9E6] hover:bg-[#F5EFEB] text-xs font-bold text-[#2F4156] transition flex items-center gap-2 shadow-sm"
+            className="px-4 py-2.5 rounded-xl bg-white border border-[#C8D9E6] hover:bg-[#F5EFEB] text-xs font-bold text-[#2F4156] transition flex items-center gap-2 shadow-sm cursor-pointer"
           >
             <UserPlus className="w-4 h-4 text-[#567C8D]" />
             <span>Add Member</span>
           </button>
 
-          {activeDisaster && (
-            <button
-              type="button"
-              onClick={handleSaveDisasterPlan}
-              disabled={savingPlan}
-              className="px-5 py-2.5 rounded-xl bg-[#2F4156] hover:bg-[#1F2D3D] text-white text-xs font-bold transition flex items-center gap-2 shadow-md disabled:opacity-50"
-            >
-              {savingPlan ? (
-                <Loader2 className="w-4 h-4 animate-spin text-[#C8D9E6]" />
-              ) : saveSuccess ? (
-                <Check className="w-4 h-4 text-emerald-400" />
-              ) : (
-                <Save className="w-4 h-4 text-[#C8D9E6]" />
-              )}
-              <span>{saveSuccess ? t('household.savedSuccess') : t('household.savePlans')}</span>
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={handleSaveDisasterPlan}
+            disabled={savingPlan}
+            className={`px-5 py-2.5 rounded-xl text-white text-xs font-bold transition flex items-center gap-2 shadow-md cursor-pointer disabled:opacity-50 ${
+              isOnboarding ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-[#2F4156] hover:bg-[#1F2D3D]'
+            }`}
+          >
+            {savingPlan ? (
+              <Loader2 className="w-4 h-4 animate-spin text-[#C8D9E6]" />
+            ) : saveSuccess ? (
+              <Check className="w-4 h-4 text-emerald-300" />
+            ) : (
+              <Save className="w-4 h-4 text-[#C8D9E6]" />
+            )}
+            <span>
+              {saveSuccess
+                ? t('household.savedSuccess')
+                : isOnboarding
+                ? 'Save Plan to STRIDE & Continue'
+                : t('household.savePlans')}
+            </span>
+          </button>
         </div>
       </div>
 

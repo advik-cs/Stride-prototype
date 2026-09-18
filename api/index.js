@@ -698,9 +698,73 @@ async function getHouseholdDisasterOccupancy(req, res) {
     res.status(500).json({ error: error.message || "Failed to fetch household occupancy." });
   }
 }
+async function getHouseholdOnboardingStatus(req, res) {
+  try {
+    const user = req.user;
+    if (user.role !== "CITIZEN") {
+      res.json({ completed: true });
+      return;
+    }
+    const household = await database_default.household.findFirst({
+      where: { userId: user.userId },
+      include: {
+        members: {
+          include: {
+            expectedLocations: true
+          }
+        }
+      }
+    });
+    if (!household || household.members.length === 0) {
+      res.json({ completed: false, reason: "NO_HOUSEHOLD_OR_MEMBERS" });
+      return;
+    }
+    const hasSavedPlan = household.members.some(
+      (m) => m.expectedLocations && m.expectedLocations.length > 0
+    );
+    res.json({
+      completed: hasSavedPlan,
+      householdId: household.id,
+      totalMembers: household.members.length,
+      hasSavedPlan
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Failed to check onboarding status." });
+  }
+}
+async function completeHouseholdOnboarding(req, res) {
+  try {
+    const user = req.user;
+    if (user.role !== "CITIZEN") {
+      res.json({ success: true, completed: true });
+      return;
+    }
+    const household = await database_default.household.findFirst({
+      where: { userId: user.userId },
+      include: {
+        members: {
+          include: {
+            expectedLocations: true
+          }
+        }
+      }
+    });
+    if (!household || household.members.length === 0) {
+      res.status(400).json({ error: "Household and members must be created before completing onboarding." });
+      return;
+    }
+    res.json({ success: true, completed: true, householdId: household.id });
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Failed to complete household onboarding." });
+  }
+}
 
 // src/server/routes/householdRoutes.ts
 var router2 = Router2();
+router2.get("/households/onboarding-status", requireAuth, getHouseholdOnboardingStatus);
+router2.get("/citizen/onboarding-status", requireAuth, getHouseholdOnboardingStatus);
+router2.post("/households/onboarding-complete", requireAuth, completeHouseholdOnboarding);
+router2.post("/citizen/onboarding-complete", requireAuth, completeHouseholdOnboarding);
 router2.get("/households/me", requireAuth, getMyHousehold);
 router2.post("/households", requireAuth, createHousehold);
 router2.get("/households/:id", requireAuth, getHousehold);

@@ -31,7 +31,21 @@ export const householdService = {
   },
 
   async updateHousehold(id: string, data: Partial<Household>): Promise<Household> {
+    try {
+      await beforeApi.updateHousehold(id, {
+        name: data.name,
+        address: data.address,
+        city: data.registeredHomeLocation?.city || 'Bengaluru',
+        state: data.registeredHomeLocation?.state || 'Karnataka',
+      });
+    } catch (e) {
+      console.warn('Backend household update warning:', e);
+    }
     return this.getMyHousehold();
+  },
+
+  async getOnboardingStatus(): Promise<{ completed: boolean }> {
+    return beforeApi.getHouseholdOnboardingStatus();
   },
 
   async addMember(
