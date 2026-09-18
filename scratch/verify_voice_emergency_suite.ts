@@ -58,8 +58,6 @@ async function runAllTests() {
     throw new Error('No disaster event found in database to run tests.');
   }
 
-  const context = await getStrideContext(testUser.id, { latitude: 12.9352, longitude: 77.6245 });
-
   // Clean up any existing test requests for this user
   if (testUser.households[0]?.members[0]) {
     await prisma.emergencyCondition.deleteMany({
@@ -69,6 +67,8 @@ async function runAllTests() {
       where: { householdMemberId: testUser.households[0].members[0].id },
     });
   }
+
+  const context = await getStrideContext(testUser.id, { latitude: 12.9352, longitude: 77.6245 });
 
   // ------------------------------------------------------------------------
   // TEST 1: Normal question → ASSIST → no SOS

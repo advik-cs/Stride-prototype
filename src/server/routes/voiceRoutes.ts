@@ -3,6 +3,7 @@ import multer from 'multer';
 import {
   handleVoiceEmergencyChat,
   handleVoiceEmergencyAudio,
+  handleResetTestBeacon,
 } from '../controllers/voiceEmergencyController.ts';
 import { requireAuth } from '../middleware/auth.ts';
 
@@ -23,5 +24,10 @@ router.post('/emergency-chat', requireAuth, handleVoiceEmergencyChat);
 // Audio recording upload endpoint (multipart/form-data)
 router.post('/voice/emergency-audio', requireAuth, upload.single('audio'), handleVoiceEmergencyAudio);
 router.post('/emergency-audio', requireAuth, upload.single('audio'), handleVoiceEmergencyAudio);
+
+// Safe test beacon reset endpoint (Rule 7)
+router.post('/voice/reset-test-beacon', requireAuth, handleResetTestBeacon);
+router.post('/voice-emergency/reset-test-beacon', requireAuth, handleResetTestBeacon);
+router.post('/reset-test-beacon', requireAuth, handleResetTestBeacon);
 
 export default router;

@@ -38,11 +38,217 @@ export interface ChatMessage {
   content: string;
 }
 
+const WORD_TO_NUM: Record<string, number> = {
+  one: 1,
+  two: 2,
+  three: 3,
+  four: 4,
+  five: 5,
+  six: 6,
+  seven: 7,
+  eight: 8,
+  nine: 9,
+  ten: 10,
+};
+
+export function parseCount(str: string): number | undefined {
+  const n = parseInt(str, 10);
+  if (!isNaN(n)) return n;
+  return WORD_TO_NUM[str.toLowerCase().trim()];
+}
+
+/**
+ * Authoritative fact extractor for CURRENT USER UTTERANCE ONLY.
+ * Never defaults counts or invents facts from database history.
+ */
+export function extractCurrentTurnFacts(
+  message: string,
+  hasSpeculation: boolean = false
+): {
+  extracted: ExtractedEmergencyInfo;
+  uncertain: string[];
+  conditions: string[];
+} {
+  const lower = message.toLowerCase().trim();
+  const extracted: ExtractedEmergencyInfo = {};
+  const uncertain: string[] = [];
+  const conditions: string[] = [];
+
+  const isSpeculative =
+    hasSpeculation ||
+    /\b(?:think|maybe|may be|might|possibly|possible|not sure|could be|perhaps|guess|unconfirmed|wonder if)\b/i.test(
+      message
+    );
+
+  // 1. People count
+  const peopleMatch =
+    message.match(/\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s*(?:people|individuals|members|persons|of us)\b/i) ||
+    message.match(/\b(?:we are|there are|we're|actually,?\s*there are)\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten)(?!\s+(?:children|child|kids|kid|infants|infant|babies|baby|toddlers|elderly|injured|wounded))\b/i);
+
+  if (peopleMatch) {
+    if (isSpeculative) {
+      uncertain.push(`Possible people count unconfirmed (${peopleMatch[1]})`);
+    } else {
+      const p = parseCount(peopleMatch[1]);
+      if (p !== undefined && p > 0) {
+        extracted.peopleCount = p;
+      }
+    }
+  }
+
+  // 2. Children / Infants
+  const childMatch = message.match(
+    /\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s*(?:children|kids|infants|babies|toddlers|child)\b/i
+  );
+
+  const mentionsChild =
+    lower.includes('child') ||
+    lower.includes('kid') ||
+    lower.includes('baby') ||
+    lower.includes('infant') ||
+    lower.includes('toddler');
+
+  if (mentionsChild) {
+    if (isSpeculative) {
+      uncertain.push('Possible children present (unconfirmed)');
+    } else {
+      const c = childMatch ? parseCount(childMatch[1]) : 1;
+      if (c !== undefined && c > 0) {
+        extracted.childrenCount = c;
+        conditions.push('CHILDREN_INFANTS_PRESENT');
+      }
+    }
+  }
+
+  // 3. Elderly / Grandparents
+  const elderlyMatch = message.match(
+    /\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s*(?:elderly|grandparents|seniors|grandmothers|grandfathers)\b/i
+  );
+  const mentionsElderly =
+    lower.includes('elderly') ||
+    lower.includes('grandmother') ||
+    lower.includes('grandfather') ||
+    lower.includes('grandma') ||
+    lower.includes('grandpa') ||
+    lower.includes('senior citizen');
+
+  if (mentionsElderly) {
+    if (isSpeculative) {
+      uncertain.push('Possible elderly present (unconfirmed)');
+    } else {
+      const e = elderlyMatch ? parseCount(elderlyMatch[1]) : 1;
+      if (e !== undefined && e > 0) {
+        extracted.elderlyCount = e;
+      }
+    }
+  }
+
+  // 4. Injured / Medical
+  const injuredMatch = message.match(
+    /\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s*(?:injured|hurt|bleeding|wounded)\b/i
+  );
+  const mentionsInjury =
+    lower.includes('injured') ||
+    lower.includes('hurt') ||
+    lower.includes('bleeding') ||
+    lower.includes('broken leg') ||
+    lower.includes('unconscious') ||
+    lower.includes('heart attack') ||
+    lower.includes('medical emergency');
+
+  if (mentionsInjury) {
+    if (isSpeculative) {
+      uncertain.push('Possible injuries present (unconfirmed)');
+    } else {
+      const inj = injuredMatch ? parseCount(injuredMatch[1]) : 1;
+      if (inj !== undefined && inj > 0) {
+        extracted.injuredCount = inj;
+        conditions.push('HEAVILY_INJURED');
+      }
+    }
+    if (
+      lower.includes('unconscious') ||
+      lower.includes('heart') ||
+      lower.includes('severe') ||
+      lower.includes('critical')
+    ) {
+      extracted.criticalMedicalNeed = true;
+      conditions.push('SERIOUSLY_UNWELL');
+    }
+  }
+
+  // 5. Disabled / Immobile
+  if (
+    lower.includes('wheelchair') ||
+    lower.includes('disabled') ||
+    lower.includes('cannot walk') ||
+    lower.includes("can't walk") ||
+    lower.includes('bedridden')
+  ) {
+    extracted.disabledCount = 1;
+    conditions.push('PHYSICALLY_DISABLED');
+  }
+
+  // 6. Water level
+  if (lower.includes('chest') || lower.includes('neck')) {
+    extracted.waterLevel = 'EXTREME';
+    conditions.push('WATER_RISING');
+  } else if (
+    lower.includes('waist') ||
+    lower.includes('water is rising') ||
+    lower.includes('water rising') ||
+    lower.includes('submerged')
+  ) {
+    extracted.waterLevel = 'HIGH';
+    conditions.push('WATER_RISING');
+  } else if (
+    lower.includes('knee') ||
+    lower.includes('ankle') ||
+    lower.includes('water inside') ||
+    lower.includes('water is entering') ||
+    lower.includes('water entering')
+  ) {
+    extracted.waterLevel = 'MEDIUM';
+  }
+
+  // 7. Emergency Type
+  if (
+    lower.includes('trapped') ||
+    lower.includes('cannot get out') ||
+    lower.includes("can't get out") ||
+    lower.includes('stuck upstairs') ||
+    lower.includes('marooned')
+  ) {
+    extracted.emergencyType = 'TRAPPED';
+    conditions.push('TRAPPED');
+  } else if (lower.includes('fire') || lower.includes('smoke') || lower.includes('burning')) {
+    extracted.emergencyType = 'FIRE';
+    conditions.push('FIRE');
+  } else if (mentionsInjury && !lower.includes('flood') && !lower.includes('water')) {
+    extracted.emergencyType = 'MEDICAL';
+  } else if (lower.includes('flood') || lower.includes('water')) {
+    extracted.emergencyType = 'FLOOD';
+  }
+
+  // 8. Spoken Location
+  const locMatch = message.match(
+    /(?:in|at|near|from)\s+([A-Z0-9][a-zA-Z0-9\s,.-]+(?:Road|Street|Layout|Nagar|Block|Stage|Cross|Metro|Circle|Area|Apartment|Building))/i
+  );
+  if (locMatch) {
+    extracted.spokenLocation = locMatch[1].trim();
+  }
+
+  if (conditions.length > 0) {
+    extracted.conditions = conditions;
+  }
+
+  return { extracted, uncertain, conditions };
+}
+
 /**
  * Limited emergency-signal extractor fallback.
- * NOTE: As per specifications, this deterministic extractor is NOT a replacement
- * for Gemini's conversational intelligence. It only acts on high-confidence emergency signals
- * and NEVER fabricates missing information or speculative numbers.
+ * NOTE: As per specifications, this deterministic extractor acts strictly on current-turn facts
+ * and NEVER fabricates missing information, default counts, or speculative numbers.
  */
 export function limitedEmergencySignalExtractor(
   message: string,
@@ -90,7 +296,21 @@ export function limitedEmergencySignalExtractor(
     !lower.includes('water') &&
     !lower.includes('injur');
 
-  // 1. Check for pure greetings or capability inquiries (ASSIST mode)
+  // Check for speculation phrases
+  const hasSpeculation =
+    lower.includes('i think') ||
+    lower.includes('maybe') ||
+    lower.includes('might be') ||
+    lower.includes('not sure') ||
+    lower.includes('possibly') ||
+    lower.includes('probably') ||
+    lower.includes('may be');
+
+  // 1. Authoritatively extract facts from the current turn
+  const { extracted, uncertain, conditions } = extractCurrentTurnFacts(message, hasSpeculation);
+  const hasExtractedFacts = Object.keys(extracted).length > 0;
+
+  // 2. Pure greetings or capability inquiries (ASSIST mode)
   const isPureGreeting =
     /^(hi|hello|hey|good\s+(morning|afternoon|evening)|greetings)\b/i.test(lower) &&
     !lower.includes('stuck') &&
@@ -110,7 +330,7 @@ export function limitedEmergencySignalExtractor(
     lower.includes('how can you help') ||
     lower.includes('who are you');
 
-  if ((isPureGreeting || isCapabilityInquiry) && !isAffirmation) {
+  if ((isPureGreeting || isCapabilityInquiry) && !isAffirmation && !hasExtractedFacts) {
     return {
       mode: 'ASSIST',
       intent: isPureGreeting ? 'greeting' : 'capability_inquiry',
@@ -126,8 +346,8 @@ export function limitedEmergencySignalExtractor(
     };
   }
 
-  // Conversational adaptation: User cannot or refuses to describe
-  if (isCannotDescribe) {
+  // 3. Conversational adaptation: User cannot or refuses to describe
+  if (isCannotDescribe && !hasExtractedFacts) {
     let resp =
       "That's okay. You don't need to describe it. Are you able to move to a safer place? Yes or no.";
     let target = 'safety_mobility';
@@ -150,8 +370,8 @@ export function limitedEmergencySignalExtractor(
     };
   }
 
-  // Conversational adaptation: Short confirmation / affirmation ("ok", "yes", etc.)
-  if (isAffirmation) {
+  // 4. Conversational adaptation: Short confirmation / affirmation ("ok", "yes", etc.)
+  if (isAffirmation && !hasExtractedFacts) {
     if (
       lastAssistantLower.includes('do you require emergency rescue assistance') ||
       lastAssistantLower.includes('require emergency rescue')
@@ -222,7 +442,6 @@ export function limitedEmergencySignalExtractor(
       };
     }
 
-    // Default affirmation adaptation
     const defaultResp = context.activeSos
       ? "That's okay. Just tell me one thing: are you trapped right now? You can answer yes or no."
       : "Understood. Are you in immediate danger right now? You can answer yes or no.";
@@ -240,8 +459,8 @@ export function limitedEmergencySignalExtractor(
     };
   }
 
-  // Conversational adaptation: Negative answers ("no", "nope", etc.)
-  if (isNegative) {
+  // 5. Conversational adaptation: Negative answers ("no", "nope", etc.)
+  if (isNegative && !hasExtractedFacts) {
     if (
       lastAssistantLower.includes('are you trapped right now') ||
       lastAssistantLower.includes('are you trapped')
@@ -294,7 +513,7 @@ export function limitedEmergencySignalExtractor(
     }
   }
 
-  // 2. Check for informational queries (ASSIST intent)
+  // 6. Pure informational queries (ASSIST intent)
   const isQuestion =
     lower.startsWith('what') ||
     lower.startsWith('where') ||
@@ -308,7 +527,6 @@ export function limitedEmergencySignalExtractor(
     lower.includes('helpline') ||
     lower.includes('weather');
 
-  // Trapped signals
   const hasTrappedExplicit =
     lower.includes('trapped') ||
     lower.includes('cannot get out') ||
@@ -321,7 +539,6 @@ export function limitedEmergencySignalExtractor(
     lower.includes("i'm stuck") ||
     lower.includes('im stuck');
 
-  // Injury signals
   const hasInjured =
     lower.includes('injured') ||
     lower.includes('bleeding') ||
@@ -331,7 +548,6 @@ export function limitedEmergencySignalExtractor(
     lower.includes('medical emergency') ||
     lower.includes('hurt');
 
-  // Water signals
   const hasRisingWater =
     lower.includes('water is rising') ||
     lower.includes('water rising') ||
@@ -348,13 +564,6 @@ export function limitedEmergencySignalExtractor(
 
   const hasFire = lower.includes('fire') || lower.includes('smoke') || lower.includes('burning');
 
-  const hasDisabledOrImmobile =
-    lower.includes('cannot walk') ||
-    lower.includes("can't walk") ||
-    lower.includes('wheelchair') ||
-    lower.includes('bedridden') ||
-    lower.includes('disabled');
-
   const hasExplicitRescueCall =
     lower.includes('please rescue') ||
     lower.includes('send rescue') ||
@@ -366,19 +575,11 @@ export function limitedEmergencySignalExtractor(
     lower.includes('evacuate us') ||
     lower.includes('emergency need help');
 
-  // Check for speculation phrases
-  const hasSpeculation =
-    lower.includes('i think') ||
-    lower.includes('maybe') ||
-    lower.includes('might be') ||
-    lower.includes('not sure') ||
-    lower.includes('possibly') ||
-    lower.includes('probably');
-
-  // Pure informational queries (ASSIST mode)
-  if (isQuestion && !hasTrappedExplicit && !hasInjured && !hasExplicitRescueCall && !hasRisingWater && !hasFire) {
-    let resp =
-      "For your safety during this disaster event, please stay on higher ground and avoid entering moving floodwaters. Do you require emergency rescue assistance?";
+  // Informational query: If citizen is asking for guidance and did NOT provide new emergency facts
+  if (isQuestion && !hasTrappedExplicit && !hasInjured && !hasExplicitRescueCall && !hasRisingWater && !hasFire && !hasExtractedFacts) {
+    let resp = context.activeSos
+      ? "For your safety, remain in the safest, highest spot available and await rescue dispatch. If water levels rise or anyone becomes injured, let me know immediately."
+      : "For your safety during this disaster event, please stay on higher ground and avoid entering moving floodwaters. Do you require emergency rescue assistance?";
 
     if (lower.includes('what should i do') && (lower.includes('flood') || lower.includes('flooding'))) {
       resp =
@@ -402,129 +603,29 @@ export function limitedEmergencySignalExtractor(
       existingIncidentFacts,
       uncertainInformation: [],
       missingInformation: [],
-      questionTarget: 'rescue_necessity',
+      questionTarget: context.activeSos ? 'none' : 'rescue_necessity',
       shouldCreateOrUpdateSos: false,
       isFallbackExtractor: true,
     };
   }
 
-  // Clear emergency signals present (EMERGENCY mode)
-  if (
-    hasTrappedExplicit ||
-    hasInjured ||
-    (hasRisingWater && !isQuestion) ||
-    hasFire ||
-    hasExplicitRescueCall ||
-    (hasDisabledOrImmobile && (lower.includes('water') || lower.includes('evacuation') || lower.includes('help'))) ||
-    (context.activeSos && (hasInjured || hasTrappedExplicit || hasGeneralStuck))
-  ) {
-    const extracted: ExtractedEmergencyInfo = {};
-    const uncertain: string[] = [];
-    const missing: string[] = [];
-    const conditions: string[] = ['NEED_RESCUE'];
+  // 7. ACTIVE SOS UPDATE: If citizen already has active beacon and stated confirmed facts
+  if (context.activeSos && hasExtractedFacts) {
+    let assistantMsg: string;
+    let target = 'safety_mobility';
 
-    if (hasTrappedExplicit || hasGeneralStuck) {
-      extracted.emergencyType = 'TRAPPED';
-      conditions.push('TRAPPED');
-    } else if (hasFire) {
-      extracted.emergencyType = 'FIRE' as any;
-      conditions.push('FIRE');
-    } else if (hasInjured) {
-      extracted.emergencyType = 'MEDICAL';
+    if (extracted.peopleCount !== undefined) {
+      assistantMsg = `I have updated your active emergency distress signal (#${context.activeSos.id}) to ${extracted.peopleCount} people. Are any of the people injured? You can answer yes or no.`;
+      target = 'medical_need';
+    } else if (extracted.injuredCount !== undefined) {
+      assistantMsg = `I have noted the medical injury on your active emergency signal (#${context.activeSos.id}). Emergency dispatch has been notified. Are you or anyone with you able to move safely? Yes or no.`;
+      target = 'safety_mobility';
+    } else if (extracted.childrenCount !== undefined) {
+      assistantMsg = `I have updated your active emergency signal (#${context.activeSos.id}) to include ${extracted.childrenCount} children. Dispatch teams have been informed. Are you all on an upper floor? Yes or no.`;
+      target = 'safety_mobility';
     } else {
-      extracted.emergencyType = 'FLOOD';
-    }
-
-    if (hasRisingWater) {
-      extracted.waterLevel = lower.includes('chest') || lower.includes('neck') ? 'EXTREME' : 'HIGH';
-      conditions.push('WATER_RISING');
-    }
-
-    if (hasInjured) {
-      if (lower.includes('unconscious') || lower.includes('heart') || lower.includes('severe')) {
-        extracted.criticalMedicalNeed = true;
-        conditions.push('SERIOUSLY_UNWELL');
-      }
-      extracted.injuredCount = 1;
-      conditions.push('HEAVILY_INJURED');
-    }
-
-    // Number extraction for people (e.g., "5 people", "four of us")
-    const peopleNumMatch = message.match(/(\b\d+\b)\s*(?:people|individuals|members|of us|persons)/i);
-    const wordPeopleMap: Record<string, number> = {
-      one: 1,
-      two: 2,
-      three: 3,
-      four: 4,
-      five: 5,
-      six: 6,
-      seven: 7,
-      eight: 8,
-    };
-    let foundPeople = 1;
-    if (peopleNumMatch) {
-      foundPeople = parseInt(peopleNumMatch[1], 10);
-    } else {
-      for (const [w, n] of Object.entries(wordPeopleMap)) {
-        if (new RegExp(`\\b${w}\\s*(?:people|individuals|of us)\\b`, 'i').test(message)) {
-          foundPeople = n;
-          break;
-        }
-      }
-    }
-    extracted.peopleCount = Math.max(1, foundPeople);
-
-    // Speculation filter for children/elderly
-    if (lower.includes('child') || lower.includes('baby') || lower.includes('infant') || lower.includes('kid')) {
-      if (hasSpeculation) {
-        uncertain.push('Possible children present (unconfirmed)');
-      } else {
-        const childMatch = message.match(/(\b\d+\b)\s*(?:children|infants|babies|kids)/i);
-        extracted.childrenCount = childMatch ? parseInt(childMatch[1], 10) : 1;
-        conditions.push('CHILDREN_INFANTS_PRESENT');
-      }
-    }
-
-    if (
-      lower.includes('grandmother') ||
-      lower.includes('grandfather') ||
-      lower.includes('elderly') ||
-      lower.includes('grandma') ||
-      lower.includes('grandpa')
-    ) {
-      if (hasSpeculation) {
-        uncertain.push('Possible elderly present (unconfirmed)');
-      } else {
-        const elderlyMatch = message.match(/(\b\d+\b)\s*(?:elderly|grandparents)/i);
-        extracted.elderlyCount = elderlyMatch ? parseInt(elderlyMatch[1], 10) : 1;
-      }
-    }
-
-    if (
-      lower.includes('wheelchair') ||
-      lower.includes('disabled') ||
-      lower.includes('cannot walk') ||
-      lower.includes("can't walk") ||
-      lower.includes('bedridden')
-    ) {
-      extracted.disabledCount = 1;
-      conditions.push('PHYSICALLY_DISABLED');
-    }
-
-    // Location mention
-    const locMatch = message.match(
-      /(?:in|at|near|from)\s+([A-Z][a-zA-Z0-9\s,.-]+(?:Road|Street|Layout|Nagar|Block|Stage|Cross|Metro|Circle|Area))/i
-    );
-    if (locMatch) {
-      extracted.spokenLocation = locMatch[1].trim();
-    }
-
-    extracted.conditions = conditions;
-
-    let assistantMsg =
-      "I have sent your emergency distress request to the disaster response command center. Our teams are triaging your location. Please stay in a safe, elevated spot. Are there any other people or specific medical needs?";
-    if (context.activeSos) {
       assistantMsg = `I have updated your active emergency distress signal (#${context.activeSos.id}) with these details and notified dispatch teams. Please stay calm and remain in a safe location.`;
+      target = 'safety_mobility';
     }
 
     return {
@@ -534,14 +635,59 @@ export function limitedEmergencySignalExtractor(
       extractedInformation: extracted,
       existingIncidentFacts,
       uncertainInformation: uncertain,
-      missingInformation: missing,
-      questionTarget: 'vulnerabilities',
+      missingInformation: [target],
+      questionTarget: target,
       shouldCreateOrUpdateSos: true,
       isFallbackExtractor: true,
     };
   }
 
-  // Potential danger / ambiguous situation -> ASSESS mode
+  // 8. Clear emergency signals present (EMERGENCY mode)
+  const isEmergencyTrigger =
+    hasTrappedExplicit ||
+    hasInjured ||
+    (hasRisingWater && !isQuestion) ||
+    hasFire ||
+    hasExplicitRescueCall ||
+    (extracted.peopleCount !== undefined && (lower.includes('trapped') || lower.includes('water') || lower.includes('rescue') || lower.includes('help'))) ||
+    (extracted.emergencyType === 'TRAPPED') ||
+    (context.activeSos && (hasInjured || hasTrappedExplicit || hasGeneralStuck));
+
+  if (isEmergencyTrigger) {
+    if (!conditions.includes('NEED_RESCUE')) {
+      conditions.unshift('NEED_RESCUE');
+    }
+    extracted.conditions = conditions;
+
+    let assistantMsg: string;
+    let target = 'medical_need';
+
+    if (context.activeSos) {
+      assistantMsg = `I have updated your active emergency distress signal (#${context.activeSos.id}) with these details and notified dispatch teams. Please stay calm and remain in a safe location.`;
+    } else if (extracted.peopleCount !== undefined) {
+      assistantMsg = `I have logged your emergency distress request for ${extracted.peopleCount} people. Dispatch teams are triaging your location. Are any of the ${extracted.peopleCount} people injured? You can answer yes or no.`;
+      target = 'medical_need';
+    } else {
+      assistantMsg =
+        "I have sent your emergency distress request to the disaster response command center. Our teams are triaging your location. Please stay in a safe, elevated spot. Are there any other people or specific medical needs?";
+      target = 'vulnerabilities';
+    }
+
+    return {
+      mode: 'EMERGENCY',
+      intent: 'emergency_sos_dispatch',
+      assistantResponse: assistantMsg,
+      extractedInformation: extracted,
+      existingIncidentFacts,
+      uncertainInformation: uncertain,
+      missingInformation: [target],
+      questionTarget: target,
+      shouldCreateOrUpdateSos: true,
+      isFallbackExtractor: true,
+    };
+  }
+
+  // 9. Potential danger / ambiguous situation -> ASSESS mode
   let assessResponse: string;
   let missingInfo: string[];
   let target = 'situation_description';
@@ -580,24 +726,13 @@ export function limitedEmergencySignalExtractor(
     target = 'situation_description';
   }
 
-  const uncertainInfo: string[] = [];
-  if (hasSpeculation) {
-    if (lower.includes('child') || lower.includes('kid') || lower.includes('baby') || lower.includes('infant')) {
-      uncertainInfo.push('Possible children present (unconfirmed)');
-    } else if (lower.includes('elderly') || lower.includes('grand')) {
-      uncertainInfo.push('Possible elderly present (unconfirmed)');
-    } else {
-      uncertainInfo.push('Unconfirmed situation');
-    }
-  }
-
   return {
     mode: 'ASSESS',
     intent: 'assess_potential_danger',
     assistantResponse: assessResponse,
-    extractedInformation: {},
+    extractedInformation: extracted,
     existingIncidentFacts,
-    uncertainInformation: uncertainInfo,
+    uncertainInformation: uncertain,
     missingInformation: missingInfo,
     questionTarget: target,
     shouldCreateOrUpdateSos: false,
@@ -857,186 +992,29 @@ Return JSON:`;
 }
 
 /**
- * Multimodal Gemini audio processing function.
- * Accepts an audio buffer (WebM/Opus, MP4, WAV), transcribes citizen speech verbatim,
- * determines intent/mode, extracts confirmed emergency facts vs uncertain speculation,
- * and passes to the STRIDE deterministic priority & SOS triage engine.
+ * STAGE 1: Audio -> Gemini -> verbatim transcript ONLY
+ * Transcribes the audio buffer verbatim. Does not perform triage, inference, or SOS mutation.
  */
-export async function processEmergencyAudioInput(
+export async function transcribeEmergencyAudio(
   audioBuffer: Buffer,
   mimeType: string,
-  history: ChatMessage[],
-  context: StrideContextData,
-  existingIncidentFacts?: ExtractedEmergencyInfo,
   correlationId?: string
-): Promise<VoiceAudioAssistantOutput> {
+): Promise<{ transcript: string; error?: string }> {
   const apiKey = getGeminiApiKey();
   const cleanMimeType = normalizeAudioMimeType(mimeType);
-  const reqId = correlationId || `req-srv-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+  const reqId = correlationId || `transcribe-${Date.now()}`;
 
-  // Safe server-side diagnostic logging (NEVER exposes API keys or secrets)
-  console.log('[STRIDE Gemini Audio Input Structure]', {
-    correlationId: reqId,
-    historyLength: Array.isArray(history) ? history.length : 0,
-    hasActiveSosInContext: !!context.activeSos,
-    activeSosId: context.activeSos?.id || null,
-    existingIncidentFacts: existingIncidentFacts || null,
-    audioBufferSize: audioBuffer ? audioBuffer.length : 0,
-    rawMimeType: mimeType,
-    cleanMimeType,
-    hasApiKey: !!apiKey,
-  });
-
-  if (!audioBuffer || audioBuffer.length === 0) {
-    console.warn(`[STRIDE Gemini Audio] Empty audio buffer received (id: ${reqId})`);
-    return {
-      transcript: '',
-      mode: 'ASSIST',
-      intent: 'empty_audio',
-      assistantResponse:
-        "No audio was detected in your recording. Please tap the microphone and speak again, or type your message below.",
-      extractedInformation: {},
-      existingIncidentFacts,
-      uncertainInformation: [],
-      missingInformation: [],
-      questionTarget: 'none',
-      shouldCreateOrUpdateSos: false,
-      isFallbackExtractor: true,
-    };
+  if (!audioBuffer || audioBuffer.length < 200) {
+    return { transcript: '', error: 'Audio too short or empty' };
   }
 
-  // Defensive: check for ultra-short buffers (< 200 bytes) which are empty container headers
-  if (audioBuffer.length < 200) {
-    console.warn(`[STRIDE Gemini Audio] Recording too short (${audioBuffer.length} bytes, id: ${reqId}).`);
-    return {
-      transcript: '',
-      mode: 'ASSIST',
-      intent: 'recording_too_short',
-      assistantResponse:
-        "Your audio recording was too brief to detect speech. Please tap the microphone and speak your message, or type below.",
-      extractedInformation: {},
-      existingIncidentFacts,
-      uncertainInformation: [],
-      missingInformation: [],
-      questionTarget: 'none',
-      shouldCreateOrUpdateSos: false,
-      isFallbackExtractor: true,
-    };
-  }
-
-  // If no Gemini API key configured, use safe deterministic fallback
   if (!apiKey) {
-    const presentKeys = Object.keys(process.env).filter((k) =>
-      /gemini|google|key|ai/i.test(k)
-    );
-    console.warn(
-      `[STRIDE Gemini Audio] No Gemini API key detected in environment (id: ${reqId}). Checked: GEMINI_API_KEY, GOOGLE_API_KEY, GOOGLE_GENAI_API_KEY, VITE_GEMINI_API_KEY, VITE_GOOGLE_API_KEY. Detected matching env keys: [${presentKeys.join(', ')}]. Using safe fallback.`
-    );
-    return {
-      transcript: '(Spoken audio received)',
-      mode: 'ASSESS',
-      intent: 'offline_audio_received',
-      assistantResponse:
-        "Voice audio received. Automated audio transcription requires Gemini API connectivity. If you need emergency rescue, please tap the Emergency SOS button or type below.",
-      extractedInformation: {},
-      existingIncidentFacts,
-      uncertainInformation: ['Voice audio received while online transcription service is unconfigured'],
-      missingInformation: ['rescue capability', 'location', 'people count'],
-      questionTarget: 'none',
-      shouldCreateOrUpdateSos: false,
-      isFallbackExtractor: true,
-    };
+    console.warn(`[STRIDE Voice Transcription] No Gemini API key resolved (id: ${reqId}).`);
+    return { transcript: '', error: 'Transcription service unconfigured' };
   }
-
-  const masked = apiKey.length > 8 ? `${apiKey.slice(0, 4)}...${apiKey.slice(-4)}` : '***';
-  console.log(
-    `[STRIDE Gemini Audio] API key resolved (length: ${apiKey.length}, preview: ${masked}). Audio payload: ${audioBuffer.length} bytes, clean MIME: ${cleanMimeType}, id: ${reqId}. Calling gemini-2.5-flash...`
-  );
 
   try {
     const ai = new GoogleGenAI({ apiKey });
-
-    const systemPrompt = `You are the STRIDE Emergency Voice Assistant for Bengaluru, Karnataka, India during a disaster response operation.
-You are listening to an audio recording spoken by a citizen.
-
-CRITICAL CONVERSATION GROUNDING AND CONTEXT ISOLATION RULES:
-1. Transcribe the citizen's spoken words verbatim into the "transcript" field.
-2. Ground your evaluation strictly on the spoken audio.
-3. DO NOT confuse BACKGROUND DATABASE CONTEXT or EXISTING INCIDENT FACTS with what the citizen just said.
-   - If there is an active SOS or existing incident facts in the database, it is historical record context.
-   - "extractedInformation" MUST ONLY CONTAIN FACTS CONFIRMED IN THE SPOKEN AUDIO.
-   - NEVER copy facts from EXISTING INCIDENT FACTS into "extractedInformation" unless the citizen explicitly restates them in the audio!
-4. CONVERSATIONAL PROGRESSION & ANTI-REPETITION RULES:
-   - Always inspect the last message from the Assistant in CONVERSATION HISTORY.
-   - NEVER repeat the exact same question or phrasing that the Assistant just asked in previous turns!
-   - If the citizen responds with an affirmation ("ok", "yes", "sure", "fine"):
-     * Contextualize their answer based on what the assistant asked!
-     * Simplify to a single, direct yes/no question:
-       "That's okay. Just tell me one thing: are you trapped right now? You can answer yes or no."
-   - If the citizen says "No cant describe", "I don't know", or cannot describe:
-     * NEVER repeat the request to describe!
-     * Empathetically adapt: "That's okay. You don't need to describe it. Are you able to move to a safer place? Yes or no."
-   - Specify "questionTarget" in JSON (e.g. "trapped_status", "safety_mobility", "medical_need", "people_count", "location", or "none").
-5. NEVER assume, hallucinate, or state that water is entering, rising, or flooding UNLESS:
-   - The citizen explicitly mentions water, flood, or submerged conditions in the audio or recent CONVERSATION HISTORY, OR
-   - The citizen explicitly asks a question about flood safety.
-6. INTENT & MODE RULES:
-   - "ASSIST": Greetings, asking what you can do, or general safety guidance. Do NOT trigger SOS.
-   - "ASSESS": Ambiguous distress without confirmed trapped individuals or injuries. Ask a direct clarifying question. Do NOT trigger SOS.
-   - "EMERGENCY": Clear danger, trapped upstairs, water rising inside house, injuries, or requests for rescue. Set shouldCreateOrUpdateSos = true immediately.
-7. FACT vs. SPECULATION:
-   - Confirmed numbers -> extract into extractedInformation.
-   - Speculation ("I think", "maybe") -> place in uncertainInformation.
-   - NEVER fabricate numbers.
-8. DO NOT calculate priority scores.
-9. Keep assistantResponse concise, empathetic, and grounded.
-
-OUTPUT JSON FORMAT (You MUST return valid JSON matching this schema):
-{
-  "transcript": "string (verbatim transcript of citizen's spoken words in the audio)",
-  "mode": "ASSIST" | "ASSESS" | "EMERGENCY",
-  "intent": "string",
-  "assistantResponse": "string",
-  "questionTarget": "string",
-  "extractedInformation": {
-    "peopleCount": number,
-    "childrenCount": number,
-    "elderlyCount": number,
-    "disabledCount": number,
-    "injuredCount": number,
-    "criticalMedicalNeed": boolean,
-    "waterLevel": "LOW" | "MEDIUM" | "HIGH" | "EXTREME",
-    "emergencyType": "FLOOD" | "MEDICAL" | "TRAPPED" | "STRUCTURAL_DANGER" | "OTHER",
-    "conditions": ["string"],
-    "spokenLocation": "string (if mentioned)"
-  },
-  "uncertainInformation": ["string"],
-  "missingInformation": ["string"],
-  "shouldCreateOrUpdateSos": boolean
-}`;
-
-    const formattedHistory =
-      history && history.length > 0
-        ? history.map((h) => `${h.role === 'user' ? 'Citizen' : 'Assistant'}: ${h.content}`).join('\n')
-        : '(No previous messages in this session)';
-
-    const prompt = `${systemPrompt}
-
-=== DATABASE BACKGROUND CONTEXT (FOR REFERENCE ONLY - NOT CITIZEN STATEMENT) ===
-- Active Disaster: ${context.activeDisaster?.title || 'Bengaluru Urban Disaster'} (${context.activeDisaster?.alertLevel || 'HIGH'} alert level)
-- Citizen Home Address: ${context.citizenHousehold?.address || 'Bengaluru'}
-- Active SOS In Database: ${context.activeSos ? `Active SOS #${context.activeSos.id} (Status: ${context.activeSos.rescueStatus}, Priority: ${context.activeSos.priorityScore})` : 'No active SOS'}
-- Nearest Shelters: ${context.nearestShelters.map((s) => `${s.name} (${s.distanceKm}km, ${s.status})`).join(', ') || 'None listed'}
-- Nearest Facilities: ${context.nearestFacilities.map((f) => `${f.name} (${f.distanceKm}km)`).join(', ') || 'None listed'}
-
-=== EXISTING INCIDENT FACTS (FROM DATABASE - DO NOT DUPLICATE AS CURRENT STATEMENT) ===
-${existingIncidentFacts && Object.keys(existingIncidentFacts).length > 0 ? JSON.stringify(existingIncidentFacts, null, 2) : 'None (no prior active SOS facts)'}
-
-=== CONVERSATION HISTORY ===
-${formattedHistory}
-
-Analyze the citizen's audio recording and return the JSON response:`;
-
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
       contents: [
@@ -1046,71 +1024,76 @@ Analyze the citizen's audio recording and return the JSON response:`;
             data: audioBuffer.toString('base64'),
           },
         },
-        prompt,
+        'You are a verbatim speech-to-text transcriber for emergency voice recordings. Output ONLY the exact spoken words transcribed in English (or translated verbatim to English if spoken in Kannada or Hindi). Do NOT add any preamble, quotes, tags, metadata, or commentary. If the audio contains only background noise, silence, or is unintelligible, return an empty string.',
       ],
-      config: {
-        responseMimeType: 'application/json',
-      },
     });
 
-    const responseText = response.text || '';
-    const parsed = extractAndParseJson(responseText);
-
-    const validModes: VoiceEmergencyMode[] = ['ASSIST', 'ASSESS', 'EMERGENCY'];
-    const mode: VoiceEmergencyMode = parsed && validModes.includes(parsed.mode) ? parsed.mode : 'ASSESS';
-
-    let transcript = '';
-    if (parsed && typeof parsed.transcript === 'string') {
-      transcript = parsed.transcript.trim();
-    } else if (responseText && !parsed) {
-      transcript = responseText.trim();
-    }
-
-    return {
-      transcript,
-      mode,
-      intent: parsed?.intent || 'voice_audio_processing',
-      assistantResponse:
-        parsed?.assistantResponse ||
-        (mode === 'EMERGENCY'
-          ? "I have logged your emergency distress signal with our response units. Stay in a safe, elevated location."
-          : "I am here with STRIDE Emergency Command. How can I assist you?"),
-      extractedInformation: parsed?.extractedInformation || {},
-      existingIncidentFacts,
-      uncertainInformation: Array.isArray(parsed?.uncertainInformation) ? parsed.uncertainInformation : [],
-      missingInformation: Array.isArray(parsed?.missingInformation) ? parsed.missingInformation : [],
-      questionTarget: parsed?.questionTarget || undefined,
-      shouldCreateOrUpdateSos: !!parsed?.shouldCreateOrUpdateSos && mode === 'EMERGENCY',
-      isFallbackExtractor: false,
-    };
+    const rawTranscript = (response.text || '').trim();
+    return { transcript: rawTranscript };
   } catch (err: any) {
-    console.error('[STRIDE Gemini Audio Error] Full failure details:', {
-      correlationId: reqId,
-      model: 'gemini-2.5-flash',
-      apiKeyResolved: !!apiKey,
-      receivedMimeType: mimeType,
-      cleanMimeType,
-      bufferSizeBytes: audioBuffer.length,
-      errorMessage: err?.message,
-      errorStatus: err?.status,
-      statusCode: err?.statusCode,
-      errorCode: err?.code,
-      errorDetails: err?.details,
-    });
-    return {
-      transcript: '(Spoken audio received)',
-      mode: 'ASSESS',
-      intent: 'audio_processing_error',
-      assistantResponse:
-        "I was unable to fully process the audio recording. If this is an emergency, please type your message or tap the Emergency SOS button immediately.",
-      extractedInformation: {},
-      existingIncidentFacts,
-      uncertainInformation: ['Audio processing encountered an error'],
-      missingInformation: ['rescue capability', 'location'],
-      questionTarget: 'none',
-      shouldCreateOrUpdateSos: false,
-      isFallbackExtractor: true,
-    };
+    console.error(`[STRIDE Voice Transcription Error]`, err?.message || err);
+    return { transcript: '', error: err?.message || 'Transcription error' };
   }
 }
+
+/**
+ * Two-stage emergency voice audio processing:
+ * Stage 1: Audio -> Gemini Flash -> verbatim transcript ONLY.
+ * Stage 2: Transcript -> exact same text triage pipeline as typed text.
+ */
+export async function processEmergencyAudioInput(
+  audioBuffer: Buffer,
+  mimeType: string,
+  history: ChatMessage[],
+  context: StrideContextData,
+  existingIncidentFacts?: ExtractedEmergencyInfo,
+  correlationId?: string
+): Promise<VoiceAudioAssistantOutput> {
+  const reqId = correlationId || `req-srv-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+
+  // Safe server-side diagnostic logging
+  console.log('[STRIDE Voice Audio Stage 1: Transcription]', {
+    correlationId: reqId,
+    audioBytes: audioBuffer ? audioBuffer.length : 0,
+    mimeType,
+  });
+
+  // STAGE 1: Audio -> Gemini -> verbatim transcript ONLY
+  const { transcript, error } = await transcribeEmergencyAudio(audioBuffer, mimeType, reqId);
+
+  // If transcription fails or returned empty transcript: (Rule 5)
+  if (!transcript || transcript.trim() === '') {
+    console.warn(`[STRIDE Voice Audio] Transcription failed: ${error || 'Empty transcript'} (id: ${reqId})`);
+    return {
+      transcript: '',
+      mode: 'ASSESS',
+      intent: 'transcription_failed',
+      assistantResponse: "STRIDE couldn't understand the recording. Please try again.",
+      extractedInformation: {},
+      existingIncidentFacts,
+      uncertainInformation: [],
+      missingInformation: [],
+      questionTarget: 'none',
+      shouldCreateOrUpdateSos: false,
+      isFallbackExtractor: false,
+    };
+  }
+
+  console.log(`[STRIDE Voice Audio Stage 2: Unified Triage on Transcript] "${transcript}" (id: ${reqId})`);
+
+  // STAGE 2: Pass THAT transcript as the currentUserUtterance into the exact same text triage pipeline
+  const textTriageResult = await processEmergencyVoiceInput(
+    transcript,
+    history,
+    context,
+    existingIncidentFacts,
+    reqId
+  );
+
+  return {
+    ...textTriageResult,
+    transcript,
+  };
+}
+
 

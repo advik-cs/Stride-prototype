@@ -128,7 +128,7 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
     prevIsOpenRef.current = isOpen;
   }, [isOpen]);
 
-  const resetSession = () => {
+  const resetSession = async () => {
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
     }
@@ -150,6 +150,30 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
     hasStoppedRef.current = false;
     isSubmittingAudioRef.current = false;
     isSubmittingTextRef.current = false;
+
+    const prevId = activeRequest?.id || localStorage.getItem('stride_active_sos_id');
+    localStorage.removeItem('stride_active_sos_id');
+    setActiveRequest(null);
+    if (prevId) {
+      try {
+        await duringApi.resetTestBeacon(prevId);
+      } catch (err) {
+        console.warn('Reset test beacon error:', err);
+      }
+    }
+  };
+
+  const handleResetBeacon = async () => {
+    const prevId = activeRequest?.id || localStorage.getItem('stride_active_sos_id');
+    localStorage.removeItem('stride_active_sos_id');
+    setActiveRequest(null);
+    if (prevId) {
+      try {
+        await duringApi.resetTestBeacon(prevId);
+      } catch (err) {
+        console.warn('Reset test beacon error:', err);
+      }
+    }
   };
 
   // Load existing active SOS if passed or in localStorage
@@ -378,10 +402,15 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
         clientRequestId,
       });
 
-      const transcriptText =
-        res.transcript && res.transcript.trim() !== ''
-          ? `🎙️ "${res.transcript.trim()}"`
-          : '🎙️ [Emergency voice message]';
+      const isFailedTranscript =
+        !res.transcript ||
+        res.transcript.trim() === '' ||
+        res.transcript.toLowerCase().includes("couldn't understand") ||
+        res.transcript.toLowerCase().includes('requires gemini api');
+
+      const transcriptText = !isFailedTranscript
+        ? `🎤 "${res.transcript.trim()}"`
+        : "STRIDE couldn't understand the recording. Please try again.";
 
       setMessages((prev) =>
         prev.map((m) => (m.id === tempUserMsgId ? { ...m, content: transcriptText } : m))
@@ -416,7 +445,7 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
       setCurrentStatus('IDLE');
       setMessages((prev) =>
         prev.map((m) =>
-          m.id === tempUserMsgId ? { ...m, content: '🎙️ [Audio recording could not be processed]' } : m
+          m.id === tempUserMsgId ? { ...m, content: "STRIDE couldn't understand the recording. Please try again." } : m
         )
       );
 
@@ -424,7 +453,7 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
         id: 'msg-err-' + Date.now(),
         role: 'assistant',
         content:
-          "I had difficulty processing your voice recording. If you are in immediate danger, please type your message below or press the emergency SOS beacon.",
+          "STRIDE couldn't understand the recording. Please try again or type your emergency details.",
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         mode: 'ASSIST',
       };
@@ -629,17 +658,27 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
                 </p>
               </div>
             </div>
-            {activeRequest.team ? (
-              <div className="text-[11px] font-bold text-blue-900 bg-blue-100 px-2.5 py-1 rounded-lg border border-blue-200 flex items-center gap-1.5 self-start sm:self-auto">
-                <Users className="w-3.5 h-3.5 text-blue-700" />
-                <span>Assigned: {activeRequest.team.name}</span>
-              </div>
-            ) : (
-              <div className="text-[11px] text-amber-800 bg-amber-100 px-2.5 py-1 rounded-lg border border-amber-200 flex items-center gap-1.5 self-start sm:self-auto">
-                <Clock className="w-3.5 h-3.5 text-amber-600 animate-spin" />
-                <span>Command center triaging nearest boat...</span>
-              </div>
-            )}
+            <div className="flex items-center gap-2 self-start sm:self-auto">
+              {activeRequest.team ? (
+                <div className="text-[11px] font-bold text-blue-900 bg-blue-100 px-2.5 py-1 rounded-lg border border-blue-200 flex items-center gap-1.5">
+                  <Users className="w-3.5 h-3.5 text-blue-700" />
+                  <span>Assigned: {activeRequest.team.name}</span>
+                </div>
+              ) : (
+                <div className="text-[11px] text-amber-800 bg-amber-100 px-2.5 py-1 rounded-lg border border-amber-200 flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5 text-amber-600 animate-spin" />
+                  <span>Command center triaging nearest boat...</span>
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={handleResetBeacon}
+                title="Cancel / Reset test beacon"
+                className="text-[10px] font-semibold text-red-700 hover:text-red-900 bg-red-100 hover:bg-red-200 px-2 py-1 rounded-lg border border-red-300 transition cursor-pointer"
+              >
+                Reset Beacon
+              </button>
+            </div>
           </div>
         )}
 

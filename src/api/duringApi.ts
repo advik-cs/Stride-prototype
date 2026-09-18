@@ -303,6 +303,13 @@ export const duringApi = {
     });
   },
 
+  async resetTestBeacon(activeRequestId?: string): Promise<{ success: boolean; message: string; count: number }> {
+    return duringRequest<{ success: boolean; message: string; count: number }>('/voice/reset-test-beacon', {
+      method: 'POST',
+      body: JSON.stringify({ activeRequestId }),
+    });
+  },
+
   // Authority Dispatch Operations
   async getRankedRequests(): Promise<RescueRequest[]> {
     return duringRequest<RescueRequest[]>('/authority/rescue-requests/ranked');

@@ -68,7 +68,13 @@ export async function applySosLifecycleAndTriage(
   messageText: string,
   currentLocation?: { latitude: number; longitude: number },
   activeRequestId?: string
-): Promise<{ locationConflict: boolean; activeSosRecord: any }> {
+): Promise<{
+  locationConflict: boolean;
+  activeSosRecord: any;
+  sosBeforeSummary?: any;
+  sosUpdateSummary?: any;
+  sosAfterSummary?: any;
+}> {
   let locationConflict = false;
   const gpsLat = currentLocation?.latitude || context.citizenHousehold?.latitude || 12.9716;
   const gpsLng = currentLocation?.longitude || context.citizenHousehold?.longitude || 77.5946;
@@ -86,9 +92,8 @@ export async function applySosLifecycleAndTriage(
 
   let activeSosRecord: any = null;
 
-  if (aiResult.mode === 'EMERGENCY' || aiResult.shouldCreateOrUpdateSos) {
-    // Find active request: first by explicit activeRequestId, then by user's household active request
-    let existingReq = null;
+  // Find active request: first by explicit activeRequestId, then by user's household active request
+  let existingReq = null;
     if (activeRequestId) {
       existingReq = await prisma.emergencyRequest.findFirst({
         where: {
@@ -123,22 +128,52 @@ export async function applySosLifecycleAndTriage(
       });
     }
 
-    const extracted = aiResult.extractedInformation || {};
+  const extracted = aiResult.extractedInformation || {};
+  const hasExtractedFacts = Object.keys(extracted).length > 0;
+  let sosBeforeSummary: any = null;
+  let sosUpdateSummary: any = null;
+  let sosAfterSummary: any = null;
 
-    if (existingReq) {
+  if (existingReq) {
+    const prevFormatted = formatRescueRequest(existingReq);
+    sosBeforeSummary = {
+      id: existingReq.id,
+      peopleCount: prevFormatted.peopleCount,
+      childrenCount: prevFormatted.childrenCount,
+      elderlyCount: prevFormatted.elderlyCount,
+      disabledCount: prevFormatted.disabledCount,
+      injuredCount: prevFormatted.injuredCount,
+      waterLevel: prevFormatted.waterLevel,
+      emergencyType: prevFormatted.emergencyType,
+      priorityScore: existingReq.priorityScore,
+    };
+
+    const shouldUpdateSos = aiResult.mode === 'EMERGENCY' || aiResult.shouldCreateOrUpdateSos || hasExtractedFacts;
+
+    if (shouldUpdateSos) {
       // ========== UPDATE EXISTING SOS IN-PLACE (NO DUPLICATE) ==========
-      const prevFormatted = formatRescueRequest(existingReq);
+      // Rule 2: Strict deterministic merge.
+      // currentTurn[field] !== undefined ? currentTurn[field] : existing[field]
+      const mergedPeople = extracted.peopleCount !== undefined ? extracted.peopleCount : prevFormatted.peopleCount;
+      const mergedChildren = extracted.childrenCount !== undefined ? extracted.childrenCount : prevFormatted.childrenCount;
+      const mergedElderly = extracted.elderlyCount !== undefined ? extracted.elderlyCount : prevFormatted.elderlyCount;
+      const mergedDisabled = extracted.disabledCount !== undefined ? extracted.disabledCount : prevFormatted.disabledCount;
+      const mergedInjured = extracted.injuredCount !== undefined ? extracted.injuredCount : prevFormatted.injuredCount;
+      const mergedCritical = extracted.criticalMedicalNeed !== undefined ? extracted.criticalMedicalNeed : prevFormatted.criticalMedicalNeed;
+      const mergedWaterLevel = extracted.waterLevel !== undefined ? extracted.waterLevel : prevFormatted.waterLevel;
+      const mergedEmergencyType = extracted.emergencyType !== undefined ? extracted.emergencyType : prevFormatted.emergencyType;
+      const spokenLoc = extracted.spokenLocation !== undefined ? extracted.spokenLocation : prevFormatted.spokenLocation;
+      const isConflict = locationConflict !== undefined ? locationConflict : prevFormatted.locationConflict;
 
-      const mergedPeople = Math.max(prevFormatted.peopleCount, extracted.peopleCount || 1);
-      const mergedChildren = Math.max(prevFormatted.childrenCount, extracted.childrenCount || 0);
-      const mergedElderly = Math.max(prevFormatted.elderlyCount, extracted.elderlyCount || 0);
-      const mergedDisabled = Math.max(prevFormatted.disabledCount, extracted.disabledCount || 0);
-      const mergedInjured = Math.max(prevFormatted.injuredCount, extracted.injuredCount || 0);
-      const mergedCritical = prevFormatted.criticalMedicalNeed || !!extracted.criticalMedicalNeed;
-      const mergedWaterLevel = extracted.waterLevel || prevFormatted.waterLevel || 'MEDIUM';
-      const mergedEmergencyType = extracted.emergencyType || prevFormatted.emergencyType || 'FLOOD';
-      const spokenLoc = extracted.spokenLocation || prevFormatted.spokenLocation;
-      const isConflict = locationConflict || prevFormatted.locationConflict;
+      sosUpdateSummary = {
+        peopleCount: mergedPeople,
+        childrenCount: mergedChildren,
+        elderlyCount: mergedElderly,
+        disabledCount: mergedDisabled,
+        injuredCount: mergedInjured,
+        waterLevel: mergedWaterLevel,
+        emergencyType: mergedEmergencyType,
+      };
 
       const currentCondTypes = new Set(existingReq.conditions.map((c) => c.conditionType));
       currentCondTypes.add('NEED_RESCUE');
@@ -158,7 +193,7 @@ export async function applySosLifecycleAndTriage(
         criticalMedical: mergedCritical ? 25 : 0,
         injured: mergedInjured > 0 ? Math.min(25, Number(mergedInjured) * 15) : 0,
         children: mergedChildren > 0 ? Math.min(15, Number(mergedChildren) * 8) : 0,
-        elderly: mergedElderly > 0 ? Math.min(15, Number(elderlyCountMerged(prevFormatted, extracted)) * 8) : 0,
+        elderly: mergedElderly > 0 ? Math.min(15, Number(mergedElderly) * 8) : 0,
         disabled: mergedDisabled > 0 ? Math.min(15, Number(mergedDisabled) * 10) : 0,
         waterLevel:
           mergedWaterLevel === 'EXTREME'
@@ -209,7 +244,22 @@ export async function applySosLifecycleAndTriage(
       });
 
       activeSosRecord = formatRescueRequest(updatedReq, undefined, breakdown);
+      sosAfterSummary = {
+        id: updatedReq.id,
+        peopleCount: activeSosRecord.peopleCount,
+        childrenCount: activeSosRecord.childrenCount,
+        elderlyCount: activeSosRecord.elderlyCount,
+        disabledCount: activeSosRecord.disabledCount,
+        injuredCount: activeSosRecord.injuredCount,
+        waterLevel: activeSosRecord.waterLevel,
+        emergencyType: activeSosRecord.emergencyType,
+        priorityScore: activeSosRecord.priorityScore,
+      };
     } else {
+      activeSosRecord = prevFormatted;
+      sosAfterSummary = sosBeforeSummary;
+    }
+  } else if (aiResult.mode === 'EMERGENCY' || aiResult.shouldCreateOrUpdateSos) {
       // ========== CREATE NEW SOS USING EXISTING STRIDE LOGIC ==========
       const user = await prisma.user.findUnique({
         where: { id: userId },
@@ -350,54 +400,26 @@ export async function applySosLifecycleAndTriage(
       });
 
       activeSosRecord = formatRescueRequest(requestRecord, user, breakdown);
-    }
-  } else {
-    // If NOT emergency, still fetch the active SOS record if one exists, to return status to user
-    let existingReq = null;
-    if (activeRequestId) {
-      existingReq = await prisma.emergencyRequest.findFirst({
-        where: {
-          id: activeRequestId,
-          rescueStatus: { not: 'CANCELLED' },
-        },
-        include: {
-          conditions: true,
-          rescueAssignments: { orderBy: { assignedAt: 'desc' } },
-          householdMember: {
-            include: { household: { include: { user: true } } },
-          },
-        },
-      });
+      sosAfterSummary = {
+        id: requestRecord.id,
+        peopleCount: activeSosRecord.peopleCount,
+        childrenCount: activeSosRecord.childrenCount,
+        elderlyCount: activeSosRecord.elderlyCount,
+        disabledCount: activeSosRecord.disabledCount,
+        injuredCount: activeSosRecord.injuredCount,
+        waterLevel: activeSosRecord.waterLevel,
+        emergencyType: activeSosRecord.emergencyType,
+        priorityScore: activeSosRecord.priorityScore,
+      };
     }
 
-    if (!existingReq && context.citizenHousehold) {
-      const memberIds = context.citizenHousehold.members.map((m) => m.id);
-      existingReq = await prisma.emergencyRequest.findFirst({
-        where: {
-          householdMemberId: { in: memberIds },
-          rescueStatus: { not: 'CANCELLED' },
-        },
-        include: {
-          conditions: true,
-          rescueAssignments: { orderBy: { assignedAt: 'desc' } },
-          householdMember: {
-            include: { household: { include: { user: true } } },
-          },
-        },
-        orderBy: { createdAt: 'desc' },
-      });
-    }
-
-    if (existingReq) {
-      activeSosRecord = formatRescueRequest(existingReq);
-    }
-  }
-
-  return { locationConflict, activeSosRecord };
-}
-
-function elderlyCountMerged(prevFormatted: any, extracted: any): number {
-  return Math.max(prevFormatted.elderlyCount || 0, extracted.elderlyCount || 0);
+  return {
+    locationConflict,
+    activeSosRecord,
+    sosBeforeSummary,
+    sosUpdateSummary,
+    sosAfterSummary,
+  };
 }
 
 export async function handleVoiceEmergencyChat(
@@ -480,7 +502,13 @@ export async function handleVoiceEmergencyChat(
     );
 
     // 3. Apply unified SOS triage and lifecycle management
-    const { locationConflict, activeSosRecord } = await applySosLifecycleAndTriage(
+    const {
+      locationConflict,
+      activeSosRecord,
+      sosBeforeSummary,
+      sosUpdateSummary,
+      sosAfterSummary,
+    } = await applySosLifecycleAndTriage(
       userId,
       context,
       aiResult,
@@ -489,18 +517,21 @@ export async function handleVoiceEmergencyChat(
       activeRequestId
     );
 
-    console.log('[STRIDE Voice Emergency Diagnostic - Chat Response]', {
-      sessionId: sId,
-      clientRequestId: reqId,
-      activeRequestId: effectiveSosId || null,
-      extractedCurrentUserFacts: aiResult.extractedInformation || {},
-      uncertainInfo: aiResult.uncertainInformation || [],
-      missingInfo: aiResult.missingInformation || [],
-      questionTarget: aiResult.questionTarget || null,
-      assistantResponse: aiResult.assistantResponse,
-      mode: aiResult.mode,
-      isFallback: aiResult.isFallbackExtractor || false,
-    });
+    // Rule 9 Structured Diagnostic Logging
+    console.log('==================================================');
+    console.log('[STRIDE Voice Emergency Diagnostic Turn - Text]');
+    console.log('sessionId:', sId);
+    console.log('clientRequestId:', reqId);
+    console.log('activeRequestId:', effectiveSosId || null);
+    console.log('CURRENT USER:', message.trim());
+    console.log('HISTORY:', Array.isArray(history) ? history.slice(-3) : []);
+    console.log('EXISTING INCIDENT (Context only, NOT current-turn facts):', existingIncidentFacts || 'None');
+    console.log('TRANSCRIPT:', message.trim());
+    console.log('CURRENT-TURN EXTRACTION (Authoritative for this turn):', aiResult.extractedInformation || {});
+    console.log('SOS BEFORE:', sosBeforeSummary ? JSON.stringify(sosBeforeSummary) : 'None');
+    console.log('SOS UPDATE:', sosUpdateSummary ? JSON.stringify(sosUpdateSummary) : 'None');
+    console.log('SOS AFTER:', sosAfterSummary ? JSON.stringify(sosAfterSummary) : 'None');
+    console.log('==================================================');
 
     res.json({
       sessionId: sId,
@@ -607,7 +638,7 @@ export async function handleVoiceEmergencyAudio(
       }
     }
 
-    // 2. Call Gemini multimodal audio service
+    // 2. Call two-stage audio service (Stage 1 transcribe -> Stage 2 text triage)
     const aiResult: VoiceAudioAssistantOutput = await processEmergencyAudioInput(
       file.buffer,
       file.mimetype || 'audio/webm',
@@ -623,7 +654,13 @@ export async function handleVoiceEmergencyAudio(
         ? aiResult.transcript.trim()
         : 'Spoken emergency voice audio input';
 
-    const { locationConflict, activeSosRecord } = await applySosLifecycleAndTriage(
+    const {
+      locationConflict,
+      activeSosRecord,
+      sosBeforeSummary,
+      sosUpdateSummary,
+      sosAfterSummary,
+    } = await applySosLifecycleAndTriage(
       userId,
       context,
       aiResult,
@@ -631,6 +668,22 @@ export async function handleVoiceEmergencyAudio(
       currentLocation,
       activeRequestId
     );
+
+    // Rule 9 Structured Diagnostic Logging
+    console.log('==================================================');
+    console.log('[STRIDE Voice Emergency Diagnostic Turn - Audio]');
+    console.log('sessionId:', sId);
+    console.log('clientRequestId:', clientRequestId);
+    console.log('activeRequestId:', effectiveSosId || null);
+    console.log('CURRENT USER: [Voice Recording]');
+    console.log('HISTORY:', Array.isArray(history) ? history.slice(-3) : []);
+    console.log('EXISTING INCIDENT (Context only, NOT current-turn facts):', existingIncidentFacts || 'None');
+    console.log('TRANSCRIPT:', aiResult.transcript || 'None');
+    console.log('CURRENT-TURN EXTRACTION (Authoritative for this turn):', aiResult.extractedInformation || {});
+    console.log('SOS BEFORE:', sosBeforeSummary ? JSON.stringify(sosBeforeSummary) : 'None');
+    console.log('SOS UPDATE:', sosUpdateSummary ? JSON.stringify(sosUpdateSummary) : 'None');
+    console.log('SOS AFTER:', sosAfterSummary ? JSON.stringify(sosAfterSummary) : 'None');
+    console.log('==================================================');
 
     res.json({
       sessionId: sId,
@@ -654,3 +707,48 @@ export async function handleVoiceEmergencyAudio(
     res.status(500).json({ error: err.message || 'Internal error processing emergency audio input.' });
   }
 }
+
+/**
+ * Safe test beacon reset endpoint.
+ * Rule 7: Only affects authenticated citizen's own active test beacon,
+ * never deletes historical records, cancels active status safely.
+ */
+export async function handleResetTestBeacon(
+  req: AuthenticatedRequest,
+  res: Response
+): Promise<void> {
+  try {
+    const userId = req.user!.userId;
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      include: { households: { include: { members: true } } },
+    });
+    if (!user) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+    const memberIds = user.households.flatMap((h) => h.members.map((m) => m.id));
+
+    const result = await prisma.emergencyRequest.updateMany({
+      where: {
+        householdMemberId: { in: memberIds },
+        rescueStatus: { not: 'CANCELLED' },
+      },
+      data: {
+        rescueStatus: 'CANCELLED',
+        updatedAt: new Date(),
+      },
+    });
+
+    console.log(`[STRIDE Test Reset] User ${userId} safely cancelled ${result.count} active emergency request(s).`);
+    res.json({
+      success: true,
+      message: `Safely cancelled ${result.count} active emergency beacon(s) for user.`,
+      cancelledCount: result.count,
+    });
+  } catch (err: any) {
+    console.error('Reset test beacon error:', err);
+    res.status(500).json({ error: err.message || 'Failed to reset test beacon.' });
+  }
+}
+
