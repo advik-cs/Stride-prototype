@@ -35,7 +35,12 @@
 - [Deterministic Rescue Prioritization Engine](#-deterministic-rescue-prioritization-engine)
 - [Live Operational Analytics Suite](#-live-operational-analytics-suite)
 - [Interactive GIS & Spatial Disaster Mapping](#-interactive-gis--spatial-disaster-mapping)
-- [FLOOD-X SAR Satellite Modeling](#-flood-x-sar-satellite-modeling)
+- [FLOOD-X — AI-Powered Flood Intelligence](#-flood-x--ai-powered-flood-intelligence)
+  - [FLOOD-X Core Capabilities](#flood-x-core-capabilities)
+  - [FLOOD-X Application Modules](#flood-x-application-modules)
+  - [How FLOOD-X Integrates with STRIDE](#how-flood-x-integrates-with-stride)
+  - [FLOOD-X Data & Intelligence Pipeline](#flood-x-data--intelligence-pipeline)
+  - [FLOOD-X Technical Stack](#flood-x-technical-stack)
 - [Hospital & Emergency Facility Telemetry](#-hospital--emergency-facility-telemetry)
 - [Multilingual Accessibility (12 Languages)](#-multilingual-accessibility-12-languages)
 - [System Architecture](#-system-architecture)
@@ -46,6 +51,7 @@
 - [REST API Reference](#-rest-api-reference)
 - [Evaluation & Demo Credentials](#-evaluation--demo-credentials)
 - [Security & Data Integrity](#-security--data-integrity)
+- [Related Repositories](#-related-repositories)
 
 ---
 
@@ -317,13 +323,241 @@ STRIDE features an interactive geospatial mapping architecture built on **Leafle
 
 ---
 
-## 🛰️ FLOOD-X SAR Satellite Modeling
+## 🌊 FLOOD-X — AI-Powered Flood Intelligence
 
-Integrated directly into the STRIDE top-level navigation as a dedicated operational view (`FLOODX` mode):
+**FLOOD-X** is STRIDE's specialized flood-intelligence and disaster-command component. It provides a comprehensive **Common Operating Picture (COP)** by synthesizing multi-source remote sensing, aerial drone computer vision, crowdsourced citizen distress signals, and lifeline infrastructure data into actionable decision intelligence for emergency operations centers (EOC) and incident command staff.
 
-- Embeds high-resolution **Synthetic Aperture Radar (SAR)** flood modeling.
-- Enables Incident Commanders to view radar-derived flood extent overlays capable of penetrating cloud cover, heavy storm rain, and nighttime darkness.
-- Provides water-depth threshold estimations and watershed runoff models for metropolitan drainage basins.
+While STRIDE provides the overarching citizen-to-authority-to-rescuer lifecycle (household onboarding, dynamic essentials calculators, 30-hour location reconfirmation, deterministic rescue triage queues, and live civilian accountability), FLOOD-X serves as the deep flood-specific intelligence subsystem. FLOOD-X is an independent subsystem with its own repository, backend services, and high-density GIS frontend, seamlessly embedded into STRIDE's incident command interface via the dedicated top-level `FLOODX` mode navigation (`src/components/floodx/FloodXView.tsx`).
+
+**FLOOD-X Repository:** [https://github.com/advik-cs/flood-x](https://github.com/advik-cs/flood-x)
+
+---
+
+### FLOOD-X Core Capabilities
+
+#### 1. Satellite / SAR Flood Detection
+- **Copernicus Sentinel-1 SAR Ingestion**: Ingests and processes Level-1 Ground Range Detected (GRD) Interferometric Wide (IW) swath imagery from the European Space Agency's Copernicus Sentinel-1 satellite constellation via the Copernicus Data Space Ecosystem (CDSE).
+- **All-Weather C-Band Radar**: Operates at C-band microwave frequencies (~5.4 GHz), penetrating heavy cloud cover, dense tropical storm rain, atmospheric aerosols, and total nocturnal darkness to maintain continuous observational capability when optical satellites are blinded.
+- **Dual Polarization (VV / VH)**: Leverages dual-polarization channels, utilizing **VV (Vertical transmit, Vertical receive)** polarization as the primary indicator because open, standing surface floodwaters act as specular reflectors, scattering incident radar pulses away from the sensor.
+- **Radar Backscatter Change Detection ($\Delta\text{dB}$)**: Compares pre-flood baseline observations against post-flood disaster observations using a logarithmic radar cross-section ($\sigma^0$) backscatter ratio:
+  $$\Delta \text{dB} = 10 \cdot \log_{10}\left(\frac{\sigma^0_{\text{post}}}{\sigma^0_{\text{pre}}}\right) = \sigma^0_{\text{post, dB}} - \sigma^0_{\text{pre, dB}}$$
+  A sharp, negative decline in backscatter signals smooth specular reflection over newly inundated surfaces.
+- **Application Configured Threshold Presets**:
+  - **Sensitive ($-2.0\text{ dB}$)**: Identifies shallow inundation, saturated topsoil, and waterlogged vegetative understories.
+  - **Standard ($-3.0\text{ dB}$)**: Balanced operational preset optimized for open overbank floodwaters and residential street flooding.
+  - **Strict ($-4.5\text{ dB}$)**: High-confidence filter isolating deep, standing open water bodies while eliminating moist ground ambiguities.
+  *(Note: These threshold values represent the application's configured operational presets designed for field tuning rather than universally fixed scientific constants).*
+- **Speckle Reduction Filtering**: Applies a $3 \times 3$ median spatial speckle filter across raw backscatter rasters to remove high-frequency radar granular noise.
+- **Minimum Mapping Unit (MMU) Clustering**: Enforces a connected-component pixel cluster threshold, eliminating isolated false-positive pixels smaller than the defined operational threshold.
+- **Vector GeoJSON Polygon Generation**: Automatically converts filtered raster inundation masks into lightweight, interactive GeoJSON polygon vectors for real-time GIS rendering.
+
+#### 2. Aerial / Drone Computer Vision
+- **Visual Reconnaissance Ingestion**: Ingests high-resolution optical video frames and aerial drone snapshots transmitted by tactical reconnaissance units and UAV flight paths.
+- **Target Object Detection**: Automatically detects critical disaster entities:
+  - **People & Survivors**: Identifies stranded civilians on building rooftops, upper balconies, or wading through floodwaters.
+  - **Vehicles**: Detects submerged automobiles, stalled emergency vehicles, and stranded transit buses.
+  - **Boats**: Tracks civilian watercraft, inflatable motorized dinghies, and rescue boats.
+  - **Structures**: Catalogs compromised residential properties, submerged structures, and damaged electrical infrastructure.
+  - **Road Blockages**: Pinpoints debris accumulations, fallen trees, and washed-out roadway approaches.
+- **Human-in-the-Loop Operator Verification**: Displays detection bounding boxes with visual confidence scores and operator action controls (**"RESCUE"** / **"REJECT"**), ensuring that human commanders validate computer-vision detections before feeding them into tactical dispatch queues.
+
+#### 3. Multi-Source Situation Fusion
+- **Unified Geospatial Synthesis**: Synthesizes and cross-references data streams across multiple operational intelligence domains:
+  - Satellite Sentinel-1 SAR inundation vectors.
+  - Aerial drone computer vision target coordinates.
+  - Crowdsourced citizen SOS beacons and distress reports.
+  - Urban lifeline road statuses (open, partially submerged, blocked).
+  - Evacuation shelter locations and live bed occupancies.
+  - Metropolitan hospital locations, trauma capabilities, and emergency receiving readiness.
+  - Emergency response fleet positions and availability.
+- **Cross-Layer Spatial Correlation**: Fuses nearby citizen distress calls, detected rooftop survivors, and SAR flood extents into unified incident clusters, preventing duplicate dispatches and giving commanders true ground-level clarity.
+
+#### 4. GIS Common Operating Picture (COP)
+- **High-Density Tactical Console**: Built on Leaflet GIS integrated with high-resolution ESRI World Imagery satellite basemaps and tailored in a high-contrast dark GIS theme for emergency command centers.
+- **Multi-Layer Opacity & Visibility Controls**: Provides interactive layer toggles and opacity sliders for SAR flood overlays, drone detections, road networks, shelters, hospitals, and incident beacons.
+- **Real-Time Geospatial Telemetry**: Tracks total inundated area ($\text{km}^2$), flooded surface percentage across the active Area of Interest (AOI), total exposed population, and real-time cursor coordinates.
+
+#### 5. Transparent Incident Priority Scoring
+FLOOD-X rejects black-box neural prioritization in favor of an explainable, auditable multi-factor decision-support scoring formula:
+
+$$\text{Priority Score} = w_{\text{flood}} \cdot S_{\text{flood}} + w_{\text{people}} \cdot N_{\text{people}} + w_{\text{sos}} \cdot U_{\text{sos}} + w_{\text{medical}} \cdot U_{\text{medical}} + w_{\text{access}} \cdot R_{\text{access}}$$
+
+- **Configured Weights**:
+  - $w_{\text{flood}} = 0.30$: SAR radar inundation intensity and local water depth.
+  - $w_{\text{people}} = 0.25$: Number of exposed residents or aerial drone-detected survivors.
+  - $w_{\text{sos}} = 0.20$: Volume and urgency of crowdsourced citizen emergency calls.
+  - $w_{\text{medical}} = 0.15$: Critical medical urgency (dialysis, infant formula, oxygen dependence, severe hemorrhage).
+  - $w_{\text{access}} = 0.10$: Physical road isolation risk and transit distance to nearest relief asset.
+- **Priority Tier Classification**:
+  - $\ge 0.75 \longrightarrow \mathbf{CRITICAL}$ (Immediate life threat; urgent aerial or boat rescue required)
+  - $0.50 - 0.74 \longrightarrow \mathbf{HIGH}$ (Submerged access with vulnerable occupants)
+  - $0.28 - 0.49 \longrightarrow \mathbf{MEDIUM}$ (Moderate inundation; evacuation required)
+  - $< 0.28 \longrightarrow \mathbf{LOW}$ (Minor flooding; monitoring and supply delivery)
+- > [!IMPORTANT]
+  > **Distinct Scoring Architectures**: This multi-factor score represents FLOOD-X's specialized geospatial decision-intelligence model. It operates in synergy with—and is completely distinct from—STRIDE's core deterministic rescue-priority scoring engine (`src/server/utils/priority.ts`), which evaluates direct household member distress conditions inside STRIDE's transactional database.
+
+#### 6. Obstacle-Aware Rescue Routing
+- **Graph-Based Road Network Analysis**: Models regional road networks as weighted geospatial graph arcs.
+- **A\* Pathfinding Algorithm**: Dynamically computes optimal response routes for ambulances, evacuation trucks, and rescue squads.
+- **Dynamic Inundation Avoidance**: Automatically classifies SAR-detected flooded road segments and drone-detected debris blockages as high-penalty or impassable barriers, routing tactical units safely around submerged choke points to reach designated hospitals and relief centers.
+
+#### 7. Emergency Resource Optimization
+- **Response Fleet Management**: Real-time tracking of specialized disaster response assets:
+  - Inflatable motorboats and flat-bottom aluminium flood-rescue craft.
+  - Advanced Life Support (ALS) and Basic Life Support (BLS) ambulances.
+  - Heavy evacuation trucks and amphibious tactical rescue squads.
+- **Intelligent Asset Matching**: Evaluates asset capabilities, transit distance, and incident priority to recommend optimal unit assignments.
+- **Configurable Operational Priority Controls**: Allows commanders to adjust priority weight parameters and trigger one-click asset dispatch.
+
+#### 8. AI Decision Support & Automated SITREP
+- **Google Gemini Decision Support**: Leverages Google Gemini (`gemini-1.5-flash`) for grounded, natural-language incident auditing, operator querying, and tactical decision support.
+- **Automated Emergency Situation Reports (SITREP)**: Compiles standardized Emergency Situation Reports (SITREP) conforming to Incident Command System (ICS) reporting standards, detailing:
+  - Disaster event overview, geographical bounding box, and hydrological timeline.
+  - Total inundated area ($\text{km}^2$) and estimated exposed population.
+  - Prioritized incident queue accompanied by transparent multi-factor audit rationales.
+  - Resource deployment ledger and logistical shortfall warnings.
+- **Decision Support Safeguard**: AI is strictly utilized for **decision support, natural-language summarization, and reporting**. It does NOT autonomously dispatch units or override human incident commanders.
+
+---
+
+### FLOOD-X Application Modules
+
+The standalone FLOOD-X platform comprises 10 comprehensive operational modules:
+
+| Module | Purpose & Core Capabilities |
+| :--- | :--- |
+| **Command Center** | High-density GIS operations console unifying live maps, KPIs, active incidents queue, decision audit rationale, resource recommendations, and 1-click dispatch. |
+| **Live Flood Map** | Dedicated full-screen Common Operating Picture (COP) with multi-layer opacity sliders, road blockage markers, evacuation shelters, and live coordinate tracking. |
+| **Satellite Analysis** | Sentinel-1 C-SAR observation metadata, satellite disclosure banners, interactive $\Delta\text{dB}$ slider, MMU controls, backscatter histogram chart, and verification chain. |
+| **Aerial / Drone Analysis** | Visual reconnaissance workspace featuring canvas bounding box overlays, object detection metrics (people, vehicles, boats, structures), and operator approval buttons. |
+| **Incidents & SOS** | Emergency distress intake form (GPS coordinates, category, severity, occupant counts, medical urgency) and live incoming triage stream. |
+| **Damage Assessment** | Structural degradation classification for lifelines, roads, bridges, and agricultural zones with economic impact estimates and rebuild prioritization ranks (1 to 5). |
+| **Resource Optimization** | Emergency fleet inventory, configurable priority weights sliders, and obstacle-aware graph routing avoiding flooded road arcs. |
+| **Before Disaster** | Community resilience dashboard, hydrological alert level, verified shelter directory, and interactive 72-hour survival kit checklist. |
+| **After Disaster** | Phased recovery priority sequence (Hospital route clearance $\rightarrow$ Residential settlements $\rightarrow$ Bridge integrity $\rightarrow$ Power grid $\rightarrow$ Agriculture). |
+| **System Status** | Real-time health monitoring of platform subsystems (Copernicus API, Sentinel-1 feed, GIS engine, Gemini AI, Database, Drone analysis, Citizen network) and demo reset controls. |
+
+---
+
+### How FLOOD-X Integrates with STRIDE
+
+STRIDE and FLOOD-X are engineered as complementary disaster management tiers:
+
+```
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                        STRIDE (Parent Platform & Human Lifecycle)                      │
+│                                                                                        │
+│  • Citizen Preparedness & Dynamic Essentials Calculator                                │
+│  • Mandatory Citizen Household Onboarding & Vulnerability Profiling                    │
+│  • 30-Hour Pre-Disaster Location Reconfirmation Registry                               │
+│  • "Are You Safe?" Civilian Status Ledger (Safe / In Distress / Unaccounted)           │
+│  • Multimodal Gemini Voice Emergency AI Assistant & SOS Dispatch                       │
+│  • Authority Command Operations & Deterministic Ranked Rescue Queue                    │
+│  • Rescuer Mission Docket & 4-Stage Lifecycle (ASSIGNED ➔ EN_ROUTE ➔ RESCUED)         │
+│  • Metropolitan Hospital & Emergency Shelter Live Telemetry                            │
+│  • 12-Language Indian Internationalization (i18n)                                      │
+└───────────────────────────────────────────┬────────────────────────────────────────────┘
+                                            │
+                                  Bidirectional Telemetry
+                                  & Shared Situational Context
+                                            │
+                                            ▼
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                        FLOOD-X (Deep Flood Intelligence Subsystem)                     │
+│                                                                                        │
+│  • Copernicus Sentinel-1 C-SAR Logarithmic Backscatter Change Detection (ΔdB)          │
+│  • Aerial Drone Computer Vision Reconnaissance (Survivors, Boats, Blockages)           │
+│  • Multi-Source Situation Fusion Engine (Satellite + Drone + SOS + Lifelines)          │
+│  • Explainable Geospatial Multi-Factor Priority Scoring                                │
+│  • A* Obstacle-Aware Evacuation Routing Avoiding Flooded Road Segments                 │
+│  • Emergency Response Fleet Optimization & 1-Click Asset Dispatch                      │
+│  • Automated Incident Command Emergency Situation Reports (SITREP)                     │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+- **Division of Responsibilities**:
+  - **STRIDE** focuses on the human and organizational workflow: citizen preparedness, household demographics, live voice intake, deterministic priority queues, tactical rescuer coordination, and live civilian accountability.
+  - **FLOOD-X** provides deep, physics-grounded flood intelligence: processing Copernicus Sentinel-1 synthetic aperture radar, analyzing aerial drone feeds with computer vision, computing obstacle-aware routes around submerged roads, and synthesizing complex spatial telemetry into an EOC Common Operating Picture.
+- **Embedded Architecture**:
+  - FLOOD-X is not merely a chart or visualization widget; it is an independent subsystem with its own backend and frontend architecture.
+  - STRIDE embeds the FLOOD-X console directly into its top navigation bar under the `FLOODX` mode switcher (`src/components/floodx/FloodXView.tsx`), allowing incident commanders to transition between STRIDE's citizen-centric command dashboard and FLOOD-X's high-resolution satellite radar maps with a single click.
+
+---
+
+### FLOOD-X Data & Intelligence Pipeline
+
+```mermaid
+flowchart TD
+    subgraph Inputs["1. Multi-Source Ingestion Layer"]
+        S1["Copernicus Sentinel-1 C-SAR<br/>(Pre/Post Inundation Scenes)"]
+        Drone["Aerial Reconnaissance<br/>(RGB & Drone Video Frames)"]
+        SOS["STRIDE Citizen Network<br/>(Crowdsourced SOS & Distress Calls)"]
+        Infra["Urban Lifeline Infrastructure<br/>(Road Networks, Shelters, Hospitals)"]
+    end
+
+    subgraph Engines["2. Remote Sensing & Computer Vision Engines"]
+        SAR["SAR Change Detection Engine<br/>ΔdB = 10 log10(σ⁰post / σ⁰pre)<br/>Speckle Filter & MMU Clustering"]
+        CV["Aerial CV Detection Engine<br/>(Survivors, Vehicles, Boats, Blockages)"]
+        Fusion["Situation Fusion Engine<br/>(Spatial Clustering & Correlation)"]
+    end
+
+    subgraph Decision["3. Decision Intelligence Subsystem"]
+        Score["Explainable Multi-Factor Scoring<br/>(Flood, People, SOS, Medical, Access)"]
+        Routing["A* Obstacle-Aware Routing<br/>(Dynamic Avoidance of Flooded Arcs)"]
+        Fleet["Emergency Resource Optimization<br/>(Matching Boats, Ambulances & Squads)"]
+        Sitrep["Google Gemini Decision Support<br/>(Standardized ICS SITREP Generation)"]
+    end
+
+    subgraph Operations["4. Unified Operational Delivery"]
+        COP["GIS Common Operating Picture<br/>(ESRI Imagery + Vector Polygons)"]
+        StrideOps["STRIDE Emergency Operations Center<br/>(Authority Command & Tactical Rescuer Dispatch)"]
+    end
+
+    %% Ingestion to Engines
+    S1 --> SAR
+    Drone --> CV
+    SOS --> Fusion
+    Infra --> Fusion
+    SAR --> Fusion
+    CV --> Fusion
+
+    %% Engines to Decision
+    Fusion --> Score
+    Fusion --> Routing
+    Score --> Fleet
+    Score --> Sitrep
+    Routing --> Fleet
+
+    %% Decision to Operations
+    SAR --> COP
+    CV --> COP
+    Fusion --> COP
+    Score --> COP
+    Fleet --> COP
+    COP --> StrideOps
+    Sitrep --> StrideOps
+```
+
+---
+
+### FLOOD-X Technical Stack
+
+The FLOOD-X standalone platform is built with an independent, production-grade technology stack:
+
+| Layer | Technology | Specification / Role |
+| :--- | :--- | :--- |
+| **Frontend Framework** | React 18 | Declarative UI with TypeScript type safety |
+| **Styling & UI Theme** | Tailwind CSS | Dark, high-contrast GIS operations console |
+| **Geospatial Mapping** | Leaflet GIS | Integrated with ESRI World Imagery satellite basemaps & vector layers |
+| **Analytical Visuals** | Recharts | Radar backscatter histograms and flood severity distributions |
+| **Icons & Indicators** | Lucide React | Tactical emergency and remote sensing iconography |
+| **Client Bundler** | Vite 6 | High-speed frontend build tooling and HMR |
+| **Backend Framework** | Node.js & Express | RESTful API server implemented in TypeScript (ES Modules) |
+| **File Upload Handling** | Multer | Ingestion pipeline for aerial drone imagery and video snapshots |
+| **Satellite Integration** | Copernicus CDSE Client | Native Fetch client with OAuth2 token caching for Sentinel-1 catalog queries |
+| **SAR Processing** | Custom JS/TS Pipeline | Logarithmic ratio ($\Delta\text{dB}$), $3 \times 3$ median speckle filter, MMU cluster filter |
+| **AI Decision Support** | Google Gemini API | `gemini-1.5-flash` model integration for incident audits and grounded SITREP generation |
+| **Pathfinding Engine** | A\* Routing Algorithm | Graph-based topological routing dynamically penalizing flooded road arcs |
 
 ---
 
@@ -730,6 +964,13 @@ For hackathon judges, evaluators, and reviewers, the login portal (`/login`) inc
 2. **Cryptographic Protection**: Passwords are encrypted using `bcryptjs` with 10 salt rounds. API endpoints enforce stateless JWT tokens with role-based access verification (`requireRole`).
 3. **Cascading Relational Integrity**: Built on Prisma ORM with foreign-key cascade rules, preventing orphan rescue requests, unlinked status beacons, or detached household member profiles.
 4. **Resilient Offline Architecture**: Embedded SQLite database requires zero external cloud database dependencies for local deployment, making STRIDE deployable on ruggedized field laptops or local command vehicles during network blackouts.
+
+---
+
+## 🔗 Related Repositories
+
+- **STRIDE Main Platform:** [https://github.com/advik-cs/Stride-prototype](https://github.com/advik-cs/Stride-prototype) — Complete multi-role disaster management platform, citizen preparedness lifecycle, mandatory household onboarding, Gemini voice emergency triage, deterministic rescue prioritization, and live operational analytics.
+- **FLOOD-X Subsystem:** [https://github.com/advik-cs/flood-x](https://github.com/advik-cs/flood-x) — Specialized AI-powered flood intelligence subsystem featuring Copernicus Sentinel-1 SAR change detection ($\Delta\text{dB}$), aerial drone computer vision, multi-source situation fusion, obstacle-aware A* routing, emergency fleet optimization, and automated ICS SITREP generation.
 
 ---
 
