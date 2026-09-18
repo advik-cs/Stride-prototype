@@ -35,7 +35,7 @@ export const LiveAnalyticsView: React.FC<LiveAnalyticsViewProps> = ({
   activeDisaster,
   onNavigateTab,
 }) => {
-  const [activeTab, setActiveTab] = useState<'ALL' | 'ACCOUNTABILITY' | 'RISK_MATRIX' | 'DEMOGRAPHICS' | 'SHELTERS'>('ALL');
+  const [activeTab, setActiveTab] = useState<'ACCOUNTABILITY' | 'RISK_MATRIX' | 'DEMOGRAPHICS' | 'SHELTERS'>('ACCOUNTABILITY');
   const [summary, setSummary] = useState<OperationalAnalyticsSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [lastRefreshed, setLastRefreshed] = useState<Date>(new Date());
@@ -92,16 +92,6 @@ export const LiveAnalyticsView: React.FC<LiveAnalyticsViewProps> = ({
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex flex-wrap rounded-2xl bg-white border border-[#C8D9E6] p-1 text-xs font-semibold shadow-xs gap-1">
             <button
-              onClick={() => setActiveTab('ALL')}
-              className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
-                activeTab === 'ALL'
-                  ? 'bg-[#2F4156] text-white shadow-xs'
-                  : 'text-[#567C8D] hover:text-[#2F4156]'
-              }`}
-            >
-              Full Command Center
-            </button>
-            <button
               onClick={() => setActiveTab('ACCOUNTABILITY')}
               className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
                 activeTab === 'ACCOUNTABILITY'
@@ -109,7 +99,7 @@ export const LiveAnalyticsView: React.FC<LiveAnalyticsViewProps> = ({
                   : 'text-[#567C8D] hover:text-[#2F4156]'
               }`}
             >
-              Headcount Resolution
+              Civilian Accountability
             </button>
             <button
               onClick={() => setActiveTab('RISK_MATRIX')}
@@ -129,7 +119,7 @@ export const LiveAnalyticsView: React.FC<LiveAnalyticsViewProps> = ({
                   : 'text-[#567C8D] hover:text-[#2F4156]'
               }`}
             >
-              Vulnerable Demographics
+              Vulnerable Demographics & Supply Logistics
             </button>
             <button
               onClick={() => setActiveTab('SHELTERS')}
@@ -249,28 +239,7 @@ export const LiveAnalyticsView: React.FC<LiveAnalyticsViewProps> = ({
 
       {/* Main Graphs Content Area */}
       <main className="space-y-8">
-        {/* TAB 1: FULL COMMAND CENTER (ARRANGES ALL GRAPHS IN DASHBOARD) */}
-        {activeTab === 'ALL' && (
-          <div className="space-y-8">
-            {/* 1. Civilian Accountability (Full Width) */}
-            <BuildingAccountabilityChart />
-
-            {/* 2. Vulnerable Demographics & Supply Logistics (Full Width, directly below) */}
-            <VulnerableDemographicsChart activeZone={activeDisaster?.title || 'Active Operational Basin'} />
-
-            {/* Middle Row: Building Risk Matrix Scatter Plot */}
-            <BuildingRiskMatrix />
-
-            {/* Bottom Row: Shelter Capacity & Inflow Bullet Chart */}
-            <ShelterCapacityBulletChart
-              activeDisasterId={activeDisaster?.id}
-              pollingIntervalMs={6000}
-              fetchShelters={fetchLiveShelters}
-            />
-          </div>
-        )}
-
-        {/* INDIVIDUAL TAB DEEP-DIVES */}
+        {/* INDIVIDUAL ANALYTICS VIEWS */}
         {activeTab === 'ACCOUNTABILITY' && (
           <BuildingAccountabilityChart />
         )}
