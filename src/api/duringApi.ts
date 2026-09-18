@@ -135,6 +135,8 @@ export interface MapRescueRequestMarker {
 
 export interface VoiceAssistantResponse {
   transcript?: string;
+  failureStage?: string | null;
+  diagnosticReason?: string | null;
   mode: 'ASSIST' | 'ASSESS' | 'EMERGENCY';
   intent: string;
   assistantResponse: string;
@@ -271,6 +273,8 @@ export const duringApi = {
   },
 
   // STRIDE Voice Emergency AI Assistant (Audio recording upload via MediaRecorder)
+  // Primary: MediaRecorder Blob -> multipart FormData (Rule 2)
+  // Fallback: base64 JSON ONLY when multipart transport genuinely fails (Rule 10)
   async voiceEmergencyAudio(data: {
     audioBlob: Blob;
     history?: Array<{ role: 'user' | 'assistant'; content: string }>;
@@ -279,14 +283,15 @@ export const duringApi = {
     sessionId?: string;
     clientRequestId?: string;
   }): Promise<VoiceAssistantResponse & { transcript: string }> {
+    const sId = data.sessionId || `sess-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    const cId = data.clientRequestId || `req-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+
+    // 1. Primary path: multipart FormData
     const formData = new FormData();
     formData.append('audio', data.audioBlob, 'recording.webm');
-    if (data.sessionId) {
-      formData.append('sessionId', data.sessionId);
-    }
-    if (data.clientRequestId) {
-      formData.append('clientRequestId', data.clientRequestId);
-    }
+    formData.append('sessionId', sId);
+    formData.append('clientRequestId', cId);
+
     if (data.history && data.history.length > 0) {
       formData.append('history', JSON.stringify(data.history));
     }
@@ -297,10 +302,54 @@ export const duringApi = {
       formData.append('activeRequestId', data.activeRequestId);
     }
 
-    return duringRequest<VoiceAssistantResponse & { transcript: string }>('/voice/emergency-audio', {
-      method: 'POST',
-      body: formData,
-    });
+    try {
+      return await duringRequest<VoiceAssistantResponse & { transcript: string }>('/voice/emergency-audio', {
+        method: 'POST',
+        body: formData,
+      });
+    } catch (multipartErr: any) {
+      console.warn(
+        `[STRIDE Voice Audio] Primary multipart upload failed (${multipartErr?.message || 'unknown'}). Retrying once with JSON base64 fallback (same clientRequestId: ${cId})...`
+      );
+
+      // 2. Fallback path (Rule 10): Blob -> base64 JSON with same clientRequestId
+      let base64Audio = '';
+      try {
+        const reader = new FileReader();
+        base64Audio = await new Promise<string>((resolve, reject) => {
+          reader.onloadend = () => {
+            const res = reader.result as string;
+            const b64 = res ? res.split(',')[1] : '';
+            resolve(b64 || '');
+          };
+          reader.onerror = () => reject(new Error('Failed to convert audio blob to base64'));
+          reader.readAsDataURL(data.audioBlob);
+        });
+      } catch (readErr: any) {
+        console.error('[STRIDE Voice Audio] FileReader base64 conversion failed:', readErr);
+        throw multipartErr; // Throw original multipart error
+      }
+
+      if (!base64Audio) {
+        throw multipartErr;
+      }
+
+      return await duringRequest<VoiceAssistantResponse & { transcript: string }>('/voice/emergency-audio', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          audioBase64: base64Audio,
+          mimeType: data.audioBlob.type || 'audio/webm',
+          sessionId: sId,
+          clientRequestId: cId,
+          history: data.history || [],
+          currentLocation: data.currentLocation,
+          activeRequestId: data.activeRequestId,
+        }),
+      });
+    }
   },
 
   async resetTestBeacon(activeRequestId?: string): Promise<{ success: boolean; message: string; count: number }> {

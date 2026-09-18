@@ -3,6 +3,20 @@ import { StrideContextData } from './strideContextService.ts';
 
 export type VoiceEmergencyMode = 'ASSIST' | 'ASSESS' | 'EMERGENCY';
 
+export type AudioFailureStage =
+  | 'MIC_PERMISSION'
+  | 'MEDIA_RECORDER'
+  | 'EMPTY_RECORDING'
+  | 'UPLOAD'
+  | 'MULTIPART_PARSE'
+  | 'AUDIO_BUFFER'
+  | 'GEMINI_AUTH'
+  | 'GEMINI_REQUEST'
+  | 'GEMINI_RESPONSE'
+  | 'TRANSCRIPT_PARSE'
+  | 'EMPTY_TRANSCRIPT'
+  | 'TRIAGE';
+
 export interface ExtractedEmergencyInfo {
   peopleCount?: number;
   childrenCount?: number;
@@ -31,6 +45,8 @@ export interface VoiceAssistantOutput {
 
 export interface VoiceAudioAssistantOutput extends VoiceAssistantOutput {
   transcript: string;
+  failureStage?: AudioFailureStage;
+  diagnosticReason?: string;
 }
 
 export interface GroundedResponseInput {
@@ -1316,6 +1332,26 @@ Return JSON:`;
 }
 
 /**
+ * Clean raw speech-to-text transcript:
+ * - Strip surrounding quotes
+ * - Filter out noise/silence tokens ([silence], (silence), [unintelligible], none, etc.)
+ */
+export function cleanTranscript(raw: string): string {
+  if (!raw || typeof raw !== 'string') return '';
+  let cleaned = raw.trim();
+  // Strip surrounding quotes
+  cleaned = cleaned.replace(/^["'`]+|["'`]+$/g, '').trim();
+
+  // Noise / silence regex
+  const noisePattern = /^(?:\[|\()?(?:silence|unintelligible|inaudible|background noise|noise|empty|none|n\/a|speaking in foreign language|music|applause|ambient sounds?|static)(?:\]|\))?\.?$/i;
+  if (noisePattern.test(cleaned) || cleaned === '...' || cleaned === '..') {
+    return '';
+  }
+
+  return cleaned;
+}
+
+/**
  * STAGE 1: Audio -> Gemini -> verbatim transcript ONLY
  * Transcribes the audio buffer verbatim. Does not perform triage, inference, or SOS mutation.
  */
@@ -1323,41 +1359,119 @@ export async function transcribeEmergencyAudio(
   audioBuffer: Buffer,
   mimeType: string,
   correlationId?: string
-): Promise<{ transcript: string; error?: string }> {
+): Promise<{ transcript: string; error?: string; failureStage?: AudioFailureStage }> {
   const apiKey = getGeminiApiKey();
   const cleanMimeType = normalizeAudioMimeType(mimeType);
   const reqId = correlationId || `transcribe-${Date.now()}`;
 
-  if (!audioBuffer || audioBuffer.length < 200) {
-    return { transcript: '', error: 'Audio too short or empty' };
+  if (!audioBuffer || audioBuffer.length === 0) {
+    return { transcript: '', error: 'Audio buffer is empty', failureStage: 'EMPTY_RECORDING' };
+  }
+
+  if (audioBuffer.length < 200) {
+    return { transcript: '', error: `Audio buffer too small (${audioBuffer.length} bytes)`, failureStage: 'AUDIO_BUFFER' };
   }
 
   if (!apiKey) {
     console.warn(`[STRIDE Voice Transcription] No Gemini API key resolved (id: ${reqId}).`);
-    return { transcript: '', error: 'Transcription service unconfigured' };
+    return { transcript: '', error: 'Transcription service unconfigured: missing Gemini API key', failureStage: 'GEMINI_AUTH' };
   }
 
+  const base64Audio = audioBuffer.toString('base64');
+  console.log('[STRIDE Audio Diagnostic: geminiRequestStarted]', {
+    correlationId: reqId,
+    serverBufferSize: audioBuffer.length,
+    normalizedMimeType: cleanMimeType,
+    base64Length: base64Audio.length,
+  });
+
+  const prompt =
+    'You are a verbatim speech-to-text transcriber for emergency voice recordings. Output ONLY the exact spoken words transcribed in English (or translated verbatim to English if spoken in Kannada or Hindi). Do NOT add any preamble, quotes, tags, metadata, or commentary. If the audio contains only background noise, silence, or is unintelligible, return an empty string.';
+
+  const ai = new GoogleGenAI({ apiKey });
+  let rawTranscript = '';
+  let modelUsed = 'gemini-2.5-flash';
+
   try {
-    const ai = new GoogleGenAI({ apiKey });
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: modelUsed,
       contents: [
         {
           inlineData: {
             mimeType: cleanMimeType,
-            data: audioBuffer.toString('base64'),
+            data: base64Audio,
           },
         },
-        'You are a verbatim speech-to-text transcriber for emergency voice recordings. Output ONLY the exact spoken words transcribed in English (or translated verbatim to English if spoken in Kannada or Hindi). Do NOT add any preamble, quotes, tags, metadata, or commentary. If the audio contains only background noise, silence, or is unintelligible, return an empty string.',
+        prompt,
       ],
     });
 
-    const rawTranscript = (response.text || '').trim();
-    return { transcript: rawTranscript };
+    rawTranscript = (response.text || '').trim();
   } catch (err: any) {
-    console.error(`[STRIDE Voice Transcription Error]`, err?.message || err);
-    return { transcript: '', error: err?.message || 'Transcription error' };
+    const errMsg = err?.message || String(err);
+    console.warn(`[STRIDE Voice Transcription] Model ${modelUsed} error (id: ${reqId}): ${errMsg}`);
+
+    // Rule 4: Only fall back when the error specifically indicates model unavailability / unsupported model
+    const isModelUnavailable = /404|not[-_ ]?found|unsupported model|model not available|is not found/i.test(errMsg);
+    if (isModelUnavailable) {
+      console.log(`[STRIDE Voice Transcription] Attempting fallback model gemini-2.0-flash (id: ${reqId})...`);
+      try {
+        modelUsed = 'gemini-2.0-flash';
+        const fallbackRes = await ai.models.generateContent({
+          model: modelUsed,
+          contents: [
+            {
+              inlineData: {
+                mimeType: cleanMimeType,
+                data: base64Audio,
+              },
+            },
+            prompt,
+          ],
+        });
+        rawTranscript = (fallbackRes.text || '').trim();
+      } catch (fbErr: any) {
+        const fbErrMsg = fbErr?.message || String(fbErr);
+        console.warn(`[STRIDE Voice Transcription] Fallback model ${modelUsed} also failed (id: ${reqId}): ${fbErrMsg}`);
+        const isAuth = /API_KEY_INVALID|401|403|unauthorized/i.test(fbErrMsg);
+        return {
+          transcript: '',
+          error: fbErrMsg,
+          failureStage: isAuth ? 'GEMINI_AUTH' : 'GEMINI_REQUEST',
+        };
+      }
+    } else {
+      // For auth, malformed audio, quota, or other request errors, preserve actual failureStage
+      const isAuth = /API_KEY_INVALID|401|403|unauthorized|invalid api key/i.test(errMsg);
+      const isAudioBuffer = /malformed audio|unsupported audio|bad request|400/i.test(errMsg);
+      const stage: AudioFailureStage = isAuth ? 'GEMINI_AUTH' : isAudioBuffer ? 'AUDIO_BUFFER' : 'GEMINI_REQUEST';
+      return { transcript: '', error: errMsg, failureStage: stage };
+    }
   }
+
+  console.log('[STRIDE Audio Diagnostic: geminiResponseReceived]', {
+    correlationId: reqId,
+    modelUsed,
+    rawTranscriptLength: rawTranscript.length,
+    rawTranscriptPreview: rawTranscript.substring(0, 100),
+  });
+
+  const cleaned = cleanTranscript(rawTranscript);
+  console.log('[STRIDE Audio Diagnostic: parsedTranscript]', {
+    correlationId: reqId,
+    transcriptLength: cleaned.length,
+    parsedTranscript: cleaned,
+  });
+
+  if (!cleaned) {
+    return {
+      transcript: '',
+      error: 'Audio contains only background noise, silence, or unintelligible speech',
+      failureStage: 'EMPTY_TRANSCRIPT',
+    };
+  }
+
+  return { transcript: cleaned };
 }
 
 /**
@@ -1375,21 +1489,22 @@ export async function processEmergencyAudioInput(
 ): Promise<VoiceAudioAssistantOutput> {
   const reqId = correlationId || `req-srv-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
 
-  // Safe server-side diagnostic logging
-  console.log('[STRIDE Voice Audio Stage 1: Transcription]', {
+  console.log('[STRIDE Voice Audio Stage 1: Transcription Started]', {
     correlationId: reqId,
-    audioBytes: audioBuffer ? audioBuffer.length : 0,
+    serverBufferSize: audioBuffer ? audioBuffer.length : 0,
     mimeType,
   });
 
   // STAGE 1: Audio -> Gemini -> verbatim transcript ONLY
-  const { transcript, error } = await transcribeEmergencyAudio(audioBuffer, mimeType, reqId);
+  const { transcript, error, failureStage } = await transcribeEmergencyAudio(audioBuffer, mimeType, reqId);
 
-  // If transcription fails or returned empty transcript: (Rule 5)
+  // If transcription fails or returned empty transcript: (Rule 5 & 11)
   if (!transcript || transcript.trim() === '') {
-    console.warn(`[STRIDE Voice Audio] Transcription failed: ${error || 'Empty transcript'} (id: ${reqId})`);
+    console.warn(`[STRIDE Voice Audio] Transcription produced no words (id: ${reqId}, failureStage: ${failureStage || 'EMPTY_TRANSCRIPT'}): ${error || 'Empty transcript'}`);
     return {
       transcript: '',
+      failureStage: failureStage || 'EMPTY_TRANSCRIPT',
+      diagnosticReason: error || 'Transcription yielded no intelligible words',
       mode: 'ASSESS',
       intent: 'transcription_failed',
       assistantResponse: "STRIDE couldn't understand the recording. Please try again.",
@@ -1403,21 +1518,51 @@ export async function processEmergencyAudioInput(
     };
   }
 
-  console.log(`[STRIDE Voice Audio Stage 2: Unified Triage on Transcript] "${transcript}" (id: ${reqId})`);
+  console.log('[STRIDE Audio Diagnostic: triageInput]', {
+    correlationId: reqId,
+    currentUserUtterance: transcript,
+  });
 
   // STAGE 2: Pass THAT transcript as the currentUserUtterance into the exact same text triage pipeline
-  const textTriageResult = await processEmergencyVoiceInput(
-    transcript,
-    history,
-    context,
-    existingIncidentFacts,
-    reqId
-  );
+  try {
+    const textTriageResult = await processEmergencyVoiceInput(
+      transcript,
+      history,
+      context,
+      existingIncidentFacts,
+      reqId
+    );
 
-  return {
-    ...textTriageResult,
-    transcript,
-  };
+    console.log('[STRIDE Audio Diagnostic: triageOutput]', {
+      correlationId: reqId,
+      mode: textTriageResult.mode,
+      intent: textTriageResult.intent,
+      assistantResponse: textTriageResult.assistantResponse,
+      extractedInformation: textTriageResult.extractedInformation,
+    });
+
+    return {
+      ...textTriageResult,
+      transcript,
+    };
+  } catch (triageErr: any) {
+    console.error(`[STRIDE Voice Audio Stage 2 Triage Error] (id: ${reqId}):`, triageErr?.message || triageErr);
+    return {
+      transcript,
+      failureStage: 'TRIAGE',
+      diagnosticReason: triageErr?.message || 'Triage processing failed',
+      mode: 'ASSESS',
+      intent: 'triage_failed',
+      assistantResponse: "STRIDE couldn't understand the recording. Please try again.",
+      extractedInformation: {},
+      existingIncidentFacts,
+      uncertainInformation: [],
+      missingInformation: [],
+      questionTarget: 'none',
+      shouldCreateOrUpdateSos: false,
+      isFallbackExtractor: false,
+    };
+  }
 }
 
 

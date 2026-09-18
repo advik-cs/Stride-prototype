@@ -7,6 +7,8 @@ import {
   processEmergencyAudioInput,
   VoiceAssistantOutput,
   VoiceAudioAssistantOutput,
+  AudioFailureStage,
+  normalizeAudioMimeType,
 } from '../services/geminiVoiceService.ts';
 import { formatRescueRequest } from './rescueController.ts';
 import { calculateHaversineDistance } from '../utils/geo.ts';
@@ -574,27 +576,115 @@ export async function handleVoiceEmergencyAudio(
     const userId = req.user!.userId;
     const file = req.file;
 
-    if (!file || !file.buffer || file.buffer.length === 0) {
-      res.status(400).json({ error: 'Microphone audio recording file is required.' });
-      return;
-    }
-
     const sId =
-      (typeof req.body.sessionId === 'string' && req.body.sessionId.trim()) ||
+      (typeof req.body?.sessionId === 'string' && req.body.sessionId.trim()) ||
       `sess-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
 
     const clientRequestId =
-      (typeof req.body.clientRequestId === 'string' && req.body.clientRequestId.trim()) ||
+      (typeof req.body?.clientRequestId === 'string' && req.body.clientRequestId.trim()) ||
       (typeof req.headers['x-request-id'] === 'string' && req.headers['x-request-id'].trim()) ||
       `req-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
 
-    console.log(
-      `[STRIDE Voice Emergency Audio] Request received. sessionId: ${sId}, clientRequestId: ${clientRequestId}, user: ${userId}, size: ${file.buffer.length} bytes, mimetype: ${file.mimetype}`
-    );
+    // 1. Extract audio buffer: Primary from multipart file, fallback from base64 body (Rule 2 & 10)
+    let audioBuffer: Buffer | null = null;
+    let rawMimeType = 'audio/webm';
+    let inputSource: 'MULTIPART' | 'BASE64_BODY' | 'RAW_BUFFER' = 'MULTIPART';
 
-    // Parse history, currentLocation, activeRequestId from multipart FormData
+    if (file && file.buffer && file.buffer.length > 0) {
+      audioBuffer = file.buffer;
+      rawMimeType = file.mimetype || 'audio/webm';
+      inputSource = 'MULTIPART';
+    } else if (typeof req.body?.audioBase64 === 'string' && req.body.audioBase64.trim().length > 0) {
+      try {
+        audioBuffer = Buffer.from(req.body.audioBase64.trim(), 'base64');
+        rawMimeType = req.body.mimeType || req.body.mimetype || 'audio/webm';
+        inputSource = 'BASE64_BODY';
+      } catch (decodeErr: any) {
+        console.warn(`[STRIDE Voice Audio] Base64 decode failed (id: ${clientRequestId}):`, decodeErr?.message);
+      }
+    } else if (typeof req.body?.audio === 'string' && req.body.audio.trim().length > 0) {
+      try {
+        audioBuffer = Buffer.from(req.body.audio.trim(), 'base64');
+        rawMimeType = req.body.mimeType || req.body.mimetype || 'audio/webm';
+        inputSource = 'BASE64_BODY';
+      } catch (decodeErr: any) {
+        console.warn(`[STRIDE Voice Audio] Base64 decode failed (id: ${clientRequestId}):`, decodeErr?.message);
+      }
+    } else if (Buffer.isBuffer(req.body) && req.body.length > 0) {
+      audioBuffer = req.body;
+      rawMimeType = (req.headers['content-type'] as string) || 'audio/webm';
+      inputSource = 'RAW_BUFFER';
+    }
+
+    const cleanMime = normalizeAudioMimeType(rawMimeType);
+
+    // Rule 7 & 8: Safe structured diagnostic logging
+    console.log('[STRIDE Audio Diagnostic: requestReceived]', {
+      sessionId: sId,
+      clientRequestId,
+      userId,
+      inputSource,
+      hasFile: !!file,
+      uploadedFileSize: file?.size || 0,
+      uploadedFileMimetype: file?.mimetype || 'none',
+      hasBase64: !!(req.body?.audioBase64 || req.body?.audio),
+      base64Length: req.body?.audioBase64?.length || req.body?.audio?.length || 0,
+      contentType: req.headers['content-type'] || 'none',
+      serverBufferSize: audioBuffer ? audioBuffer.length : 0,
+      normalizedMimeType: cleanMime,
+      multerError: (req as any).multerError || null,
+    });
+
+    // Rule 5: Diagnose missing or empty audio buffer
+    if (!audioBuffer || audioBuffer.length === 0) {
+      const stage: AudioFailureStage = (req as any).multerError ? 'MULTIPART_PARSE' : 'EMPTY_RECORDING';
+      const reason = (req as any).multerError || 'Microphone audio recording file or base64 audio data is required.';
+      console.warn(`[STRIDE Audio Diagnostic: missingAudio] failureStage: ${stage}, reason: ${reason}`);
+      res.status(400).json({
+        error: reason,
+        failureStage: stage,
+        diagnosticReason: reason,
+        transcript: '',
+        assistantResponse: "STRIDE couldn't understand the recording. Please try again.",
+        shouldCreateOrUpdateSos: false,
+      });
+      return;
+    }
+
+    // Rule 5: Microscopic / empty recordings
+    if (audioBuffer.length < 200) {
+      console.warn(`[STRIDE Audio Diagnostic: bufferTooSmall] ${audioBuffer.length} bytes (failureStage: AUDIO_BUFFER)`);
+      res.json({
+        sessionId: sId,
+        clientRequestId,
+        transcript: '',
+        failureStage: 'AUDIO_BUFFER',
+        diagnosticReason: `Audio recording too short (${audioBuffer.length} bytes)`,
+        mode: 'ASSESS',
+        intent: 'audio_too_short',
+        assistantResponse: "STRIDE couldn't understand the recording. Please try again.",
+        extractedInformation: {},
+        existingIncidentFacts: undefined,
+        uncertainInformation: [],
+        missingInformation: [],
+        questionTarget: 'none',
+        shouldCreateOrUpdateSos: false,
+        locationConflict: false,
+        activeRequest: null,
+        isFallbackExtractor: false,
+        diagnostics: {
+          browserBlobSize: file?.size || audioBuffer.length,
+          serverBufferSize: audioBuffer.length,
+          normalizedMimeType: cleanMime,
+          failureStage: 'AUDIO_BUFFER',
+        },
+      });
+      return;
+    }
+
+    // Parse history, currentLocation, activeRequestId
     let history: any[] = [];
-    if (req.body.history) {
+    if (req.body?.history) {
       try {
         history = typeof req.body.history === 'string' ? JSON.parse(req.body.history) : req.body.history;
       } catch {
@@ -603,7 +693,7 @@ export async function handleVoiceEmergencyAudio(
     }
 
     let currentLocation: { latitude: number; longitude: number } | undefined = undefined;
-    if (req.body.currentLocation) {
+    if (req.body?.currentLocation) {
       try {
         currentLocation =
           typeof req.body.currentLocation === 'string'
@@ -615,11 +705,11 @@ export async function handleVoiceEmergencyAudio(
     }
 
     const activeRequestId: string | undefined =
-      typeof req.body.activeRequestId === 'string' && req.body.activeRequestId.trim() !== ''
+      typeof req.body?.activeRequestId === 'string' && req.body.activeRequestId.trim() !== ''
         ? req.body.activeRequestId.trim()
         : undefined;
 
-    // 1. Gather authentic STRIDE context
+    // 2. Gather authentic STRIDE context
     const context = await getStrideContext(userId, currentLocation);
 
     // Fetch existing incident facts if active SOS exists
@@ -649,17 +739,17 @@ export async function handleVoiceEmergencyAudio(
       }
     }
 
-    // 2. Call two-stage audio service (Stage 1 transcribe -> Stage 2 text triage)
+    // 3. Call two-stage audio service (Stage 1 transcribe -> Stage 2 text triage)
     const aiResult: VoiceAudioAssistantOutput = await processEmergencyAudioInput(
-      file.buffer,
-      file.mimetype || 'audio/webm',
+      audioBuffer,
+      rawMimeType,
       Array.isArray(history) ? history : [],
       context,
       existingIncidentFacts,
       clientRequestId
     );
 
-    // 3. Apply unified SOS triage and lifecycle management
+    // 4. Apply unified SOS triage and lifecycle management
     const messageForTriage =
       aiResult.transcript && aiResult.transcript.trim() !== ''
         ? aiResult.transcript.trim()
@@ -691,6 +781,7 @@ export async function handleVoiceEmergencyAudio(
     console.log('CONFIRMED FACTS:', existingIncidentFacts || {});
     console.log('TRANSCRIPT:', aiResult.transcript || 'None');
     console.log('CURRENT-TURN EXTRACTION (Authoritative for this turn):', aiResult.extractedInformation || {});
+    console.log('FAILURE STAGE:', aiResult.failureStage || 'SUCCESS');
     console.log('RESPONSE GENERATION INPUT:', {
       currentUserUtterance: aiResult.transcript || '[Voice Recording]',
       confirmedIncidentFacts: existingIncidentFacts || null,
@@ -711,6 +802,8 @@ export async function handleVoiceEmergencyAudio(
       sessionId: sId,
       clientRequestId,
       transcript: aiResult.transcript || '',
+      failureStage: aiResult.failureStage || null,
+      diagnosticReason: aiResult.diagnosticReason || null,
       mode: aiResult.mode,
       intent: aiResult.intent,
       assistantResponse: aiResult.assistantResponse,
@@ -723,10 +816,23 @@ export async function handleVoiceEmergencyAudio(
       locationConflict,
       activeRequest: activeSosRecord,
       isFallbackExtractor: aiResult.isFallbackExtractor || false,
+      diagnostics: {
+        browserBlobSize: file?.size || audioBuffer.length,
+        serverBufferSize: audioBuffer.length,
+        normalizedMimeType: cleanMime,
+        failureStage: aiResult.failureStage || 'SUCCESS',
+      },
     });
   } catch (err: any) {
     console.error('Voice emergency audio controller error:', err);
-    res.status(500).json({ error: err.message || 'Internal error processing emergency audio input.' });
+    res.status(500).json({
+      error: err.message || 'Internal error processing emergency audio input.',
+      failureStage: 'GEMINI_REQUEST',
+      diagnosticReason: err?.message || 'Server error',
+      transcript: '',
+      assistantResponse: "STRIDE couldn't understand the recording. Please try again.",
+      shouldCreateOrUpdateSos: false,
+    });
   }
 }
 

@@ -82,6 +82,7 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
   const hasStoppedRef = useRef(false);
   const isSubmittingAudioRef = useRef(false);
   const isSubmittingTextRef = useRef(false);
+  const recordingStartTimeRef = useRef<number>(0);
 
   // Initialize GPS location
   useEffect(() => {
@@ -251,6 +252,10 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
 
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       try {
+        // Rule 9: Explicitly flush remaining audio buffer before invoking stop()
+        if (mediaRecorderRef.current.state === 'recording') {
+          mediaRecorderRef.current.requestData();
+        }
         mediaRecorderRef.current.stop();
       } catch (err) {
         console.warn('Error stopping MediaRecorder:', err);
@@ -281,6 +286,8 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
             mimeType = 'audio/webm';
           } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
             mimeType = 'audio/mp4';
+          } else if (MediaRecorder.isTypeSupported('audio/ogg;codecs=opus')) {
+            mimeType = 'audio/ogg;codecs=opus';
           } else {
             mimeType = '';
           }
@@ -293,6 +300,13 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
       isRecordingRef.current = true;
       hasStoppedRef.current = false;
       isSubmittingAudioRef.current = false;
+      recordingStartTimeRef.current = Date.now();
+
+      // Rule 3: Record and log actual MediaRecorder MIME type
+      console.log('[STRIDE Audio Diagnostic: recordingStarted]', {
+        timestamp: new Date().toISOString(),
+        mediaRecorderMimeType: recorder.mimeType || mimeType,
+      });
 
       recorder.ondataavailable = (e) => {
         if (e.data && e.data.size > 0) {
@@ -308,11 +322,12 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
         }
         isSubmittingAudioRef.current = true;
 
-        const mime = recorder.mimeType || 'audio/webm';
+        const recordingDurationMs = Date.now() - recordingStartTimeRef.current;
+        const mime = recorder.mimeType || mimeType || 'audio/webm';
         const chunks = [...audioChunksRef.current];
         audioChunksRef.current = [];
 
-        // Release hardware mic track
+        // Rule 9: Release hardware mic tracks ONLY AFTER the final MediaRecorder data is collected
         if (audioStreamRef.current) {
           audioStreamRef.current.getTracks().forEach((t) => t.stop());
           audioStreamRef.current = null;
@@ -320,13 +335,40 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
 
         const blob = new Blob(chunks, { type: mime });
 
-        if (blob.size >= 50) {
-          await handleAudioUpload(blob);
-        } else {
-          console.warn('[STRIDE Voice] Recording too small (<50 bytes), ignoring.');
+        // Rule 3 & 8: Log actual browser Blob type, size, duration, chunks
+        console.log('[STRIDE Audio Diagnostic: recordingStopped]', {
+          timestamp: new Date().toISOString(),
+          mediaRecorderMimeType: recorder.mimeType,
+          blobType: blob.type,
+          blobSize: blob.size,
+          recordingDurationMs,
+          numberOfChunks: chunks.length,
+        });
+
+        // Rule 9: Reject genuinely microscopic/empty recordings (< 500 bytes)
+        if (blob.size < 500) {
+          console.warn('[STRIDE Audio Diagnostic: emptyRecording]', {
+            blobSize: blob.size,
+            recordingDurationMs,
+            failureStage: 'EMPTY_RECORDING',
+          });
           setCurrentStatus('IDLE');
           isSubmittingAudioRef.current = false;
+
+          // Rule 11: Exactly one assistant failure message, zero user messages
+          const failureAssistantMsg: MessageItem = {
+            id: 'msg-asst-' + Date.now(),
+            role: 'assistant',
+            content: "STRIDE couldn't understand the recording. Please try again.",
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            mode: 'ASSIST',
+          };
+          setMessages((prev) => [...prev, failureAssistantMsg]);
+          speakText("STRIDE couldn't understand the recording. Please try again.");
+          return;
         }
+
+        await handleAudioUpload(blob);
       };
 
       recorder.start(250);
@@ -349,8 +391,10 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
       hasStoppedRef.current = false;
       isSubmittingAudioRef.current = false;
       if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        console.warn('[STRIDE Audio Diagnostic: micPermissionDenied]', { failureStage: 'MIC_PERMISSION' });
         setMicError('Microphone permission denied. Please allow microphone access or type your emergency message below.');
       } else {
+        console.warn('[STRIDE Audio Diagnostic: mediaRecorderError]', { failureStage: 'MEDIA_RECORDER', error: err?.message });
         setMicError(`Microphone error (${err.message || 'unknown'}). Please type your message below.`);
       }
       setCurrentStatus('IDLE');
@@ -379,6 +423,13 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
     };
     setMessages((prev) => [...prev, tempUserMsg]);
 
+    console.log('[STRIDE Audio Diagnostic: uploadStarted]', {
+      clientRequestId,
+      blobSize: audioBlob.size,
+      blobType: audioBlob.type,
+      sessionId,
+    });
+
     try {
       const historyPayload = messages
         .filter(
@@ -404,6 +455,14 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
         clientRequestId,
       });
 
+      console.log('[STRIDE Audio Diagnostic: responseReceived]', {
+        clientRequestId,
+        hasTranscript: !!res.transcript,
+        transcriptLength: res.transcript ? res.transcript.length : 0,
+        failureStage: (res as any).failureStage || null,
+        diagnosticReason: (res as any).diagnosticReason || null,
+      });
+
       const isFailedTranscript =
         !res.transcript ||
         res.transcript.trim() === '' ||
@@ -411,7 +470,7 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
         res.transcript.toLowerCase().includes('requires gemini api');
 
       if (isFailedTranscript) {
-        // Remove temporary analyzing user message completely (zero user messages generated on failure)
+        // Rule 11: Remove temporary analyzing user message completely (zero user messages generated on failure)
         setMessages((prev) => prev.filter((m) => m.id !== tempUserMsgId));
 
         const failureAssistantMsg: MessageItem = {
@@ -432,6 +491,12 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
       setMessages((prev) =>
         prev.map((m) => (m.id === tempUserMsgId ? { ...m, content: transcriptText } : m))
       );
+
+      console.log('[STRIDE Audio Diagnostic: uiBubbleRendered]', {
+        clientRequestId,
+        role: 'user',
+        content: transcriptText,
+      });
 
       setCurrentMode(res.mode);
 
@@ -457,10 +522,20 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
       setMessages((prev) => [...prev, assistantMsg]);
       setCurrentStatus('IDLE');
       speakText(res.assistantResponse);
+
+      console.log('[STRIDE Audio Diagnostic: uiBubbleRendered]', {
+        clientRequestId,
+        role: 'assistant',
+        content: res.assistantResponse,
+      });
     } catch (err: any) {
-      console.error('Audio processing error:', err);
+      console.error('[STRIDE Audio Diagnostic: uploadError]', {
+        clientRequestId,
+        error: err?.message || err,
+        failureStage: 'UPLOAD',
+      });
       setCurrentStatus('IDLE');
-      // Remove temporary analyzing user message completely
+      // Rule 11: Remove temporary analyzing user message completely
       setMessages((prev) => prev.filter((m) => m.id !== tempUserMsgId));
 
       const errorMsg: MessageItem = {
@@ -471,6 +546,7 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
         mode: 'ASSIST',
       };
       setMessages((prev) => [...prev, errorMsg]);
+      speakText("STRIDE couldn't understand the recording. Please try again.");
     } finally {
       isSubmittingAudioRef.current = false;
     }
