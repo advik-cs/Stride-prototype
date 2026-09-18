@@ -181,7 +181,8 @@ Designed for on-the-ground first responders, boat crews, and evacuation squads:
 - **DURING Phase Only**:
   - **Assigned Mission Docket**: Field teams receive direct incident assignments with precise civilian details, reported conditions, headcounts, and GPS coordinates.
   - **Four-Stage Mission State Machine**: Responders update operational status through transparent state transitions:
-    $$\text{ASSIGNED} \longrightarrow \text{EN\_ROUTE} \longrightarrow \text{ON\_SCENE} \longrightarrow \text{SAFELY\_RESCUED / CANCELLED}$$
+    
+    `ASSIGNED → EN_ROUTE → ON_SCENE → SAFELY_RESCUED / CANCELLED`
   - **Emergency Tactical Map**: Interactive routing map displaying incident locations, active flood hazard polygons, closed/flooded roadways, and nearest triage points.
   - **Live Field Analytics**: Access to district-level accountability matrices and shelter receiving statuses.
 
@@ -434,7 +435,7 @@ The standalone FLOOD-X platform comprises 10 comprehensive operational modules:
 | **Damage Assessment** | Structural degradation classification for lifelines, roads, bridges, and agricultural zones with economic impact estimates and rebuild prioritization ranks (1 to 5). |
 | **Resource Optimization** | Emergency fleet inventory, configurable priority weights sliders, and obstacle-aware graph routing avoiding flooded road arcs. |
 | **Before Disaster** | Community resilience dashboard, hydrological alert level, verified shelter directory, and interactive 72-hour survival kit checklist. |
-| **After Disaster** | Phased recovery priority sequence (Hospital route clearance $\rightarrow$ Residential settlements $\rightarrow$ Bridge integrity $\rightarrow$ Power grid $\rightarrow$ Agriculture). |
+| **After Disaster** | Phased recovery priority sequence (Hospital route clearance → Residential settlements → Bridge integrity → Power grid → Agriculture). |
 | **System Status** | Real-time health monitoring of platform subsystems (Copernicus API, Sentinel-1 feed, GIS engine, Gemini AI, Database, Drone analysis, Citizen network) and demo reset controls. |
 
 ---
