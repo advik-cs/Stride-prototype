@@ -4723,6 +4723,31 @@ function detectLocationConflict(gpsLat, gpsLng, spokenLocation) {
   }
   return { conflict: false };
 }
+function calculateStrideDeterministicPriority(inputs) {
+  const condList = Array.isArray(inputs.conditions) ? inputs.conditions : inputs.conditions instanceof Set ? Array.from(inputs.conditions) : [];
+  const hasCriticalMedical = !!inputs.criticalMedicalNeed || condList.includes("SERIOUSLY_UNWELL");
+  const injuredCount = Math.max(0, Number(inputs.injuredCount) || 0);
+  const childrenCount = Math.max(0, Number(inputs.childrenCount) || 0);
+  const elderlyCount = Math.max(0, Number(inputs.elderlyCount) || 0);
+  const disabledCount = Math.max(0, Number(inputs.disabledCount) || 0);
+  const waterLevel = inputs.waterLevel || "MEDIUM";
+  const emergencyType = inputs.emergencyType || "FLOOD";
+  const hasTrapped = condList.includes("TRAPPED") || emergencyType === "TRAPPED" || emergencyType === "STRUCTURAL_DANGER";
+  const hasFire = condList.includes("FIRE") || emergencyType === "FIRE";
+  const breakdown = {
+    criticalMedical: hasCriticalMedical ? 25 : 0,
+    injured: injuredCount > 0 ? Math.min(25, injuredCount * 15) : 0,
+    children: childrenCount > 0 ? Math.min(15, childrenCount * 8) : 0,
+    elderly: elderlyCount > 0 ? Math.min(15, elderlyCount * 8) : 0,
+    disabled: disabledCount > 0 ? Math.min(15, disabledCount * 10) : 0,
+    waterLevel: waterLevel === "EXTREME" ? 20 : waterLevel === "HIGH" ? 15 : waterLevel === "MEDIUM" ? 10 : 5,
+    trappedOrStructural: hasFire ? 30 : hasTrapped ? 20 : 0
+  };
+  const calculatedTotal = Object.values(breakdown).reduce((a, b) => a + b, 0);
+  const score = Math.min(100, Math.max(15, calculatedTotal));
+  const level = score >= 75 ? "CRITICAL" : score >= 50 ? "HIGH" : score >= 25 ? "MEDIUM" : "LOW";
+  return { score, level, breakdown };
+}
 async function applySosLifecycleAndTriage(userId, context, aiResult, messageText, currentLocation, activeRequestId) {
   let locationConflict = false;
   const gpsLat = currentLocation?.latitude || context.citizenHousehold?.latitude || 12.9716;
@@ -4801,7 +4826,7 @@ async function applySosLifecycleAndTriage(userId, context, aiResult, messageText
       const mergedEmergencyType = extracted.emergencyType !== void 0 ? extracted.emergencyType : prevFormatted.emergencyType;
       const spokenLoc = extracted.spokenLocation !== void 0 ? extracted.spokenLocation : prevFormatted.spokenLocation;
       const isConflict = locationConflict !== void 0 ? locationConflict : prevFormatted.locationConflict;
-      const currentCondTypes = new Set(existingReq.conditions.map((c) => c.conditionType));
+      const currentCondTypes = new Set(existingReq.conditions.map((c) => String(c.conditionType)));
       currentCondTypes.add("NEED_RESCUE");
       if (mergedCritical) {
         currentCondTypes.add("SERIOUSLY_UNWELL");
@@ -4851,17 +4876,35 @@ async function applySosLifecycleAndTriage(userId, context, aiResult, messageText
         waterLevel: mergedWaterLevel,
         emergencyType: resolvedEmergencyType
       };
-      const breakdown = {
-        criticalMedical: mergedCritical ? 25 : 0,
-        injured: mergedInjured > 0 ? Math.min(25, Number(mergedInjured) * 15) : 0,
-        children: mergedChildren > 0 ? Math.min(15, Number(mergedChildren) * 8) : 0,
-        elderly: mergedElderly > 0 ? Math.min(15, Number(mergedElderly) * 8) : 0,
-        disabled: mergedDisabled > 0 ? Math.min(15, Number(mergedDisabled) * 10) : 0,
-        waterLevel: mergedWaterLevel === "EXTREME" ? 20 : mergedWaterLevel === "HIGH" ? 15 : mergedWaterLevel === "MEDIUM" ? 10 : 5,
-        trappedOrStructural: resolvedEmergencyType === "TRAPPED" || resolvedEmergencyType === "STRUCTURAL_DANGER" ? 20 : resolvedEmergencyType === "FIRE" ? 30 : 0
-      };
-      const calculatedTotal = Object.values(breakdown).reduce((a, b) => a + b, 0);
-      const priorityScore = Math.min(100, Math.max(15, calculatedTotal));
+      const priorityResult = calculateStrideDeterministicPriority({
+        criticalMedicalNeed: mergedCritical,
+        injuredCount: mergedInjured,
+        childrenCount: mergedChildren,
+        elderlyCount: mergedElderly,
+        disabledCount: mergedDisabled,
+        waterLevel: mergedWaterLevel,
+        emergencyType: resolvedEmergencyType,
+        conditions: currentCondTypes
+      });
+      const breakdown = priorityResult.breakdown;
+      const priorityScore = priorityResult.score;
+      console.log("[AUTHORITATIVE DETERMINISTIC PRIORITY INPUTS & OUTPUT]", {
+        stage: "UPDATE_SOS",
+        turnMessage: messageText.trim(),
+        inputs: {
+          criticalMedicalNeed: mergedCritical,
+          injuredCount: mergedInjured,
+          childrenCount: mergedChildren,
+          elderlyCount: mergedElderly,
+          disabledCount: mergedDisabled,
+          waterLevel: mergedWaterLevel,
+          emergencyType: resolvedEmergencyType,
+          conditions: Array.from(currentCondTypes)
+        },
+        breakdown,
+        priorityScore,
+        priorityLevel: priorityResult.level
+      });
       const metaTag = `[SRC:VOICE, P:${mergedPeople}, C:${mergedChildren}, E:${mergedElderly}, D:${mergedDisabled}, I:${mergedInjured}, W:${mergedWaterLevel}, T:${resolvedEmergencyType}${spokenLoc ? `, SPOKEN_LOC:${spokenLoc}` : ""}${isConflict ? ", CONFLICT:YES" : ", CONFLICT:NO"}]`;
       const updatedDesc = `${metaTag} ${prevFormatted.description} | Voice update: ${messageText.trim()}`.trim();
       await database_default.emergencyCondition.deleteMany({
@@ -4974,17 +5017,35 @@ async function applySosLifecycleAndTriage(userId, context, aiResult, messageText
     if (waterLevel === "HIGH" || waterLevel === "EXTREME") conditionList.push("WATER_RISING");
     if (emergencyType === "TRAPPED") conditionList.push("TRAPPED");
     if (emergencyType === "FIRE") conditionList.push("FIRE");
-    const breakdown = {
-      criticalMedical: criticalMedicalNeed ? 25 : 0,
-      injured: injuredCount > 0 ? Math.min(25, Number(injuredCount) * 15) : 0,
-      children: childrenCount > 0 ? Math.min(15, Number(childrenCount) * 8) : 0,
-      elderly: elderlyCount > 0 ? Math.min(15, Number(elderlyCount) * 8) : 0,
-      disabled: disabledCount > 0 ? Math.min(15, Number(disabledCount) * 10) : 0,
-      waterLevel: waterLevel === "EXTREME" ? 20 : waterLevel === "HIGH" ? 15 : waterLevel === "MEDIUM" ? 10 : 5,
-      trappedOrStructural: emergencyType === "TRAPPED" || emergencyType === "STRUCTURAL_DANGER" ? 20 : emergencyType === "FIRE" ? 30 : 0
-    };
-    const calculatedTotal = Object.values(breakdown).reduce((a, b) => a + b, 0);
-    const priorityScore = Math.min(100, Math.max(15, calculatedTotal));
+    const priorityResult = calculateStrideDeterministicPriority({
+      criticalMedicalNeed,
+      injuredCount,
+      childrenCount,
+      elderlyCount,
+      disabledCount,
+      waterLevel,
+      emergencyType,
+      conditions: conditionList
+    });
+    const breakdown = priorityResult.breakdown;
+    const priorityScore = priorityResult.score;
+    console.log("[AUTHORITATIVE DETERMINISTIC PRIORITY INPUTS & OUTPUT]", {
+      stage: "CREATE_SOS",
+      turnMessage: messageText.trim(),
+      inputs: {
+        criticalMedicalNeed,
+        injuredCount,
+        childrenCount,
+        elderlyCount,
+        disabledCount,
+        waterLevel,
+        emergencyType,
+        conditions: conditionList
+      },
+      breakdown,
+      priorityScore,
+      priorityLevel: priorityResult.level
+    });
     const metaTag = `[SRC:VOICE, P:${peopleCount}, C:${childrenCount}, E:${elderlyCount}, D:${disabledCount}, I:${injuredCount}, W:${waterLevel}, T:${emergencyType}${spokenLoc ? `, SPOKEN_LOC:${spokenLoc}` : ""}${locationConflict ? ", CONFLICT:YES" : ", CONFLICT:NO"}]`;
     const fullDesc = `${metaTag} ${messageText.trim()}`;
     const requestRecord = await database_default.emergencyRequest.create({

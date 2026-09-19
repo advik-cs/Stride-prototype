@@ -60,6 +60,93 @@ function detectLocationConflict(
   return { conflict: false };
 }
 
+export interface StrideDeterministicPriorityInputs {
+  criticalMedicalNeed?: boolean;
+  injuredCount?: number;
+  childrenCount?: number;
+  elderlyCount?: number;
+  disabledCount?: number;
+  waterLevel?: string;
+  emergencyType?: string;
+  conditions?: string[] | Set<string> | Set<any> | Iterable<any>;
+}
+
+export interface StrideDeterministicPriorityResult {
+  score: number;
+  level: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  breakdown: {
+    criticalMedical: number;
+    injured: number;
+    children: number;
+    elderly: number;
+    disabled: number;
+    waterLevel: number;
+    trappedOrStructural: number;
+  };
+}
+
+/**
+ * Authoritative STRIDE deterministic priority calculation engine.
+ * STRICTLY preserves the exact STRIDE formula:
+ * - Critical medical need: 25
+ * - Injured: min(25, count * 15)
+ * - Children: min(15, count * 8)
+ * - Elderly: min(15, count * 8)
+ * - Disabled: min(15, count * 10)
+ * - Water level: EXTREME=20, HIGH=15, MEDIUM=10, other=5
+ * - Trapped/Structural/Fire: FIRE=30, TRAPPED/STRUCTURAL_DANGER=20, other=0
+ * - Total score clamped between 15 and 100
+ */
+export function calculateStrideDeterministicPriority(
+  inputs: StrideDeterministicPriorityInputs
+): StrideDeterministicPriorityResult {
+  const condList = Array.isArray(inputs.conditions)
+    ? inputs.conditions
+    : inputs.conditions instanceof Set
+    ? Array.from(inputs.conditions)
+    : [];
+
+  const hasCriticalMedical =
+    !!inputs.criticalMedicalNeed || condList.includes('SERIOUSLY_UNWELL');
+  const injuredCount = Math.max(0, Number(inputs.injuredCount) || 0);
+  const childrenCount = Math.max(0, Number(inputs.childrenCount) || 0);
+  const elderlyCount = Math.max(0, Number(inputs.elderlyCount) || 0);
+  const disabledCount = Math.max(0, Number(inputs.disabledCount) || 0);
+
+  const waterLevel = inputs.waterLevel || 'MEDIUM';
+  const emergencyType = inputs.emergencyType || 'FLOOD';
+
+  const hasTrapped =
+    condList.includes('TRAPPED') ||
+    emergencyType === 'TRAPPED' ||
+    emergencyType === 'STRUCTURAL_DANGER';
+  const hasFire = condList.includes('FIRE') || emergencyType === 'FIRE';
+
+  const breakdown = {
+    criticalMedical: hasCriticalMedical ? 25 : 0,
+    injured: injuredCount > 0 ? Math.min(25, injuredCount * 15) : 0,
+    children: childrenCount > 0 ? Math.min(15, childrenCount * 8) : 0,
+    elderly: elderlyCount > 0 ? Math.min(15, elderlyCount * 8) : 0,
+    disabled: disabledCount > 0 ? Math.min(15, disabledCount * 10) : 0,
+    waterLevel:
+      waterLevel === 'EXTREME'
+        ? 20
+        : waterLevel === 'HIGH'
+        ? 15
+        : waterLevel === 'MEDIUM'
+        ? 10
+        : 5,
+    trappedOrStructural: hasFire ? 30 : hasTrapped ? 20 : 0,
+  };
+
+  const calculatedTotal = Object.values(breakdown).reduce((a, b) => a + b, 0);
+  const score = Math.min(100, Math.max(15, calculatedTotal));
+  const level: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL' =
+    score >= 75 ? 'CRITICAL' : score >= 50 ? 'HIGH' : score >= 25 ? 'MEDIUM' : 'LOW';
+
+  return { score, level, breakdown };
+}
+
 /**
  * Common SOS triage and lifecycle management helper.
  * Strictly preserves:
@@ -172,7 +259,7 @@ export async function applySosLifecycleAndTriage(
       const spokenLoc = extracted.spokenLocation !== undefined ? extracted.spokenLocation : prevFormatted.spokenLocation;
       const isConflict = locationConflict !== undefined ? locationConflict : prevFormatted.locationConflict;
 
-      const currentCondTypes = new Set(existingReq.conditions.map((c) => c.conditionType));
+      const currentCondTypes = new Set<string>(existingReq.conditions.map((c: any) => String(c.conditionType)));
       currentCondTypes.add('NEED_RESCUE');
       if (mergedCritical) {
         currentCondTypes.add('SERIOUSLY_UNWELL');
@@ -238,30 +325,37 @@ export async function applySosLifecycleAndTriage(
       };
 
       // Exact existing STRIDE priority formula (DO NOT MODIFY)
-      const breakdown = {
-        criticalMedical: mergedCritical ? 25 : 0,
-        injured: mergedInjured > 0 ? Math.min(25, Number(mergedInjured) * 15) : 0,
-        children: mergedChildren > 0 ? Math.min(15, Number(mergedChildren) * 8) : 0,
-        elderly: mergedElderly > 0 ? Math.min(15, Number(mergedElderly) * 8) : 0,
-        disabled: mergedDisabled > 0 ? Math.min(15, Number(mergedDisabled) * 10) : 0,
-        waterLevel:
-          mergedWaterLevel === 'EXTREME'
-            ? 20
-            : mergedWaterLevel === 'HIGH'
-            ? 15
-            : mergedWaterLevel === 'MEDIUM'
-            ? 10
-            : 5,
-        trappedOrStructural:
-          resolvedEmergencyType === 'TRAPPED' || resolvedEmergencyType === 'STRUCTURAL_DANGER'
-            ? 20
-            : resolvedEmergencyType === 'FIRE'
-            ? 30
-            : 0,
-      };
+      const priorityResult = calculateStrideDeterministicPriority({
+        criticalMedicalNeed: mergedCritical,
+        injuredCount: mergedInjured,
+        childrenCount: mergedChildren,
+        elderlyCount: mergedElderly,
+        disabledCount: mergedDisabled,
+        waterLevel: mergedWaterLevel,
+        emergencyType: resolvedEmergencyType,
+        conditions: currentCondTypes,
+      });
 
-      const calculatedTotal = Object.values(breakdown).reduce((a, b) => a + b, 0);
-      const priorityScore = Math.min(100, Math.max(15, calculatedTotal));
+      const breakdown = priorityResult.breakdown;
+      const priorityScore = priorityResult.score;
+
+      console.log('[AUTHORITATIVE DETERMINISTIC PRIORITY INPUTS & OUTPUT]', {
+        stage: 'UPDATE_SOS',
+        turnMessage: messageText.trim(),
+        inputs: {
+          criticalMedicalNeed: mergedCritical,
+          injuredCount: mergedInjured,
+          childrenCount: mergedChildren,
+          elderlyCount: mergedElderly,
+          disabledCount: mergedDisabled,
+          waterLevel: mergedWaterLevel,
+          emergencyType: resolvedEmergencyType,
+          conditions: Array.from(currentCondTypes),
+        },
+        breakdown,
+        priorityScore,
+        priorityLevel: priorityResult.level,
+      });
 
       const metaTag = `[SRC:VOICE, P:${mergedPeople}, C:${mergedChildren}, E:${mergedElderly}, D:${mergedDisabled}, I:${mergedInjured}, W:${mergedWaterLevel}, T:${resolvedEmergencyType}${spokenLoc ? `, SPOKEN_LOC:${spokenLoc}` : ''}${isConflict ? ', CONFLICT:YES' : ', CONFLICT:NO'}]`;
       const updatedDesc = `${metaTag} ${prevFormatted.description} | Voice update: ${messageText.trim()}`.trim();
@@ -389,20 +483,37 @@ export async function applySosLifecycleAndTriage(
       if (emergencyType === 'FIRE') conditionList.push('FIRE');
 
       // Exact existing STRIDE priority formula (DO NOT MODIFY)
-      const breakdown = {
-        criticalMedical: criticalMedicalNeed ? 25 : 0,
-        injured: injuredCount > 0 ? Math.min(25, Number(injuredCount) * 15) : 0,
-        children: childrenCount > 0 ? Math.min(15, Number(childrenCount) * 8) : 0,
-        elderly: elderlyCount > 0 ? Math.min(15, Number(elderlyCount) * 8) : 0,
-        disabled: disabledCount > 0 ? Math.min(15, Number(disabledCount) * 10) : 0,
-        waterLevel:
-          waterLevel === 'EXTREME' ? 20 : waterLevel === 'HIGH' ? 15 : waterLevel === 'MEDIUM' ? 10 : 5,
-        trappedOrStructural:
-          emergencyType === 'TRAPPED' || emergencyType === 'STRUCTURAL_DANGER' ? 20 : emergencyType === 'FIRE' ? 30 : 0,
-      };
+      const priorityResult = calculateStrideDeterministicPriority({
+        criticalMedicalNeed,
+        injuredCount,
+        childrenCount,
+        elderlyCount,
+        disabledCount,
+        waterLevel,
+        emergencyType,
+        conditions: conditionList,
+      });
 
-      const calculatedTotal = Object.values(breakdown).reduce((a, b) => a + b, 0);
-      const priorityScore = Math.min(100, Math.max(15, calculatedTotal));
+      const breakdown = priorityResult.breakdown;
+      const priorityScore = priorityResult.score;
+
+      console.log('[AUTHORITATIVE DETERMINISTIC PRIORITY INPUTS & OUTPUT]', {
+        stage: 'CREATE_SOS',
+        turnMessage: messageText.trim(),
+        inputs: {
+          criticalMedicalNeed,
+          injuredCount,
+          childrenCount,
+          elderlyCount,
+          disabledCount,
+          waterLevel,
+          emergencyType,
+          conditions: conditionList,
+        },
+        breakdown,
+        priorityScore,
+        priorityLevel: priorityResult.level,
+      });
 
       const metaTag = `[SRC:VOICE, P:${peopleCount}, C:${childrenCount}, E:${elderlyCount}, D:${disabledCount}, I:${injuredCount}, W:${waterLevel}, T:${emergencyType}${spokenLoc ? `, SPOKEN_LOC:${spokenLoc}` : ''}${locationConflict ? ', CONFLICT:YES' : ', CONFLICT:NO'}]`;
       const fullDesc = `${metaTag} ${messageText.trim()}`;

@@ -12,6 +12,7 @@ import { DeepgramVoiceProvider } from '../src/services/voice/DeepgramVoiceProvid
 import { GeminiLiveProvider } from '../src/services/voice/GeminiLiveProvider.ts';
 import prisma from '../src/server/config/database.ts';
 import { formatRescueRequest } from '../src/server/controllers/rescueController.ts';
+import { calculateStrideDeterministicPriority } from '../src/server/controllers/voiceEmergencyController.ts';
 
 // Polyfill browser globals for Node test environment
 if (typeof (globalThis as any).localStorage === 'undefined') {
@@ -888,6 +889,12 @@ async function runSuite() {
       assert.equal(json1.activeRequest.peopleCount, 4);
       assert.equal(json1.activeRequest.emergencyType, 'TRAPPED');
       const sosId = json1.activeRequest.id;
+      const expectedScore1 = calculateStrideDeterministicPriority({
+        emergencyType: 'TRAPPED',
+        waterLevel: 'HIGH',
+        conditions: ['NEED_RESCUE', 'WATER_RISING', 'TRAPPED'],
+      }).score;
+      assert.equal(json1.activeRequest.priorityScore, expectedScore1, `Turn 1 priority score must match authoritative calculator (${expectedScore1})`);
 
       // --- Turn 2: "My grandmother is injured." ---
       const res2 = await fetch(`http://127.0.0.1:${stridePort}/api/voice/emergency-chat`, {
@@ -907,7 +914,19 @@ async function runSuite() {
       assert.equal(json2.activeRequest.elderlyCount, 1);
       assert.equal(json2.activeRequest.injuredCount, 1);
       assert.equal(json2.activeRequest.emergencyType, 'MEDICAL');
-      const scoreWithInjury = json2.activeRequest.priorityScore;
+      const expectedScore2 = calculateStrideDeterministicPriority({
+        elderlyCount: 1,
+        injuredCount: 1,
+        emergencyType: 'MEDICAL',
+        waterLevel: 'HIGH',
+        conditions: ['NEED_RESCUE', 'WATER_RISING', 'TRAPPED', 'HEAVILY_INJURED'],
+      }).score;
+      assert.equal(json2.activeRequest.priorityScore, expectedScore2, `Turn 2 priority score must match authoritative calculator (${expectedScore2})`);
+      assert.equal(json2.activeRequest.priorityBreakdown?.trappedOrStructural, 20, 'Trapped breakdown points must remain 20');
+      assert.equal(json2.activeRequest.priorityBreakdown?.injured, 15, 'Turn 2 injured breakdown points must be 15');
+      assert.equal(json2.activeRequest.priorityBreakdown?.elderly, 8, 'Turn 2 elderly breakdown points must be 8');
+      assert.equal(json2.activeRequest.priorityBreakdown?.waterLevel, 15, 'Turn 2 water level breakdown points must be 15');
+      assert.ok(expectedScore2 > expectedScore1, `Reporting injury must increase priority score (${expectedScore2} > ${expectedScore1})`);
 
       // --- Turn 3: "Actually, there are five people with me." ---
       const res3 = await fetch(`http://127.0.0.1:${stridePort}/api/voice/emergency-chat`, {
@@ -925,6 +944,15 @@ async function runSuite() {
       assert.equal(json3.activeRequest.id, sosId);
       assert.equal(json3.activeRequest.peopleCount, 5, `Turn 3 peopleCount must be 5, got ${json3.activeRequest.peopleCount}`);
       assert.equal(json3.activeRequest.injuredCount, 1, `Turn 3 injuredCount must remain 1, got ${json3.activeRequest.injuredCount}`);
+      const expectedScore3 = calculateStrideDeterministicPriority({
+        peopleCount: 5,
+        elderlyCount: 1,
+        injuredCount: 1,
+        emergencyType: 'MEDICAL',
+        waterLevel: 'HIGH',
+        conditions: ['NEED_RESCUE', 'WATER_RISING', 'TRAPPED', 'HEAVILY_INJURED'],
+      }).score;
+      assert.equal(json3.activeRequest.priorityScore, expectedScore3, `Turn 3 priority score must match authoritative calculator (${expectedScore3})`);
 
       // --- Turn 4: "Not the five people are injured." ---
       const res4 = await fetch(`http://127.0.0.1:${stridePort}/api/voice/emergency-chat`, {
@@ -945,9 +973,20 @@ async function runSuite() {
       assert.equal(json4.activeRequest.elderlyCount, 1, `elderlyCount must remain 1, got ${json4.activeRequest.elderlyCount}`);
       assert.equal(json4.activeRequest.emergencyType, 'TRAPPED', `emergencyType must revert to TRAPPED, got ${json4.activeRequest.emergencyType}`);
 
+      const expectedScore4 = calculateStrideDeterministicPriority({
+        peopleCount: 5,
+        elderlyCount: 1,
+        injuredCount: 0,
+        emergencyType: 'TRAPPED',
+        waterLevel: 'HIGH',
+        conditions: ['NEED_RESCUE', 'WATER_RISING', 'TRAPPED'],
+      }).score;
+      assert.equal(json4.activeRequest.priorityScore, expectedScore4, `Turn 4 priority score must match authoritative calculator (${expectedScore4})`);
       assert.equal(json4.activeRequest.priorityBreakdown?.injured || 0, 0, 'Injured breakdown points must drop to 0');
-      assert.equal(json2.activeRequest.priorityBreakdown?.injured, 15, 'Turn 2 injured breakdown points must be 15');
-      assert.equal(json4.activeRequest.priorityScore, 43, `Priority score must recompute to 43 (35 base trapped + 8 elderly), got ${json4.activeRequest.priorityScore}`);
+      assert.equal(json4.activeRequest.priorityBreakdown?.trappedOrStructural, 20, 'Trapped breakdown points must remain 20');
+      assert.equal(json4.activeRequest.priorityBreakdown?.elderly, 8, 'Elderly breakdown points must remain 8');
+      assert.ok(json4.activeRequest.priorityScore < json2.activeRequest.priorityScore, 'Clearing injury must strictly decrease the priority score');
+      assert.equal(json2.activeRequest.priorityScore - json4.activeRequest.priorityScore, 15, 'Score reduction must equal exactly the 15 injury points');
 
       // Verify database state after Turn 4
       const dbReqs4 = await prisma.emergencyRequest.findMany({
@@ -979,6 +1018,16 @@ async function runSuite() {
       assert.ok(jsonCompound.activeRequest);
       assert.equal(jsonCompound.activeRequest.injuredCount, 0, 'Compound: injuredCount must be 0');
       assert.equal(jsonCompound.activeRequest.criticalMedicalNeed, true, 'Compound: criticalMedicalNeed must be true');
+      const expectedScoreCompound = calculateStrideDeterministicPriority({
+        peopleCount: 5,
+        elderlyCount: 1,
+        injuredCount: 0,
+        criticalMedicalNeed: true,
+        emergencyType: 'TRAPPED',
+        waterLevel: 'HIGH',
+        conditions: ['NEED_RESCUE', 'WATER_RISING', 'TRAPPED', 'SERIOUSLY_UNWELL'],
+      }).score;
+      assert.equal(jsonCompound.activeRequest.priorityScore, expectedScoreCompound, `Compound priority score must match authoritative calculator (${expectedScoreCompound})`);
 
       const dbReqCompound = await prisma.emergencyRequest.findFirst({
         where: { id: sosId },
