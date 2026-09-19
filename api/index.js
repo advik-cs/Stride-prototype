@@ -2934,7 +2934,7 @@ async function createRescueRequest(req, res) {
         latitude: Number(latitude) || household.latitude,
         longitude: Number(longitude) || household.longitude,
         address: String(address).trim(),
-        description: String(description).trim(),
+        description: `[SRC:MANUAL, P:${peopleCount}, C:${childrenCount}, E:${elderlyCount}, D:${disabledCount}, I:${injuredCount}, W:${waterLevel}, T:${emergencyType}] ${String(description).trim()}`,
         priorityScore,
         rescueStatus: "PENDING",
         conditions: {
@@ -3260,7 +3260,7 @@ async function getStrideContext(userId, userLocation) {
       include: {
         conditions: true
       },
-      orderBy: { createdAt: "desc" }
+      orderBy: { updatedAt: "desc" }
     });
     if (existingReq) {
       activeSos = {
@@ -4664,7 +4664,7 @@ async function applySosLifecycleAndTriage(userId, context, aiResult, messageText
           include: { household: { include: { user: true } } }
         }
       },
-      orderBy: { createdAt: "desc" }
+      orderBy: { updatedAt: "desc" }
     });
   }
   const extracted = aiResult.extractedInformation || {};
@@ -4687,7 +4687,7 @@ async function applySosLifecycleAndTriage(userId, context, aiResult, messageText
     };
     const shouldUpdateSos = aiResult.mode === "EMERGENCY" || aiResult.shouldCreateOrUpdateSos || hasExtractedFacts;
     if (shouldUpdateSos) {
-      const mergedPeople = extracted.peopleCount !== void 0 ? extracted.peopleCount : prevFormatted.peopleCount;
+      const mergedPeople = extracted.peopleCount !== void 0 ? extracted.peopleCount : prevFormatted.peopleCount || 1;
       const mergedChildren = extracted.childrenCount !== void 0 ? extracted.childrenCount : prevFormatted.childrenCount;
       const mergedElderly = extracted.elderlyCount !== void 0 ? extracted.elderlyCount : prevFormatted.elderlyCount;
       const mergedDisabled = extracted.disabledCount !== void 0 ? extracted.disabledCount : prevFormatted.disabledCount;

@@ -91,9 +91,24 @@ export const AreYouSafeView: React.FC<AreYouSafeViewProps> = ({
           setCurrentStatus('SAFE');
         }
       } else {
-        setSubmittedRequest(null);
-        setMyRequests([]);
-        setCurrentStatus('SAFE');
+        try {
+          const myReqs = await duringApi.getMyRequests();
+          const active = myReqs.find((r) => r.status !== 'CANCELLED' && r.status !== 'RESCUED');
+          if (active) {
+            setSubmittedRequest(active);
+            setMyRequests([active]);
+            setCurrentStatus('IN_DISTRESS');
+            localStorage.setItem('stride_active_sos_id', active.id);
+          } else {
+            setSubmittedRequest(null);
+            setMyRequests([]);
+            setCurrentStatus('SAFE');
+          }
+        } catch {
+          setSubmittedRequest(null);
+          setMyRequests([]);
+          setCurrentStatus('SAFE');
+        }
       }
     } catch (e) {
       console.error('Failed to load citizen rescue requests:', e);
@@ -668,6 +683,12 @@ export const AreYouSafeView: React.FC<AreYouSafeViewProps> = ({
           setMyRequests([updated]);
           setCurrentStatus('IN_DISTRESS');
           localStorage.setItem('stride_active_sos_id', updated.id);
+        }}
+        onBeaconReset={() => {
+          setSubmittedRequest(null);
+          setMyRequests([]);
+          setCurrentStatus('SAFE');
+          localStorage.removeItem('stride_active_sos_id');
         }}
       />
     </div>

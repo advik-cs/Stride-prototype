@@ -131,7 +131,7 @@ export async function applySosLifecycleAndTriage(
             include: { household: { include: { user: true } } },
           },
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy: { updatedAt: 'desc' },
       });
     }
 
@@ -161,7 +161,7 @@ export async function applySosLifecycleAndTriage(
       // ========== UPDATE EXISTING SOS IN-PLACE (NO DUPLICATE) ==========
       // Rule 2: Strict deterministic merge.
       // currentTurn[field] !== undefined ? currentTurn[field] : existing[field]
-      const mergedPeople = extracted.peopleCount !== undefined ? extracted.peopleCount : prevFormatted.peopleCount;
+      const mergedPeople = extracted.peopleCount !== undefined ? extracted.peopleCount : (prevFormatted.peopleCount || 1);
       const mergedChildren = extracted.childrenCount !== undefined ? extracted.childrenCount : prevFormatted.childrenCount;
       const mergedElderly = extracted.elderlyCount !== undefined ? extracted.elderlyCount : prevFormatted.elderlyCount;
       const mergedDisabled = extracted.disabledCount !== undefined ? extracted.disabledCount : prevFormatted.disabledCount;

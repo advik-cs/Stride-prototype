@@ -510,7 +510,7 @@ export async function createRescueRequest(req: AuthenticatedRequest, res: Respon
         latitude: Number(latitude) || household.latitude,
         longitude: Number(longitude) || household.longitude,
         address: String(address).trim(),
-        description: String(description).trim(),
+        description: `[SRC:MANUAL, P:${peopleCount}, C:${childrenCount}, E:${elderlyCount}, D:${disabledCount}, I:${injuredCount}, W:${waterLevel}, T:${emergencyType}] ${String(description).trim()}`,
         priorityScore,
         rescueStatus: 'PENDING',
         conditions: {

@@ -340,6 +340,11 @@ async function runRealBrowserDeepgramSuite() {
       await sosBanner.waitFor({ state: 'visible', timeout: 10000 });
       assert(await sosBanner.isVisible(), 'ACTIVE RESCUE BEACON banner must appear');
 
+      // Assert active rescue beacon displays authoritative People: 4
+      const beaconPeople = page.locator('text=People: 4').first();
+      await beaconPeople.waitFor({ state: 'visible', timeout: 5000 });
+      assert(await beaconPeople.isVisible(), 'Active rescue beacon must display People: 4');
+
       // Verify STT was called with Nova-3 keyterms
       assert(sttCallCount >= 1, `Deepgram STT should have been called at least once (got ${sttCallCount})`);
       assert(lastReceivedSttUrl.includes('keyterm=trapped'), 'Deepgram STT request URL must include keyterm=trapped');
@@ -372,9 +377,9 @@ async function runRealBrowserDeepgramSuite() {
     // =================================================================
     // TEST 5: Second Conversational Turn Updates Active SOS In-Place
     // =================================================================
-    await test('5. Second conversational turn updates active SOS in-place (no duplicate SOS)', async () => {
-      // Set mock STT transcript for turn 2
-      currentTurnTranscript = 'One person is heavily injured and bleeding.';
+    await test('5. Second conversational turn ("My grandmother is injured.") updates active SOS in-place and preserves People: 4', async () => {
+      // Set mock STT transcript for turn 2: "My grandmother is injured."
+      currentTurnTranscript = 'My grandmother is injured.';
 
       // Start recording turn 2
       const micBtn = page.locator('#voice-assistant-mic-btn');
@@ -385,11 +390,16 @@ async function runRealBrowserDeepgramSuite() {
       await micBtn.click();
 
       // Wait for turn 2 user message in chat
-      const userBubble2 = page.locator('p:has-text("One person is heavily injured and bleeding.")').last();
+      const userBubble2 = page.locator('p:has-text("My grandmother is injured.")').last();
       await userBubble2.waitFor({ state: 'visible', timeout: 10000 });
       assert(await userBubble2.isVisible(), 'Turn 2 transcribed utterance must appear in chat');
 
       await page.waitForTimeout(2000);
+
+      // Verify active rescue beacon banner in browser still displays People: 4 (not reset to 3 or 1)
+      const beaconPeople2 = page.locator('text=People: 4').first();
+      await beaconPeople2.waitFor({ state: 'visible', timeout: 5000 });
+      assert(await beaconPeople2.isVisible(), 'Active rescue beacon must maintain People: 4 after Turn 2');
 
       // Verify active SOS updated in database
       const activeRequests = await prisma.emergencyRequest.findMany({
@@ -403,6 +413,7 @@ async function runRealBrowserDeepgramSuite() {
 
       const formatted2 = formatRescueRequest(req2);
       assert(formatted2.peopleCount === 4, `peopleCount should remain 4 from turn 1, got ${formatted2.peopleCount}`);
+      assert(formatted2.elderlyCount === 1, `elderlyCount should now be 1, got ${formatted2.elderlyCount}`);
       assert(formatted2.injuredCount === 1, `injuredCount should now be 1, got ${formatted2.injuredCount}`);
 
       // Dynamic assertion: priority score calculated by authoritative STRIDE formula

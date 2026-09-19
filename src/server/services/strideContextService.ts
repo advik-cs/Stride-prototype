@@ -91,7 +91,7 @@ export async function getStrideContext(
       include: {
         conditions: true,
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { updatedAt: 'desc' },
     });
 
     if (existingReq) {

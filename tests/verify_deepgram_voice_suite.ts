@@ -759,6 +759,99 @@ async function runSuite() {
       }
     });
 
+    // -------------------------------------------------------------
+    // SCENARIO 21: Authoritative peopleCount Persisted and Preserved Across Turns
+    // -------------------------------------------------------------
+    await runCheck('Scenario 21: Multi-turn peopleCount preservation (Turn 1 "four people trapped" -> Turn 2 "grandmother injured" preserves peopleCount=4)', async () => {
+      // Clean up previous requests
+      const userMembers = await prisma.householdMember.findMany({
+        where: { household: { userId: testUser.id } },
+      });
+      const memberIds = userMembers.map((m) => m.id);
+      if (memberIds.length > 0) {
+        await prisma.emergencyCondition.deleteMany({
+          where: { emergencyRequest: { householdMemberId: { in: memberIds } } },
+        });
+        await prisma.rescueAssignment.deleteMany({
+          where: { emergencyRequest: { householdMemberId: { in: memberIds } } },
+        });
+        await prisma.emergencyRequest.deleteMany({
+          where: { householdMemberId: { in: memberIds } },
+        });
+      }
+
+      // --- Turn 1: "We are four people and we're trapped upstairs." ---
+      const res1 = await fetch(`http://127.0.0.1:${stridePort}/api/voice/emergency-chat`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${citizenToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message: "We are four people and we're trapped upstairs.",
+          clientRequestId: `turn1-test-${Date.now()}`,
+        }),
+      });
+
+      assert.equal(res1.status, 200, 'Turn 1 HTTP status must be 200');
+      const json1 = await res1.json();
+
+      assert.ok(json1.activeRequest, 'Turn 1 must produce activeRequest');
+      assert.equal(json1.activeRequest.peopleCount, 4, `Turn 1 peopleCount must be 4, got ${json1.activeRequest.peopleCount}`);
+      assert.equal(json1.activeRequest.emergencyType, 'TRAPPED', `Turn 1 emergencyType must be TRAPPED, got ${json1.activeRequest.emergencyType}`);
+
+      const turn1SosId = json1.activeRequest.id;
+      const turn1Score = json1.activeRequest.priorityScore;
+      assert.ok(typeof turn1Score === 'number' && turn1Score >= 15 && turn1Score <= 100, `Turn 1 priorityScore must be between 15 and 100, got ${turn1Score}`);
+
+      // Verify database persistence for Turn 1
+      const dbReqs1 = await prisma.emergencyRequest.findMany({
+        where: { householdMemberId: { in: memberIds }, rescueStatus: { not: 'CANCELLED' } },
+        include: { conditions: true, rescueAssignments: true },
+      });
+      assert.equal(dbReqs1.length, 1, 'Exactly one active SOS must exist after Turn 1');
+      const formattedDb1 = formatRescueRequest(dbReqs1[0]);
+      assert.equal(formattedDb1.peopleCount, 4, `Persisted incident peopleCount must be 4, got ${formattedDb1.peopleCount}`);
+
+      // --- Turn 2: "My grandmother is injured." ---
+      const res2 = await fetch(`http://127.0.0.1:${stridePort}/api/voice/emergency-chat`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${citizenToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message: 'My grandmother is injured.',
+          activeRequestId: turn1SosId,
+          history: [
+            { role: 'user', content: "We are four people and we're trapped upstairs." },
+            { role: 'assistant', content: json1.assistantResponse },
+          ],
+          clientRequestId: `turn2-test-${Date.now()}`,
+        }),
+      });
+
+      assert.equal(res2.status, 200, 'Turn 2 HTTP status must be 200');
+      const json2 = await res2.json();
+
+      assert.ok(json2.activeRequest, 'Turn 2 must return activeRequest');
+      assert.equal(json2.activeRequest.id, turn1SosId, `Turn 2 must update same SOS in place (id: ${turn1SosId}), got ${json2.activeRequest.id}`);
+      assert.equal(json2.activeRequest.peopleCount, 4, `Turn 2 peopleCount must remain 4 (NOT reset to 3 or 1), got ${json2.activeRequest.peopleCount}`);
+      assert.equal(json2.activeRequest.elderlyCount, 1, `Turn 2 elderlyCount must be 1, got ${json2.activeRequest.elderlyCount}`);
+      assert.equal(json2.activeRequest.injuredCount, 1, `Turn 2 injuredCount must be 1, got ${json2.activeRequest.injuredCount}`);
+
+      // Verify database persistence for Turn 2
+      const dbReqs2 = await prisma.emergencyRequest.findMany({
+        where: { householdMemberId: { in: memberIds }, rescueStatus: { not: 'CANCELLED' } },
+        include: { conditions: true, rescueAssignments: true },
+      });
+      assert.equal(dbReqs2.length, 1, 'Still exactly one active SOS must exist after Turn 2 (no duplicates)');
+      const formattedDb2 = formatRescueRequest(dbReqs2[0]);
+      assert.equal(formattedDb2.peopleCount, 4, `Persisted incident peopleCount must remain 4 after Turn 2, got ${formattedDb2.peopleCount}`);
+      assert.equal(formattedDb2.elderlyCount, 1, `Persisted elderlyCount must be 1, got ${formattedDb2.elderlyCount}`);
+      assert.equal(formattedDb2.injuredCount, 1, `Persisted injuredCount must be 1, got ${formattedDb2.injuredCount}`);
+    });
+
   } finally {
     mockDeepgramServer?.close();
     strideServer?.close();

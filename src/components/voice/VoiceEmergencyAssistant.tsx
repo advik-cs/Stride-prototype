@@ -26,6 +26,7 @@ interface VoiceEmergencyAssistantProps {
   onClose: () => void;
   activeDisaster: DisasterEvent | null;
   onSosUpdated?: (request: RescueRequest) => void;
+  onBeaconReset?: () => void;
   initialActiveRequestId?: string | null;
 }
 
@@ -43,6 +44,7 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
   onClose,
   activeDisaster,
   onSosUpdated,
+  onBeaconReset,
   initialActiveRequestId,
 }) => {
   const [messages, setMessages] = useState<MessageItem[]>([
@@ -101,6 +103,9 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
   useEffect(() => {
     const existingId = initialActiveRequestId || localStorage.getItem('stride_active_sos_id');
     if (existingId) {
+      if (activeRequest && activeRequest.id === existingId) {
+        return;
+      }
       duringApi
         .getRequestById(existingId)
         .then((req) => {
@@ -546,6 +551,7 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
     const prevId = activeRequest?.id || localStorage.getItem('stride_active_sos_id');
     localStorage.removeItem('stride_active_sos_id');
     setActiveRequest(null);
+    onBeaconReset?.();
     if (prevId) {
       try {
         await duringApi.resetTestBeacon(prevId);
@@ -559,6 +565,7 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
     const prevId = activeRequest?.id || localStorage.getItem('stride_active_sos_id');
     localStorage.removeItem('stride_active_sos_id');
     setActiveRequest(null);
+    onBeaconReset?.();
     if (prevId) {
       try {
         await duringApi.resetTestBeacon(prevId);
