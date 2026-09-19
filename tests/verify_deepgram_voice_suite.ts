@@ -1061,6 +1061,109 @@ async function runSuite() {
       assert.equal(formattedAfter.peopleCount, 5, 'People count must remain 5 after unrelated question');
     });
 
+    // =================================================================
+    // SCENARIO 23: Empty / Silent Audio Turn & Error Classification
+    // =================================================================
+    await runCheck('Scenario 23: Empty recording error classification and clean IDLE recovery', async () => {
+      // 1. Test STT endpoint when audio yields empty transcript
+      // Set mock server to return empty transcript
+      mockSttResponse.results.channels[0].alternatives[0].transcript = '';
+      const dummyAudio = Buffer.alloc(500, 0x12);
+      const boundary = '----TestBoundary' + Date.now();
+      let body = `--${boundary}\r\n`;
+      body += `Content-Disposition: form-data; name="audio"; filename="empty.webm"\r\n`;
+      body += `Content-Type: audio/webm\r\n\r\n`;
+      const bodyBuffer = Buffer.concat([
+        Buffer.from(body, 'utf-8'),
+        dummyAudio,
+        Buffer.from(`\r\n--${boundary}--\r\n`, 'utf-8'),
+      ]);
+
+      const resEmpty = await fetch(`http://127.0.0.1:${stridePort}/api/voice/deepgram-stt`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${citizenToken}`,
+          'Content-Type': `multipart/form-data; boundary=${boundary}`,
+        },
+        body: bodyBuffer,
+      });
+      assert.equal(resEmpty.status, 200);
+      const jsonEmpty = await resEmpty.json();
+      assert.equal(jsonEmpty.transcript, '', 'STT endpoint must return empty transcript when no speech is detected');
+
+      // 2. Verify error classification regex used by VoiceEmergencyAssistant
+      const noSpeechMsg = 'No speech detected in recording. Please try again.';
+      const emptyRecMsg = 'Audio recording was too short or empty.';
+      const isNoSpeech1 = /no speech detected/i.test(noSpeechMsg) || /too short or empty/i.test(noSpeechMsg) || /empty recording/i.test(noSpeechMsg);
+      const isNoSpeech2 = /no speech detected/i.test(emptyRecMsg) || /too short or empty/i.test(emptyRecMsg) || /empty recording/i.test(emptyRecMsg);
+      assert.ok(isNoSpeech1, 'No speech message must be classified as noSpeech (IDLE status)');
+      assert.ok(isNoSpeech2, 'Too short or empty message must be classified as noSpeech (IDLE status)');
+
+      // 3. Genuine connection errors must NOT be classified as noSpeech (must remain ERROR status)
+      const connErrMsg = 'Network connection failed to Deepgram STT endpoint';
+      const wsErrMsg = 'WebSocket connection error: connection closed abnormally';
+      const isNoSpeechConn = /no speech detected/i.test(connErrMsg) || /too short or empty/i.test(connErrMsg) || /empty recording/i.test(connErrMsg);
+      const isNoSpeechWs = /no speech detected/i.test(wsErrMsg) || /too short or empty/i.test(wsErrMsg) || /empty recording/i.test(wsErrMsg);
+      assert.ok(!isNoSpeechConn, 'Connection error must not be classified as noSpeech');
+      assert.ok(!isNoSpeechWs, 'WebSocket error must not be classified as noSpeech');
+    });
+
+    // =================================================================
+    // SCENARIO 24: Authoritative Reset Beacon Lifecycle & Clean Fresh Incident
+    // =================================================================
+    await runCheck('Scenario 24: Reset Beacon cancels active SOS, and subsequent turn creates clean incident without inherited facts', async () => {
+      // 1. Call reset-test-beacon
+      const resReset = await fetch(`http://127.0.0.1:${stridePort}/api/voice/reset-test-beacon`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${citizenToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      assert.equal(resReset.status, 200);
+      const jsonReset = await resReset.json();
+      assert.equal(jsonReset.success, true, 'Reset beacon must succeed');
+
+      // 2. Verify all active SOS records for this citizen are now CANCELLED in DB
+      const citizenMemberIds = testUser.households.flatMap((h) => h.members.map((m) => m.id));
+      const activeAfterReset = await prisma.emergencyRequest.findMany({
+        where: { householdMemberId: { in: citizenMemberIds }, rescueStatus: { not: 'CANCELLED' } },
+      });
+      assert.equal(activeAfterReset.length, 0, 'There must be zero active SOS records after Reset Beacon');
+
+      // 3. Brand new session speaks "We are two people and we need rescue."
+      // Notice: NO activeRequestId passed, fresh sessionId, empty history!
+      mockSttResponse.results.channels[0].alternatives[0].transcript = 'We are two people and we need rescue.';
+      const freshSessionId = `sess-fresh-${Date.now()}`;
+      const resFresh = await fetch(`http://127.0.0.1:${stridePort}/api/voice/emergency-chat`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${citizenToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: 'We are two people and we need rescue.',
+          history: [],
+          sessionId: freshSessionId,
+          clientRequestId: `s24-fresh-${Date.now()}`,
+        }),
+      });
+      assert.equal(resFresh.status, 200);
+      const jsonFresh = await resFresh.json();
+
+      assert.ok(jsonFresh.activeRequest, 'Must create a new activeRequest');
+      const freshReq = jsonFresh.activeRequest;
+      assert.equal(freshReq.peopleCount, 2, 'Fresh incident must have peopleCount: 2');
+      assert.equal(freshReq.injuredCount, 0, 'Fresh incident must not inherit injuredCount');
+      assert.equal(freshReq.elderlyCount, 0, 'Fresh incident must not inherit elderlyCount');
+
+      // Verify in database
+      const dbFresh = await prisma.emergencyRequest.findFirst({
+        where: { id: freshReq.id },
+        include: { conditions: true },
+      });
+      assert.ok(dbFresh, 'Fresh SOS must exist in database');
+      const formattedFresh = formatRescueRequest(dbFresh);
+      assert.equal(formattedFresh.peopleCount, 2, 'Database peopleCount must be 2');
+      assert.equal(formattedFresh.injuredCount, 0, 'Database injuredCount must be 0');
+      assert.equal(formattedFresh.elderlyCount, 0, 'Database elderlyCount must be 0');
+    });
+
   } finally {
     mockDeepgramServer?.close();
     strideServer?.close();

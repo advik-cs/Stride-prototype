@@ -150,7 +150,7 @@ export class DeepgramVoiceProvider implements VoiceProvider {
       if (audioBlob.size < 100) {
         console.warn(`[STRIDE DeepgramVoiceProvider] Audio recording too small (${audioBlob.size} bytes).`);
         this.setStatus('IDLE');
-        this.callbacks.onError?.(new Error('Audio recording was too short or empty.'));
+        this.callbacks.onError?.(new Error('No speech detected in recording. Please try again.'));
         return;
       }
 

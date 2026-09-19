@@ -533,6 +533,148 @@ async function runRealBrowserDeepgramSuite() {
       assert(!condTypes.includes('HEAVILY_INJURED'), `HEAVILY_INJURED must be deleted from database conditions`);
     });
 
+    // =================================================================
+    // TEST 9: Empty Recording Error Classification & Clean IDLE Recovery
+    // =================================================================
+    await test('9. Empty recording shows no speech detected notice, IDLE state, and mic remains active', async () => {
+      currentTurnTranscript = ''; // Empty transcript from mock STT
+
+      const micBtn = page.locator('#voice-assistant-mic-btn');
+      await micBtn.click();
+      await page.waitForTimeout(1000);
+      await micBtn.click();
+
+      // Verify notice appeared: "No speech detected in recording. Please try again."
+      const noSpeechNotice = page.locator('text=No speech detected in recording. Please try again.');
+      await noSpeechNotice.waitFor({ state: 'visible', timeout: 5000 });
+      assert(await noSpeechNotice.isVisible(), 'No speech detected notice must be displayed');
+
+      // Verify "Connection error" badge is NOT displayed
+      const connectionErrorBadge = page.locator('text=Connection error. Tap Retry above or type your message below.');
+      assert(!(await connectionErrorBadge.isVisible()), 'Connection error badge must NOT be displayed for empty recording');
+
+      // Verify mic button is NOT grayed out and NOT disabled
+      const micBtnClass = await micBtn.getAttribute('class');
+      assert(!micBtnClass?.includes('bg-gray-600'), 'Mic button must not be grayed out');
+      assert(!(await micBtn.isDisabled()), 'Mic button must not be disabled');
+
+      // Tap mic button again to start new recording - notice should be cleared
+      await micBtn.click();
+      await page.waitForTimeout(500);
+      assert(!(await noSpeechNotice.isVisible()), 'No speech notice must dismiss when recording resumes');
+      await micBtn.click(); // stop again
+      await page.waitForTimeout(1000);
+    });
+
+    // =================================================================
+    // TEST 10: Case A — Close & Reopen Modal Preserves Active Conversation & Beacon
+    // =================================================================
+    await test('10. Case A: Close and reopen modal preserves active conversation and beacon', async () => {
+      // Find and click the modal close button
+      const closeBtn = page.locator('#voice-assistant-close-btn');
+      await closeBtn.click();
+      await page.waitForTimeout(500);
+
+      // Verify modal is hidden
+      const modalHeader = page.locator('text=STRIDE Voice Emergency Assistant');
+      assert(!(await modalHeader.isVisible()), 'Modal must be hidden after clicking close');
+
+      // Reopen modal via "Talk to STRIDE" / "Update via Voice"
+      const talkToStrideBtn = page.locator('button:has-text("Talk to STRIDE"), button:has-text("Update via Voice")').first();
+      await talkToStrideBtn.click();
+      await modalHeader.waitFor({ state: 'visible', timeout: 5000 });
+
+      // Verify active rescue beacon banner is preserved
+      const beaconPeople5 = page.locator('text=People: 5').first();
+      assert(await beaconPeople5.isVisible(), 'Active rescue beacon banner must still display People: 5');
+
+      // Verify conversation history is preserved (check user bubble from Turn 5)
+      const userBubble5 = page.locator('p:has-text("Not the five people are injured.")').last();
+      assert(await userBubble5.isVisible(), 'Previous conversation turns must be preserved in Case A');
+    });
+
+    // =================================================================
+    // TEST 11: Case B — Reset Beacon Clears Active Incident, Transcript, and Session
+    // =================================================================
+    await test('11. Case B: Reset Beacon clears active SOS, conversation history, and resets cleanly upon close/reopen', async () => {
+      // Click "Reset Beacon"
+      const resetBeaconBtn = page.locator('#voice-assistant-reset-beacon-btn');
+      assert(await resetBeaconBtn.isVisible(), 'Reset Beacon button must be visible');
+      await resetBeaconBtn.click();
+      await page.waitForTimeout(1500);
+
+      // Verify active rescue beacon banner disappeared
+      const beaconBanner = page.locator('text=ACTIVE RESCUE BEACON');
+      assert(!(await beaconBanner.isVisible()), 'ACTIVE RESCUE BEACON banner must disappear after Reset Beacon');
+
+      // Verify conversation history reset to welcome message ONLY
+      const userBubble = page.locator('p:has-text("🎤")');
+      assert((await userBubble.count()) === 0, 'No user messages must remain after Reset Beacon');
+
+      const welcomeMsg = page.locator('text=Hello, I am the STRIDE Emergency Voice Assistant');
+      assert(await welcomeMsg.isVisible(), 'Initial welcome message must be present');
+
+      // Verify database: active SOS cancelled
+      const activeRequests = await prisma.emergencyRequest.findMany({
+        where: { householdMemberId: { in: memberIds }, rescueStatus: { not: 'CANCELLED' } },
+      });
+      assert(activeRequests.length === 0, 'Database active SOS must be CANCELLED after Reset Beacon');
+
+      // Close modal
+      const closeBtn = page.locator('#voice-assistant-close-btn');
+      await closeBtn.click();
+      await page.waitForTimeout(500);
+
+      // Reopen modal
+      const talkToStrideBtn = page.locator('button:has-text("Talk to STRIDE"), button:has-text("Update via Voice")').first();
+      await talkToStrideBtn.click();
+      await page.waitForTimeout(500);
+
+      // Verify reopened modal opens in clean state: ONLY welcome message, no beacon banner
+      assert(!(await beaconBanner.isVisible()), 'Reopened modal must not show active rescue beacon');
+      assert((await userBubble.count()) === 0, 'Reopened modal must not show old user messages');
+      assert(await welcomeMsg.isVisible(), 'Reopened modal must show welcome message');
+    });
+
+    // =================================================================
+    // TEST 12: Creating a Fresh Incident After Reset Beacon
+    // =================================================================
+    await test('12. Speaking after Reset Beacon creates brand new incident with People: 2 without inherited facts', async () => {
+      currentTurnTranscript = 'We are two people and we need rescue.';
+
+      const micBtn = page.locator('#voice-assistant-mic-btn');
+      await micBtn.click();
+      await page.waitForTimeout(1500);
+      await micBtn.click();
+
+      // User utterance appears in chat
+      const freshUserBubble = page.locator('p:has-text("We are two people and we need rescue.")').last();
+      await freshUserBubble.waitFor({ state: 'visible', timeout: 10000 });
+      assert(await freshUserBubble.isVisible(), 'Fresh user utterance must appear in chat');
+
+      await page.waitForTimeout(2500);
+
+      // Active rescue beacon must appear with People: 2
+      const beaconPeople2 = page.locator('text=People: 2').first();
+      await beaconPeople2.waitFor({ state: 'visible', timeout: 5000 });
+      assert(await beaconPeople2.isVisible(), 'Active rescue beacon must display People: 2');
+
+      // Verify Injured badge is NOT present
+      const bannerInjuredBadge = page.locator('text=• Injured:');
+      assert(!(await bannerInjuredBadge.isVisible()), 'Injured badge must NOT be present');
+
+      // Database verification
+      const activeRequests = await prisma.emergencyRequest.findMany({
+        where: { householdMemberId: { in: memberIds }, rescueStatus: { not: 'CANCELLED' } },
+        include: { conditions: true },
+      });
+      assert(activeRequests.length === 1, 'Exactly one new active SOS must exist');
+      const freshFormatted = formatRescueRequest(activeRequests[0]);
+      assert(freshFormatted.peopleCount === 2, `Fresh SOS peopleCount must be 2, got ${freshFormatted.peopleCount}`);
+      assert(freshFormatted.injuredCount === 0, `Fresh SOS injuredCount must be 0, got ${freshFormatted.injuredCount}`);
+      assert(freshFormatted.elderlyCount === 0, `Fresh SOS elderlyCount must be 0, got ${freshFormatted.elderlyCount}`);
+    });
+
   } finally {
     if (browser) await browser.close();
     mockDeepgramServer?.close();

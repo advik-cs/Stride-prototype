@@ -111,9 +111,17 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
         .then((req) => {
           if (req && req.status !== 'CANCELLED' && req.status !== 'RESCUED') {
             setActiveRequest(req);
+          } else if (req && (req.status === 'CANCELLED' || req.status === 'RESCUED')) {
+            setActiveRequest(null);
+            activeRequestIdRef.current = null;
           }
         })
         .catch(() => {});
+    } else {
+      if (activeRequest) {
+        setActiveRequest(null);
+        activeRequestIdRef.current = null;
+      }
     }
   }, [initialActiveRequestId, isOpen]);
 
@@ -185,7 +193,18 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
         const errorMsg = typeof err === 'string' ? err : err?.message || 'Voice connection error.';
         console.warn('[STRIDE Voice] Provider error callback:', errorMsg);
         setMicError(errorMsg);
-        setCurrentStatus('ERROR');
+
+        const isNoSpeech =
+          /no speech detected/i.test(errorMsg) ||
+          /too short or empty/i.test(errorMsg) ||
+          /empty recording/i.test(errorMsg);
+
+        if (isNoSpeech) {
+          setCurrentStatus('IDLE');
+          isSubmittingTurnRef.current = false;
+        } else {
+          setCurrentStatus('ERROR');
+        }
       },
     });
 
@@ -519,7 +538,7 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
     }
   };
 
-  const resetSession = async () => {
+  const handleResetBeacon = async () => {
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
     }
@@ -529,6 +548,10 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
       await providerRef.current.disconnect().catch(() => {});
     }
 
+    const prevId = activeRequest?.id || localStorage.getItem('stride_active_sos_id');
+    localStorage.removeItem('stride_active_sos_id');
+    activeRequestIdRef.current = null;
+    setActiveRequest(null);
     setSessionId(`sess-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`);
     setMessages([
       {
@@ -545,12 +568,10 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
     setCurrentStatus('IDLE');
     setCurrentMode('ASSIST');
     setMicError(null);
+    setLocationConflict(false);
     isSubmittingTurnRef.current = false;
     isSubmittingTextRef.current = false;
 
-    const prevId = activeRequest?.id || localStorage.getItem('stride_active_sos_id');
-    localStorage.removeItem('stride_active_sos_id');
-    setActiveRequest(null);
     onBeaconReset?.();
     if (prevId) {
       try {
@@ -561,19 +582,7 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
     }
   };
 
-  const handleResetBeacon = async () => {
-    const prevId = activeRequest?.id || localStorage.getItem('stride_active_sos_id');
-    localStorage.removeItem('stride_active_sos_id');
-    setActiveRequest(null);
-    onBeaconReset?.();
-    if (prevId) {
-      try {
-        await duringApi.resetTestBeacon(prevId);
-      } catch (err) {
-        console.warn('Reset test beacon error:', err);
-      }
-    }
-  };
+  const resetSession = handleResetBeacon;
 
   const handleRetry = async () => {
     setMicError(null);
@@ -660,6 +669,7 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
               {isMuted ? <VolumeX className="w-4 h-4 text-gray-500" /> : <Volume2 className="w-4 h-4 text-blue-600" />}
             </button>
             <button
+              id="voice-assistant-close-btn"
               type="button"
               onClick={onClose}
               className="p-2 rounded-xl border border-[#C8D9E6] hover:bg-red-50 text-[#567C8D] hover:text-red-600 transition cursor-pointer"
@@ -703,6 +713,7 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
                 </div>
               )}
               <button
+                id="voice-assistant-reset-beacon-btn"
                 type="button"
                 onClick={handleResetBeacon}
                 title="Cancel / Reset test beacon"
@@ -733,15 +744,17 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
               <span>{micError}</span>
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
-              <button
-                id="voice-assistant-retry-btn"
-                type="button"
-                onClick={handleRetry}
-                className="text-blue-700 hover:text-blue-900 font-bold underline flex items-center gap-1 cursor-pointer"
-              >
-                <RefreshCw className="w-3 h-3" />
-                <span>Retry</span>
-              </button>
+              {currentStatus === 'ERROR' && (
+                <button
+                  id="voice-assistant-retry-btn"
+                  type="button"
+                  onClick={handleRetry}
+                  className="text-blue-700 hover:text-blue-900 font-bold underline flex items-center gap-1 cursor-pointer"
+                >
+                  <RefreshCw className="w-3 h-3" />
+                  <span>Retry</span>
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => setMicError(null)}
