@@ -1164,6 +1164,139 @@ async function runSuite() {
       assert.equal(formattedFresh.elderlyCount, 0, 'Database elderlyCount must be 0');
     });
 
+    // =================================================================
+    // SCENARIO 25: Fact Extraction & Multi-Turn Lifecycle Safety
+    // - Subsets of vulnerable people (injured) MUST NOT overwrite total peopleCount
+    // - Explicit total count updates ("Actually, there are five people") DO update peopleCount
+    // - Explicit negation ("Actually nobody is injured") resets injuredCount to 0 without touching peopleCount
+    // - Raw UUIDs / technical IDs are NEVER leaked in assistant responses
+    // =================================================================
+    await runCheck('Scenario 25: People-count vs subset counts, negation, and no UUID leakage', async () => {
+      // 1. Reset beacon to start clean
+      await fetch(`http://127.0.0.1:${stridePort}/api/voice/reset-test-beacon`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${citizenToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+
+      const sessId = `s25-${Date.now()}`;
+      const history: any[] = [];
+      let activeReqId: string | null = null;
+
+      // Helper function to check no UUID in text
+      const assertNoUuid = (text: string, contextLabel: string) => {
+        assert.ok(
+          !/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i.test(text),
+          `${contextLabel} leaked raw UUID: "${text}"`
+        );
+        assert.ok(
+          !/#(?:[0-9a-f-]{8,36}|[a-z0-9_-]{6,})/i.test(text),
+          `${contextLabel} leaked #ID hash: "${text}"`
+        );
+      };
+
+      // Turn 1: "We are four people and we're trapped upstairs."
+      const t1Res = await fetch(`http://127.0.0.1:${stridePort}/api/voice/emergency-chat`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${citizenToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: "We are four people and we're trapped upstairs.",
+          history,
+          sessionId: sessId,
+          clientRequestId: `s25-t1-${Date.now()}`,
+        }),
+      });
+      assert.equal(t1Res.status, 200);
+      const json1 = await t1Res.json();
+      assert.ok(json1.activeRequest, 'Turn 1 must create active request');
+      activeReqId = json1.activeRequest.id;
+      assert.equal(json1.activeRequest.peopleCount, 4, 'Turn 1 peopleCount must be 4');
+      assert.equal(json1.activeRequest.emergencyType, 'TRAPPED', 'Turn 1 emergencyType must be TRAPPED');
+      assertNoUuid(json1.assistantResponse, 'Turn 1 assistant response');
+
+      history.push({ role: 'user', content: "We are four people and we're trapped upstairs." });
+      history.push({ role: 'assistant', content: json1.assistantResponse });
+
+      // Turn 2: "There are two of us injured"
+      // MUST NOT overwrite peopleCount=4 with 2! Must update injuredCount to 2.
+      const t2Res = await fetch(`http://127.0.0.1:${stridePort}/api/voice/emergency-chat`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${citizenToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: 'There are two of us injured',
+          history,
+          sessionId: sessId,
+          activeRequestId: activeReqId,
+          clientRequestId: `s25-t2-${Date.now()}`,
+        }),
+      });
+      assert.equal(t2Res.status, 200);
+      const json2 = await t2Res.json();
+      assert.ok(json2.activeRequest, 'Turn 2 must preserve active request');
+      assert.equal(json2.activeRequest.id, activeReqId, 'Turn 2 must update same SOS in-place');
+      assert.equal(json2.activeRequest.peopleCount, 4, 'CRITICAL: peopleCount must remain 4 (NOT overwritten by 2)');
+      assert.equal(json2.activeRequest.injuredCount, 2, 'injuredCount must be 2');
+      assertNoUuid(json2.assistantResponse, 'Turn 2 assistant response');
+
+      history.push({ role: 'user', content: 'There are two of us injured' });
+      history.push({ role: 'assistant', content: json2.assistantResponse });
+
+      // Turn 3: "Actually, there are five people with me."
+      // Explicit total count change -> peopleCount MUST become 5, injuredCount MUST remain 2!
+      const t3Res = await fetch(`http://127.0.0.1:${stridePort}/api/voice/emergency-chat`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${citizenToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: 'Actually, there are five people with me.',
+          history,
+          sessionId: sessId,
+          activeRequestId: activeReqId,
+          clientRequestId: `s25-t3-${Date.now()}`,
+        }),
+      });
+      assert.equal(t3Res.status, 200);
+      const json3 = await t3Res.json();
+      assert.ok(json3.activeRequest, 'Turn 3 must preserve active request');
+      assert.equal(json3.activeRequest.id, activeReqId, 'Turn 3 must update same SOS in-place');
+      assert.equal(json3.activeRequest.peopleCount, 5, 'peopleCount must be updated to 5');
+      assert.equal(json3.activeRequest.injuredCount, 2, 'injuredCount must remain 2');
+      assertNoUuid(json3.assistantResponse, 'Turn 3 assistant response');
+
+      history.push({ role: 'user', content: 'Actually, there are five people with me.' });
+      history.push({ role: 'assistant', content: json3.assistantResponse });
+
+      // Turn 4: "Actually nobody is injured"
+      // Explicit negation -> injuredCount MUST become 0, peopleCount MUST remain 5!
+      const t4Res = await fetch(`http://127.0.0.1:${stridePort}/api/voice/emergency-chat`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${citizenToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: 'Actually nobody is injured',
+          history,
+          sessionId: sessId,
+          activeRequestId: activeReqId,
+          clientRequestId: `s25-t4-${Date.now()}`,
+        }),
+      });
+      assert.equal(t4Res.status, 200);
+      const json4 = await t4Res.json();
+      assert.ok(json4.activeRequest, 'Turn 4 must preserve active request');
+      assert.equal(json4.activeRequest.id, activeReqId, 'Turn 4 must update same SOS in-place');
+      assert.equal(json4.activeRequest.peopleCount, 5, 'peopleCount must remain 5');
+      assert.equal(json4.activeRequest.injuredCount, 0, 'injuredCount must be cleared to 0');
+      assertNoUuid(json4.assistantResponse, 'Turn 4 assistant response');
+
+      // Verify in database
+      const dbReq = await prisma.emergencyRequest.findUnique({
+        where: { id: activeReqId },
+        include: { conditions: true },
+      });
+      assert.ok(dbReq, 'Database SOS must exist');
+      const formatted = formatRescueRequest(dbReq);
+      assert.equal(formatted.peopleCount, 5, 'DB peopleCount must be 5');
+      assert.equal(formatted.injuredCount, 0, 'DB injuredCount must be 0');
+    });
+
   } finally {
     mockDeepgramServer?.close();
     strideServer?.close();

@@ -108,19 +108,66 @@ export function extractCurrentTurnFacts(
       message
     );
 
-  // 1. People count
-  const peopleMatch =
-    message.match(/\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s*(?:people|individuals|members|persons|of us)\b/i) ||
-    message.match(/\b(?:we are|there are|we're|actually,?\s*there are)\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten)(?!\s+(?:children|child|kids|kid|infants|infant|babies|baby|toddlers|elderly|injured|wounded))\b/i);
+  const NUM_WORDS = '(\\d+|one|two|three|four|five|six|seven|eight|nine|ten)';
+  const VULNERABILITY_WORDS =
+    '(?:injured|hurt|bleeding|wounded|injuries|injury|sick|unwell|dead|casualt|children|child|kids|kid|infants|infant|babies|baby|toddlers|elderly|grandparents|seniors|disabled|wheelchair|unconscious)';
 
-  if (peopleMatch) {
+  // 1. People count
+  // Pattern A: "X of the Y people" (e.g. "two of the four people are injured") -> Y is total count!
+  const subsetOfTotalPeopleMatch = message.match(
+    new RegExp(
+      `\\b${NUM_WORDS}\\s+(?:out\\s+of|of)\\s+(?:the\\s+)?${NUM_WORDS}\\s+(?:people|individuals|members|persons)\\b`,
+      'i'
+    )
+  );
+
+  // Pattern B: Explicit total count phrases
+  // e.g. "we are four people", "there are four of us", "now we are 5", "actually there are five people"
+  // Lookahead ensures the count is not immediately followed by an injury or vulnerability word (e.g. "there are two of us injured")
+  const totalCountMatches = Array.from(
+    message.matchAll(
+      new RegExp(
+        `\\b(?:we\\s+are|there\\s+are|we're|actually,?\\s*there\\s+are|now\\s+we\\s+are|together\\s+we\\s+are|total\\s+of)\\s+${NUM_WORDS}\\b(?!\\s*(?:of\\s+us\\s+|people\\s+|individuals\\s+|members\\s+)?(?:are|is|got|were|who\\s+are|have\\s+been)?\\s*${VULNERABILITY_WORDS})(?:\\s+of\\s+us|\\s+people|\\s+individuals|\\s+members|\\s+persons)?\\b`,
+        'gi'
+      )
+    )
+  );
+
+  // Pattern C: Standalone "N people/individuals/members/persons" not followed by vulnerability
+  // and not preceded by "of the / out of"
+  const standalonePeopleMatches = Array.from(
+    message.matchAll(
+      new RegExp(
+        `(?:^|[^a-z0-9])${NUM_WORDS}\\s+(?:people|individuals|members|persons)\\b(?!\\s*(?:are|is|got|were|who\\s+are|have\\s+been)?\\s*${VULNERABILITY_WORDS})`,
+        'gi'
+      )
+    )
+  ).filter((m) => {
+    const prefix = message.slice(0, m.index);
+    return !/\b(?:of|out\s+of)\s+(?:the\s+)?$/i.test(prefix);
+  });
+
+  let pVal: number | undefined = undefined;
+  let pRaw: string | undefined = undefined;
+
+  if (subsetOfTotalPeopleMatch) {
+    pRaw = subsetOfTotalPeopleMatch[2];
+    pVal = parseCount(pRaw);
+  } else if (totalCountMatches.length > 0) {
+    const last = totalCountMatches[totalCountMatches.length - 1];
+    pRaw = last[1];
+    pVal = parseCount(pRaw);
+  } else if (standalonePeopleMatches.length > 0) {
+    const last = standalonePeopleMatches[standalonePeopleMatches.length - 1];
+    pRaw = last[1];
+    pVal = parseCount(pRaw);
+  }
+
+  if (pVal !== undefined && pVal > 0) {
     if (isSpeculative) {
-      uncertain.push(`Possible people count unconfirmed (${peopleMatch[1]})`);
+      uncertain.push(`Possible people count unconfirmed (${pRaw})`);
     } else {
-      const p = parseCount(peopleMatch[1]);
-      if (p !== undefined && p > 0) {
-        extracted.peopleCount = p;
-      }
+      extracted.peopleCount = pVal;
     }
   }
 
@@ -210,9 +257,47 @@ export function extractCurrentTurnFacts(
     conditions.push('SERIOUSLY_UNWELL');
   }
 
-  const injuredMatch = message.match(
-    /\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s*(?:injured|hurt|bleeding|wounded)\b/i
+  // Check explicit count of injured people:
+  // 1. "X of the Y people are injured" -> X is injured count
+  const subsetOfTotalInjuredMatch = message.match(
+    new RegExp(
+      `\\b${NUM_WORDS}\\s+(?:out\\s+of|of)\\s+(?:the\\s+)?(?:\\d+|one|two|three|four|five|six|seven|eight|nine|ten)?\\s*(?:people|individuals|members|persons|us)?\\s*(?:are|is|got|were|who\\s+are|have\\s+been)?\\s*(?:injured|hurt|bleeding|wounded|unwell)`,
+      'i'
+    )
   );
+  // 2. "X of us (are) injured"
+  const ofUsInjuredMatch = message.match(
+    new RegExp(
+      `\\b${NUM_WORDS}\\s+of\\s+us\\s*(?:are|is|got|were|who\\s+are)?\\s*(?:injured|hurt|bleeding|wounded)`,
+      'i'
+    )
+  );
+  // 3. "X people (are) injured" or "my X children are injured"
+  const peopleInjuredMatch = message.match(
+    new RegExp(
+      `\\b${NUM_WORDS}\\s*(?:people|individuals|members|persons|children|kids|family\\s+members)?\\s+(?:are|is|got|were|who\\s+are|have\\s+been)\\s+(?:injured|hurt|bleeding|wounded)`,
+      'i'
+    )
+  );
+  // 4. "there are / we have / with X (of us) injured"
+  const haveInjuredMatch = message.match(
+    new RegExp(
+      `(?:there\\s+are|we\\s+have|i\\s+have|have|with)\\s+${NUM_WORDS}\\s*(?:of\\s+us\\s+)?(?:who\\s+are\\s+)?(?:injured|hurt|bleeding|wounded)`,
+      'i'
+    )
+  );
+  // 5. Direct "X injured/hurt/wounded"
+  const directInjuredMatch = message.match(
+    new RegExp(`\\b${NUM_WORDS}\\s*(?:injured|hurt|bleeding|wounded)\\b`, 'i')
+  );
+
+  const injuredMatch =
+    subsetOfTotalInjuredMatch ||
+    ofUsInjuredMatch ||
+    peopleInjuredMatch ||
+    haveInjuredMatch ||
+    directInjuredMatch;
+
   const mentionsInjury =
     lower.includes('injured') ||
     lower.includes('hurt') ||
@@ -323,6 +408,24 @@ export function extractCurrentTurnFacts(
 }
 
 /**
+ * Defensive response sanitization layer.
+ * Strips raw internal database UUIDs, SOS hashes, and technical identifiers from all
+ * conversational text presented to citizens in emergencies.
+ */
+export function sanitizeAssistantResponse(text: string): string {
+  if (!text || typeof text !== 'string') return text;
+
+  return text
+    .replace(/\s*\([#＃]?[a-zA-Z0-9_-]{4,40}\)/g, '')
+    .replace(/\s*\[[#＃]?[a-zA-Z0-9_-]{4,40}\]/g, '')
+    .replace(/\s*[#＃][a-zA-Z0-9_-]{4,40}\b/g, '')
+    .replace(/\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b/g, '')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/\s+([.,!?;:])/g, '$1')
+    .trim();
+}
+
+/**
  * Deterministic anti-hallucination response validator.
  * Ensures the assistant NEVER mentions or invents specific hazards (floodwaters, rising water, fire, etc.)
  * unless explicitly mentioned in the current turn or confirmed in active database SOS facts.
@@ -399,7 +502,7 @@ export function validateGroundedResponse(
     return "Could you describe the situation or danger you are facing? Are you in immediate danger right now?";
   }
 
-  return candidateResponse;
+  return sanitizeAssistantResponse(candidateResponse);
 }
 
 /**
@@ -419,7 +522,6 @@ export function generateGroundedResponse(input: GroundedResponseInput): string {
   const confirmed = input.confirmedIncidentFacts;
   const currentExtracted = input.extractedCurrentTurnFacts || {};
   const hasActiveSos = !!input.context?.activeSos;
-  const activeSosId = input.context?.activeSos?.id;
 
   const userMentionsFlood =
     lower.includes('flood') || lower.includes('water') || lower.includes('submerged');
@@ -454,7 +556,7 @@ export function generateGroundedResponse(input: GroundedResponseInput): string {
     lower.includes('who are you')
   ) {
     if (hasActiveSos) {
-      return `Your rescue request (#${activeSosId}) is active with emergency dispatch. How can I assist you further?`;
+      return "Your rescue request is active with emergency dispatch. How can I assist you further?";
     }
     if (lower.includes('what can you do')) {
       return "I can help dispatch emergency rescue teams, direct you to open shelters and hospitals, or guide you through emergency procedures. Are you in immediate need of assistance right now?";
@@ -503,7 +605,7 @@ export function generateGroundedResponse(input: GroundedResponseInput): string {
   if (isNegative) {
     if (lastAssistantMsg.includes('injured') || lastAssistantMsg.includes('injuries')) {
       return hasActiveSos
-        ? `I have updated your active emergency signal (#${activeSosId}) to note that no one is injured. Are you able to move to a safer place right now? Yes or no.`
+        ? "I have updated your active emergency signal to note that no one is injured. Are you able to move to a safer place right now? Yes or no."
         : "Understood, no injuries. Are you able to move to a safer place right now? Yes or no.";
     }
     if (lastAssistantMsg.includes('are you trapped right now') || lastAssistantMsg.includes('are you trapped')) {
@@ -545,22 +647,40 @@ export function generateGroundedResponse(input: GroundedResponseInput): string {
     if (currentExtracted.injuredCount !== undefined) {
       if (currentExtracted.injuredCount === 0) {
         if (currentExtracted.peopleCount !== undefined) {
-          return `I have updated your active emergency signal (#${activeSosId}) to ${currentExtracted.peopleCount} people and noted that no one is injured. Dispatch teams have been informed. Are you or anyone with you able to move safely? Yes or no.`;
+          return sanitizeAssistantResponse(
+            `I have updated your active emergency signal to ${currentExtracted.peopleCount} people and noted that no one is injured. Dispatch teams have been informed. Are you or anyone with you able to move safely? Yes or no.`
+          );
         }
-        return `I have updated your active emergency signal (#${activeSosId}) to note that no one is injured. Dispatch teams have been informed. Are you or anyone with you able to move safely? Yes or no.`;
+        return sanitizeAssistantResponse(
+          "I have updated your active emergency signal to note that no one is injured. Dispatch teams have been informed. Are you or anyone with you able to move safely? Yes or no."
+        );
       }
+      const injuryDetail =
+        currentExtracted.injuredCount > 1
+          ? `${currentExtracted.injuredCount} people are injured`
+          : 'the medical injury';
       if (currentExtracted.peopleCount !== undefined) {
-        return `I have updated your active emergency signal (#${activeSosId}) to ${currentExtracted.peopleCount} people and noted the medical injury. Emergency dispatch has been notified. Are you or anyone with you able to move safely? Yes or no.`;
+        return sanitizeAssistantResponse(
+          `I have updated your active emergency signal to ${currentExtracted.peopleCount} people and noted that ${injuryDetail}. Emergency dispatch has been notified. Are you or anyone with you able to move safely? Yes or no.`
+        );
       }
-      return `I have noted the medical injury on your active emergency signal (#${activeSosId}). Emergency dispatch has been notified. Are you or anyone with you able to move safely? Yes or no.`;
+      return sanitizeAssistantResponse(
+        `I have noted that ${injuryDetail} on your active emergency signal. Emergency dispatch has been notified. Are you or anyone with you able to move safely? Yes or no.`
+      );
     }
     if (currentExtracted.peopleCount !== undefined) {
-      return `I have updated your active emergency distress signal (#${activeSosId}) to ${currentExtracted.peopleCount} people. Are any of the people injured? You can answer yes or no.`;
+      return sanitizeAssistantResponse(
+        `I have updated your active emergency distress signal to ${currentExtracted.peopleCount} people. Are any of the people injured? You can answer yes or no.`
+      );
     }
     if (currentExtracted.childrenCount !== undefined) {
-      return `I have updated your active emergency signal (#${activeSosId}) to include ${currentExtracted.childrenCount} children. Dispatch teams have been informed. Are you all in a safe location? Yes or no.`;
+      return sanitizeAssistantResponse(
+        `I have updated your active emergency signal to include ${currentExtracted.childrenCount} children. Dispatch teams have been informed. Are you all in a safe location? Yes or no.`
+      );
     }
-    return `I have updated your active emergency distress signal (#${activeSosId}) with these details and notified dispatch teams. Please stay calm and remain in a safe location.`;
+    return sanitizeAssistantResponse(
+      "I have updated your active emergency distress signal with these details and notified dispatch teams. Please stay calm and remain in a safe location."
+    );
   }
 
   // 8. Emergency creation with confirmed facts
@@ -821,7 +941,7 @@ export function limitedEmergencySignalExtractor(
           mode: 'EMERGENCY',
           intent: 'emergency_sos_dispatch',
           assistantResponse: validateGroundedResponse(
-            `I have updated your active emergency signal (#${context.activeSos.id}) to note that no one is injured. Dispatch teams have been informed. Are you or anyone with you able to move safely? Yes or no.`,
+            "I have updated your active emergency signal to note that no one is injured. Dispatch teams have been informed. Are you or anyone with you able to move safely? Yes or no.",
             message,
             existingIncidentFacts,
             'EMERGENCY'
@@ -1024,26 +1144,30 @@ export function limitedEmergencySignalExtractor(
     if (extracted.injuredCount !== undefined) {
       if (extracted.injuredCount === 0) {
         if (extracted.peopleCount !== undefined) {
-          assistantMsg = `I have updated your active emergency signal (#${context.activeSos.id}) to ${extracted.peopleCount} people and noted that no one is injured. Dispatch teams have been informed. Are you or anyone with you able to move safely? Yes or no.`;
+          assistantMsg = `I have updated your active emergency signal to ${extracted.peopleCount} people and noted that no one is injured. Dispatch teams have been informed. Are you or anyone with you able to move safely? Yes or no.`;
         } else {
-          assistantMsg = `I have updated your active emergency signal (#${context.activeSos.id}) to note that no one is injured. Dispatch teams have been informed. Are you or anyone with you able to move safely? Yes or no.`;
+          assistantMsg = "I have updated your active emergency signal to note that no one is injured. Dispatch teams have been informed. Are you or anyone with you able to move safely? Yes or no.";
         }
       } else {
+        const countStr =
+          extracted.injuredCount > 1
+            ? `${extracted.injuredCount} people are injured`
+            : 'the medical injury';
         if (extracted.peopleCount !== undefined) {
-          assistantMsg = `I have updated your active emergency signal (#${context.activeSos.id}) to ${extracted.peopleCount} people and noted the medical injury. Emergency dispatch has been notified. Are you or anyone with you able to move safely? Yes or no.`;
+          assistantMsg = `I have updated your active emergency signal to ${extracted.peopleCount} people and noted that ${countStr}. Emergency dispatch has been notified. Are you or anyone with you able to move safely? Yes or no.`;
         } else {
-          assistantMsg = `I have noted the medical injury on your active emergency signal (#${context.activeSos.id}). Emergency dispatch has been notified. Are you or anyone with you able to move safely? Yes or no.`;
+          assistantMsg = `I have noted that ${countStr} on your active emergency signal. Emergency dispatch has been notified. Are you or anyone with you able to move safely? Yes or no.`;
         }
       }
       target = 'safety_mobility';
     } else if (extracted.peopleCount !== undefined) {
-      assistantMsg = `I have updated your active emergency distress signal (#${context.activeSos.id}) to ${extracted.peopleCount} people. Are any of the people injured? You can answer yes or no.`;
+      assistantMsg = `I have updated your active emergency distress signal to ${extracted.peopleCount} people. Are any of the people injured? You can answer yes or no.`;
       target = 'medical_need';
     } else if (extracted.childrenCount !== undefined) {
-      assistantMsg = `I have updated your active emergency signal (#${context.activeSos.id}) to include ${extracted.childrenCount} children. Dispatch teams have been informed. Are you all in a safe location? Yes or no.`;
+      assistantMsg = `I have updated your active emergency signal to include ${extracted.childrenCount} children. Dispatch teams have been informed. Are you all in a safe location? Yes or no.`;
       target = 'safety_mobility';
     } else {
-      assistantMsg = `I have updated your active emergency distress signal (#${context.activeSos.id}) with these details and notified dispatch teams. Please stay calm and remain in a safe location.`;
+      assistantMsg = "I have updated your active emergency distress signal with these details and notified dispatch teams. Please stay calm and remain in a safe location.";
       target = 'safety_mobility';
     }
 
@@ -1350,6 +1474,14 @@ CRITICAL CONVERSATION GROUNDING AND CONTEXT ISOLATION RULES:
        - set "injuredCount": 0
        - set "criticalMedicalNeed": true
        - include "SERIOUSLY_UNWELL" in conditions.
+10. PEOPLE COUNT VS. SUBSET COUNTS:
+   - "peopleCount" represents the TOTAL number of humans at the location.
+   - Vulnerable subsets (e.g. "two of us injured", "three people are injured", "two kids", "one elder") must NEVER overwrite "peopleCount".
+   - Only set or change "peopleCount" if the citizen explicitly states or updates the total count (e.g. "We are 4 people", "Actually there are 5 people with me", "There are five of us in total").
+   - If the citizen says "two of us injured", set "injuredCount": 2, and DO NOT set "peopleCount".
+11. NO RAW IDENTIFIERS OR DATABASE IDS:
+   - NEVER include raw database IDs, UUIDs, hashes, or technical identifiers (e.g. #373b83dd..., #clx..., request IDs) in your spoken or text responses.
+   - Refer to emergencies naturally as 'your emergency signal', 'your distress request', or 'your active rescue request'.
 
 OUTPUT JSON FORMAT (You MUST return valid JSON matching this schema):
 {
@@ -1384,7 +1516,7 @@ OUTPUT JSON FORMAT (You MUST return valid JSON matching this schema):
 === DATABASE BACKGROUND CONTEXT (FOR REFERENCE ONLY - NOT CITIZEN STATEMENT) ===
 - Active Disaster: ${context.activeDisaster?.title || 'Bengaluru Urban Disaster'} (${context.activeDisaster?.alertLevel || 'HIGH'} alert level)
 - Citizen Home Address: ${context.citizenHousehold?.address || 'Bengaluru'}
-- Active SOS In Database: ${context.activeSos ? `Active SOS #${context.activeSos.id} (Status: ${context.activeSos.rescueStatus}, Priority: ${context.activeSos.priorityScore})` : 'No active SOS'}
+- Active SOS In Database: ${context.activeSos ? `Active SOS exists (Status: ${context.activeSos.rescueStatus}, Priority: ${context.activeSos.priorityScore})` : 'No active SOS'}
 - Nearest Shelters: ${context.nearestShelters.map((s) => `${s.name} (${s.distanceKm}km, ${s.status})`).join(', ') || 'None listed'}
 - Nearest Facilities: ${context.nearestFacilities.map((f) => `${f.name} (${f.distanceKm}km)`).join(', ') || 'None listed'}
 

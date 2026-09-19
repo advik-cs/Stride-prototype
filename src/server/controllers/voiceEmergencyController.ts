@@ -9,6 +9,7 @@ import {
   VoiceAudioAssistantOutput,
   AudioFailureStage,
   normalizeAudioMimeType,
+  sanitizeAssistantResponse,
 } from '../services/geminiVoiceService.ts';
 import { createLiveSessionToken } from '../services/liveVoiceService.ts';
 import {
@@ -170,6 +171,9 @@ export async function applySosLifecycleAndTriage(
   sosAfterSummary?: any;
 }> {
   let locationConflict = false;
+  if (aiResult.assistantResponse) {
+    aiResult.assistantResponse = sanitizeAssistantResponse(aiResult.assistantResponse);
+  }
   const gpsLat = currentLocation?.latitude || context.citizenHousehold?.latitude || 12.9716;
   const gpsLng = currentLocation?.longitude || context.citizenHousehold?.longitude || 77.5946;
 
@@ -712,7 +716,7 @@ export async function handleVoiceEmergencyChat(
       clientRequestId: reqId,
       mode: aiResult.mode,
       intent: aiResult.intent,
-      assistantResponse: aiResult.assistantResponse,
+      assistantResponse: sanitizeAssistantResponse(aiResult.assistantResponse),
       extractedInformation: aiResult.extractedInformation || {},
       existingIncidentFacts,
       uncertainInformation: aiResult.uncertainInformation || [],
@@ -967,7 +971,7 @@ export async function handleVoiceEmergencyAudio(
       diagnosticReason: aiResult.diagnosticReason || null,
       mode: aiResult.mode,
       intent: aiResult.intent,
-      assistantResponse: aiResult.assistantResponse,
+      assistantResponse: sanitizeAssistantResponse(aiResult.assistantResponse),
       extractedInformation: aiResult.extractedInformation || {},
       existingIncidentFacts,
       uncertainInformation: aiResult.uncertainInformation || [],

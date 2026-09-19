@@ -39,6 +39,18 @@ interface MessageItem {
   extractedFacts?: any;
 }
 
+function sanitizeAssistantResponse(text: string): string {
+  if (!text || typeof text !== 'string') return text;
+  return text
+    .replace(/\s*\([#＃]?[a-zA-Z0-9_-]{4,40}\)/g, '')
+    .replace(/\s*\[[#＃]?[a-zA-Z0-9_-]{4,40}\]/g, '')
+    .replace(/\s*[#＃][a-zA-Z0-9_-]{4,40}\b/g, '')
+    .replace(/\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b/g, '')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/\s+([.,!?;:])/g, '$1')
+    .trim();
+}
+
 export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = ({
   isOpen,
   onClose,
@@ -351,10 +363,11 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
       }
 
       // 4. Render assistant response bubble
+      const cleanResp = sanitizeAssistantResponse(res.assistantResponse);
       const assistantMsg: MessageItem = {
         id: 'msg-asst-' + Date.now(),
         role: 'assistant',
-        content: res.assistantResponse,
+        content: cleanResp,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         mode: res.mode,
         extractedFacts: res.extractedInformation,
@@ -363,11 +376,11 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
       setMessages((prev) => [...prev, assistantMsg]);
 
       // 5. Spoken response playback
-      if (!isMuted && res.assistantResponse) {
+      if (!isMuted && cleanResp) {
         if (typeof providerRef.current?.speak === 'function') {
-          providerRef.current.speak(res.assistantResponse).catch((speakErr) => {
+          providerRef.current.speak(cleanResp).catch((speakErr) => {
             console.warn('[STRIDE Voice] Provider speak failed, falling back to browser TTS:', speakErr);
-            speakText(res.assistantResponse);
+            speakText(cleanResp);
           });
         } else {
           // Native audio from Gemini Live is played via onAudioChunk.
@@ -492,24 +505,25 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
         onSosUpdated?.(res.activeRequest);
       }
 
+      const cleanResp = sanitizeAssistantResponse(res.assistantResponse);
       const assistantMsg: MessageItem = {
         id: 'msg-asst-' + Date.now(),
         role: 'assistant',
-        content: res.assistantResponse,
+        content: cleanResp,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         mode: res.mode,
         extractedFacts: res.extractedInformation,
       };
 
       setMessages((prev) => [...prev, assistantMsg]);
-      if (!isMuted && res.assistantResponse) {
+      if (!isMuted && cleanResp) {
         if (typeof providerRef.current?.speak === 'function') {
-          providerRef.current.speak(res.assistantResponse).catch((speakErr) => {
+          providerRef.current.speak(cleanResp).catch((speakErr) => {
             console.warn('[STRIDE Voice] Provider speak failed in text chat, falling back to browser TTS:', speakErr);
-            speakText(res.assistantResponse);
+            speakText(cleanResp);
           });
         } else {
-          speakText(res.assistantResponse);
+          speakText(cleanResp);
         }
       } else {
         setCurrentStatus('IDLE');
@@ -602,12 +616,17 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
-      <div className="bg-white rounded-3xl border border-[#C8D9E6] shadow-2xl w-full max-w-2xl max-h-[92vh] flex flex-col overflow-hidden relative">
+      <div
+        data-voice-assistant-modal
+        data-voice-provider={providerName.toLowerCase()}
+        data-provider={providerName.toLowerCase()}
+        className="bg-white rounded-3xl border border-[#C8D9E6] shadow-2xl w-full max-w-2xl max-h-[92vh] flex flex-col overflow-hidden relative"
+      >
         {/* Header */}
         <div className="px-6 py-4 border-b border-[#C8D9E6]/80 flex items-center justify-between bg-[#F5EFEB]/50">
           <div className="flex items-center gap-3">
             <div
-              className={`w-10 h-10 rounded-2xl flex items-center justify-center shadow-sm ${
+              className={`w-10 h-10 rounded-2xl flex items-center justify-center shadow-sm shrink-0 ${
                 currentMode === 'EMERGENCY'
                   ? 'bg-red-600 text-white animate-pulse'
                   : currentMode === 'ASSESS'
@@ -632,9 +651,6 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
                   }`}
                 >
                   {currentMode}
-                </span>
-                <span className="text-[10px] font-mono text-[#567C8D] bg-white px-1.5 py-0.5 rounded border border-[#C8D9E6]">
-                  {providerName}
                 </span>
               </div>
               <p className="text-[11px] text-[#567C8D]">

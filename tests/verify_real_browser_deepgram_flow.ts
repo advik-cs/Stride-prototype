@@ -294,10 +294,15 @@ async function runRealBrowserDeepgramSuite() {
       await modalHeader.waitFor({ state: 'visible', timeout: 5000 });
       assert(await modalHeader.isVisible(), 'Modal header must be visible');
 
-      // Verify Provider Badge indicates DEEPGRAM-TURN
+      // Verify Modal has data-provider="deepgram-turn" on container
+      const modalContainer = page.locator('[data-voice-assistant-modal]').first();
+      await modalContainer.waitFor({ state: 'visible', timeout: 5000 });
+      const providerAttr = await modalContainer.getAttribute('data-provider');
+      assert(providerAttr === 'deepgram-turn', `Expected data-provider to be "deepgram-turn", got "${providerAttr}"`);
+
+      // Verify visible Provider Badge is removed from header
       const providerBadge = page.locator('text=DEEPGRAM-TURN');
-      await providerBadge.waitFor({ state: 'visible', timeout: 5000 });
-      assert(await providerBadge.isVisible(), 'Provider badge must display DEEPGRAM-TURN');
+      assert(!(await providerBadge.isVisible()), 'DEEPGRAM-TURN badge should not be visibly displayed in header');
 
       // Verify Subtitle displays provider-neutral copy
       const subtitle = page.locator('text=Voice emergency reporting & deterministic priority triage powered by STRIDE');
@@ -400,6 +405,19 @@ async function runRealBrowserDeepgramSuite() {
       const beaconPeople2 = page.locator('text=People: 4').first();
       await beaconPeople2.waitFor({ state: 'visible', timeout: 5000 });
       assert(await beaconPeople2.isVisible(), 'Active rescue beacon must maintain People: 4 after Turn 2');
+
+      // Verify assistant response bubble does not leak raw UUIDs or technical #IDs
+      const assistantMsgs = await page.locator('[data-voice-assistant-modal] p').allTextContents();
+      for (const msg of assistantMsgs) {
+        assert(
+          !/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i.test(msg),
+          `Assistant response must not leak raw UUID: "${msg}"`
+        );
+        assert(
+          !/#(?:[0-9a-f-]{8,36}|[a-z0-9_-]{6,})/i.test(msg),
+          `Assistant response must not leak #ID: "${msg}"`
+        );
+      }
 
       // Verify active SOS updated in database
       const activeRequests = await prisma.emergencyRequest.findMany({
