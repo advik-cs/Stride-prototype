@@ -136,7 +136,13 @@ export function extractCurrentTurnFacts(
     lower.includes('infant') ||
     lower.includes('toddler');
 
-  if (mentionsChild) {
+  const isNegativeChildren =
+    /\b(?:no|zero|0|none\s+of\s+the|not\s+any)\s+(?:children|child|kids|kid|infants|babies)\b/i.test(message) ||
+    /\b(?:no\s*children|no\s*kids)\b/i.test(message);
+
+  if (isNegativeChildren) {
+    extracted.childrenCount = 0;
+  } else if (mentionsChild) {
     if (isSpeculative) {
       uncertain.push('Possible children present (unconfirmed)');
     } else {
@@ -160,7 +166,12 @@ export function extractCurrentTurnFacts(
     lower.includes('grandpa') ||
     lower.includes('senior citizen');
 
-  if (mentionsElderly) {
+  const isNegativeElderly =
+    /\b(?:no|zero|0|none\s+of\s+the|not\s+any)\s+(?:elderly|seniors|grandparents)\b/i.test(message);
+
+  if (isNegativeElderly) {
+    extracted.elderlyCount = 0;
+  } else if (mentionsElderly) {
     if (isSpeculative) {
       uncertain.push('Possible elderly present (unconfirmed)');
     } else {
@@ -172,6 +183,33 @@ export function extractCurrentTurnFacts(
   }
 
   // 4. Injured / Medical
+  const isNegativeInjury =
+    /\b(?:no\s*one|nobody|none|not\s+(?:any|the|\d+|one|two|three|four|five|six|seven|eight|nine|ten|all|anyone|anybody)|zero|0)\b.*?\b(?:injured|hurt|bleeding|wounded|injuries|injury)\b/i.test(message) ||
+    /\b(?:no|without|zero|0)\s+(?:injuries|injury|bleeding|wounds?)\b/i.test(message) ||
+    /\b(?:i'?m|we'?re|they'?re|she'?s|he'?s|it'?s)?\s*(?:not|aren't|isn't|are\s+not|is\s+not|was\s+not|were\s+not)\s+(?:injured|hurt|bleeding|wounded)\b/i.test(message) ||
+    /\buninjured\b/i.test(message) ||
+    /\b(?:nobody|no\s*one|none\s+of\s+us)\s+(?:got|is|was|were)\s+(?:hurt|injured|wounded)\b/i.test(message);
+
+  const mentionsCriticalMedical =
+    lower.includes('unconscious') ||
+    lower.includes('heart') ||
+    lower.includes('severe') ||
+    lower.includes('critical') ||
+    lower.includes('seriously unwell') ||
+    lower.includes('unwell') ||
+    lower.includes('seizure') ||
+    lower.includes('stroke') ||
+    lower.includes('diabetic');
+
+  const isNegativeCriticalMedical =
+    /\b(?:no\s*one|nobody|none)\s+(?:is|are|was|were)\s+(?:seriously\s+unwell|unwell|unconscious|critical)\b/i.test(message) ||
+    /\b(?:not|isn't|aren't|is\s+not|are\s+not)\s+(?:seriously\s+unwell|unwell|unconscious|critical)\b/i.test(message);
+
+  if (mentionsCriticalMedical && !isNegativeCriticalMedical) {
+    extracted.criticalMedicalNeed = true;
+    conditions.push('SERIOUSLY_UNWELL');
+  }
+
   const injuredMatch = message.match(
     /\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s*(?:injured|hurt|bleeding|wounded)\b/i
   );
@@ -184,7 +222,9 @@ export function extractCurrentTurnFacts(
     lower.includes('heart attack') ||
     lower.includes('medical emergency');
 
-  if (mentionsInjury) {
+  if (isNegativeInjury) {
+    extracted.injuredCount = 0;
+  } else if (mentionsInjury) {
     if (isSpeculative) {
       uncertain.push('Possible injuries present (unconfirmed)');
     } else {
@@ -194,19 +234,16 @@ export function extractCurrentTurnFacts(
         conditions.push('HEAVILY_INJURED');
       }
     }
-    if (
-      lower.includes('unconscious') ||
-      lower.includes('heart') ||
-      lower.includes('severe') ||
-      lower.includes('critical')
-    ) {
-      extracted.criticalMedicalNeed = true;
-      conditions.push('SERIOUSLY_UNWELL');
-    }
   }
 
   // 5. Disabled / Immobile
-  if (
+  const isNegativeDisabled =
+    /\b(?:no|zero|0|not)\s+(?:disabled|handicapped|wheelchair)\b/i.test(message) ||
+    /\b(?:none\s+of\s+us\s+is\s+disabled|nobody\s+is\s+disabled)\b/i.test(message);
+
+  if (isNegativeDisabled) {
+    extracted.disabledCount = 0;
+  } else if (
     lower.includes('wheelchair') ||
     lower.includes('disabled') ||
     lower.includes('cannot walk') ||
@@ -252,7 +289,12 @@ export function extractCurrentTurnFacts(
   } else if (lower.includes('fire') || lower.includes('smoke') || lower.includes('burning')) {
     extracted.emergencyType = 'FIRE';
     conditions.push('FIRE');
-  } else if (mentionsInjury && !lower.includes('flood') && !lower.includes('water')) {
+  } else if (
+    !isNegativeInjury &&
+    (mentionsInjury || (mentionsCriticalMedical && !isNegativeCriticalMedical)) &&
+    !lower.includes('flood') &&
+    !lower.includes('water')
+  ) {
     extracted.emergencyType = 'MEDICAL';
   } else if (
     (lower.includes('flood') || lower.includes('water')) &&
@@ -459,6 +501,11 @@ export function generateGroundedResponse(input: GroundedResponseInput): string {
   // 5. Negatives ("no", "nope")
   const isNegative = /^(no|nope|nah|not really|negative)\b/i.test(lower);
   if (isNegative) {
+    if (lastAssistantMsg.includes('injured') || lastAssistantMsg.includes('injuries')) {
+      return hasActiveSos
+        ? `I have updated your active emergency signal (#${activeSosId}) to note that no one is injured. Are you able to move to a safer place right now? Yes or no.`
+        : "Understood, no injuries. Are you able to move to a safer place right now? Yes or no.";
+    }
     if (lastAssistantMsg.includes('are you trapped right now') || lastAssistantMsg.includes('are you trapped')) {
       return "Understood, you are not trapped. Are you or anyone with you injured or in need of medical help? Yes or no.";
     }
@@ -495,11 +542,20 @@ export function generateGroundedResponse(input: GroundedResponseInput): string {
 
   // 7. Active SOS updates with confirmed facts
   if (hasActiveSos && Object.keys(currentExtracted).length > 0) {
+    if (currentExtracted.injuredCount !== undefined) {
+      if (currentExtracted.injuredCount === 0) {
+        if (currentExtracted.peopleCount !== undefined) {
+          return `I have updated your active emergency signal (#${activeSosId}) to ${currentExtracted.peopleCount} people and noted that no one is injured. Dispatch teams have been informed. Are you or anyone with you able to move safely? Yes or no.`;
+        }
+        return `I have updated your active emergency signal (#${activeSosId}) to note that no one is injured. Dispatch teams have been informed. Are you or anyone with you able to move safely? Yes or no.`;
+      }
+      if (currentExtracted.peopleCount !== undefined) {
+        return `I have updated your active emergency signal (#${activeSosId}) to ${currentExtracted.peopleCount} people and noted the medical injury. Emergency dispatch has been notified. Are you or anyone with you able to move safely? Yes or no.`;
+      }
+      return `I have noted the medical injury on your active emergency signal (#${activeSosId}). Emergency dispatch has been notified. Are you or anyone with you able to move safely? Yes or no.`;
+    }
     if (currentExtracted.peopleCount !== undefined) {
       return `I have updated your active emergency distress signal (#${activeSosId}) to ${currentExtracted.peopleCount} people. Are any of the people injured? You can answer yes or no.`;
-    }
-    if (currentExtracted.injuredCount !== undefined) {
-      return `I have noted the medical injury on your active emergency signal (#${activeSosId}). Emergency dispatch has been notified. Are you or anyone with you able to move safely? Yes or no.`;
     }
     if (currentExtracted.childrenCount !== undefined) {
       return `I have updated your active emergency signal (#${activeSosId}) to include ${currentExtracted.childrenCount} children. Dispatch teams have been informed. Are you all in a safe location? Yes or no.`;
@@ -757,6 +813,44 @@ export function limitedEmergencySignalExtractor(
   // 5. Conversational adaptation: Negative answers ("no", "nope", etc.)
   if (isNegative && !hasExtractedFacts) {
     if (
+      lastAssistantLower.includes('injured') ||
+      lastAssistantLower.includes('injuries')
+    ) {
+      if (context.activeSos) {
+        return {
+          mode: 'EMERGENCY',
+          intent: 'emergency_sos_dispatch',
+          assistantResponse: validateGroundedResponse(
+            `I have updated your active emergency signal (#${context.activeSos.id}) to note that no one is injured. Dispatch teams have been informed. Are you or anyone with you able to move safely? Yes or no.`,
+            message,
+            existingIncidentFacts,
+            'EMERGENCY'
+          ),
+          extractedInformation: { injuredCount: 0 },
+          existingIncidentFacts,
+          uncertainInformation: [],
+          missingInformation: ['safety_mobility'],
+          questionTarget: 'safety_mobility',
+          shouldCreateOrUpdateSos: true,
+          isFallbackExtractor: true,
+        };
+      }
+      return {
+        mode: 'ASSESS',
+        intent: 'not_injured_mobility_check',
+        assistantResponse:
+          "Understood, no injuries. Are you or anyone with you able to move safely? Yes or no.",
+        extractedInformation: { injuredCount: 0 },
+        existingIncidentFacts,
+        uncertainInformation: [],
+        missingInformation: ['safety_mobility'],
+        questionTarget: 'safety_mobility',
+        shouldCreateOrUpdateSos: false,
+        isFallbackExtractor: true,
+      };
+    }
+
+    if (
       lastAssistantLower.includes('are you trapped right now') ||
       lastAssistantLower.includes('are you trapped')
     ) {
@@ -927,12 +1021,24 @@ export function limitedEmergencySignalExtractor(
     let assistantMsg: string;
     let target = 'safety_mobility';
 
-    if (extracted.peopleCount !== undefined) {
+    if (extracted.injuredCount !== undefined) {
+      if (extracted.injuredCount === 0) {
+        if (extracted.peopleCount !== undefined) {
+          assistantMsg = `I have updated your active emergency signal (#${context.activeSos.id}) to ${extracted.peopleCount} people and noted that no one is injured. Dispatch teams have been informed. Are you or anyone with you able to move safely? Yes or no.`;
+        } else {
+          assistantMsg = `I have updated your active emergency signal (#${context.activeSos.id}) to note that no one is injured. Dispatch teams have been informed. Are you or anyone with you able to move safely? Yes or no.`;
+        }
+      } else {
+        if (extracted.peopleCount !== undefined) {
+          assistantMsg = `I have updated your active emergency signal (#${context.activeSos.id}) to ${extracted.peopleCount} people and noted the medical injury. Emergency dispatch has been notified. Are you or anyone with you able to move safely? Yes or no.`;
+        } else {
+          assistantMsg = `I have noted the medical injury on your active emergency signal (#${context.activeSos.id}). Emergency dispatch has been notified. Are you or anyone with you able to move safely? Yes or no.`;
+        }
+      }
+      target = 'safety_mobility';
+    } else if (extracted.peopleCount !== undefined) {
       assistantMsg = `I have updated your active emergency distress signal (#${context.activeSos.id}) to ${extracted.peopleCount} people. Are any of the people injured? You can answer yes or no.`;
       target = 'medical_need';
-    } else if (extracted.injuredCount !== undefined) {
-      assistantMsg = `I have noted the medical injury on your active emergency signal (#${context.activeSos.id}). Emergency dispatch has been notified. Are you or anyone with you able to move safely? Yes or no.`;
-      target = 'safety_mobility';
     } else if (extracted.childrenCount !== undefined) {
       assistantMsg = `I have updated your active emergency signal (#${context.activeSos.id}) to include ${extracted.childrenCount} children. Dispatch teams have been informed. Are you all in a safe location? Yes or no.`;
       target = 'safety_mobility';
@@ -1236,6 +1342,14 @@ CRITICAL CONVERSATION GROUNDING AND CONTEXT ISOLATION RULES:
    - NEVER fabricate or assume numbers.
 7. DO NOT calculate priority scores. Scores are computed exclusively by the backend deterministic algorithm.
 8. Keep assistantResponse concise, empathetic, and grounded.
+9. FACT CORRECTIONS AND EXPLICIT NEGATIONS:
+   - If the citizen explicitly negates or corrects a previously stated fact (e.g. "Not the five people are injured", "None of the five people are injured", "Nobody is injured", "No one is injured", "Actually, nobody is injured", "No injuries", "We are not injured"):
+     * Explicitly set the corresponding field to 0 (e.g. "injuredCount": 0).
+     * DO NOT omit the field or keep previous positive counts when negated. Explicitly setting 0 signals that the previously asserted injury has been cleared.
+     * If the citizen negates injury but states someone is seriously unwell (e.g. "Nobody is injured, but my grandmother is seriously unwell"):
+       - set "injuredCount": 0
+       - set "criticalMedicalNeed": true
+       - include "SERIOUSLY_UNWELL" in conditions.
 
 OUTPUT JSON FORMAT (You MUST return valid JSON matching this schema):
 {
@@ -1306,23 +1420,59 @@ Return JSON:`;
         ? "I have logged your emergency distress signal with our response units. Stay in a safe location."
         : "I am here with STRIDE Emergency Command. How can I assist you?");
 
+    const detFacts = extractCurrentTurnFacts(message);
+    const combinedExtracted: ExtractedEmergencyInfo = { ...(parsed?.extractedInformation || {}) };
+
+    if (detFacts.extracted.injuredCount !== undefined) {
+      combinedExtracted.injuredCount = detFacts.extracted.injuredCount;
+    }
+    if (detFacts.extracted.peopleCount !== undefined) {
+      combinedExtracted.peopleCount = detFacts.extracted.peopleCount;
+    }
+    if (detFacts.extracted.childrenCount !== undefined && detFacts.extracted.childrenCount === 0) {
+      combinedExtracted.childrenCount = 0;
+    }
+    if (detFacts.extracted.elderlyCount !== undefined && detFacts.extracted.elderlyCount === 0) {
+      combinedExtracted.elderlyCount = 0;
+    }
+    if (detFacts.extracted.disabledCount !== undefined && detFacts.extracted.disabledCount === 0) {
+      combinedExtracted.disabledCount = 0;
+    }
+    if (detFacts.extracted.criticalMedicalNeed !== undefined) {
+      combinedExtracted.criticalMedicalNeed = detFacts.extracted.criticalMedicalNeed;
+    }
+
+    if (combinedExtracted.injuredCount === 0 && Array.isArray(combinedExtracted.conditions)) {
+      combinedExtracted.conditions = combinedExtracted.conditions.filter((c) => c !== 'HEAVILY_INJURED');
+    }
+
+    const hasActiveSosUpdate = !!(context.activeSos && (
+      combinedExtracted.injuredCount !== undefined ||
+      combinedExtracted.peopleCount !== undefined ||
+      combinedExtracted.childrenCount !== undefined ||
+      combinedExtracted.elderlyCount !== undefined ||
+      combinedExtracted.disabledCount !== undefined
+    ));
+
+    const finalMode: VoiceEmergencyMode = hasActiveSosUpdate ? 'EMERGENCY' : mode;
+
     const validatedResponse = validateGroundedResponse(
       rawResponse,
       message,
       existingIncidentFacts,
-      mode
+      finalMode
     );
 
     return {
-      mode,
+      mode: finalMode,
       intent: parsed?.intent || 'emergency_voice_processing',
       assistantResponse: validatedResponse,
-      extractedInformation: parsed?.extractedInformation || {},
+      extractedInformation: combinedExtracted,
       existingIncidentFacts,
       uncertainInformation: Array.isArray(parsed?.uncertainInformation) ? parsed.uncertainInformation : [],
       missingInformation: Array.isArray(parsed?.missingInformation) ? parsed.missingInformation : [],
       questionTarget: parsed?.questionTarget || undefined,
-      shouldCreateOrUpdateSos: !!parsed?.shouldCreateOrUpdateSos && mode === 'EMERGENCY',
+      shouldCreateOrUpdateSos: (!!parsed?.shouldCreateOrUpdateSos && mode === 'EMERGENCY') || hasActiveSosUpdate,
       isFallbackExtractor: false,
     };
   } catch (err: any) {

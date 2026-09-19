@@ -684,7 +684,8 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
                   </span>
                 </div>
                 <p className="text-[11px] text-red-800 mt-0.5">
-                  Status: <strong>{activeRequest.status}</strong> • People: {activeRequest.peopleCount} • Water:{' '}
+                  Status: <strong>{activeRequest.status}</strong> • People: {activeRequest.peopleCount}
+                  {activeRequest.injuredCount > 0 ? ` • Injured: ${activeRequest.injuredCount}` : ''} • Water:{' '}
                   {activeRequest.waterLevel}
                 </p>
               </div>

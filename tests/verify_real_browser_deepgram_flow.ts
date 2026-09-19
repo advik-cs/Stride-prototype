@@ -458,6 +458,81 @@ async function runRealBrowserDeepgramSuite() {
       assert(await sosBanner.isVisible(), 'ACTIVE RESCUE BEACON banner must remain visible');
     });
 
+    // =================================================================
+    // TEST 7: Fourth Turn with People Count Correction ("Actually, there are five people with me.")
+    // =================================================================
+    await test('7. Fourth turn updates peopleCount to 5 in browser beacon and database', async () => {
+      currentTurnTranscript = 'Actually, there are five people with me.';
+
+      const micBtn = page.locator('#voice-assistant-mic-btn');
+      await micBtn.click();
+      await page.waitForTimeout(1500);
+      await micBtn.click();
+
+      const userBubble4 = page.locator('p:has-text("Actually, there are five people with me.")').last();
+      await userBubble4.waitFor({ state: 'visible', timeout: 10000 });
+      assert(await userBubble4.isVisible(), 'Turn 4 transcribed utterance must appear in chat');
+
+      await page.waitForTimeout(2000);
+
+      // Verify active rescue beacon banner in browser displays People: 5
+      const beaconPeople5 = page.locator('text=People: 5').first();
+      await beaconPeople5.waitFor({ state: 'visible', timeout: 5000 });
+      assert(await beaconPeople5.isVisible(), 'Active rescue beacon must update to People: 5');
+
+      // Database must have peopleCount = 5, injuredCount = 1
+      const activeRequests = await prisma.emergencyRequest.findMany({
+        where: { householdMemberId: { in: memberIds }, rescueStatus: { not: 'CANCELLED' } },
+        include: { conditions: true },
+      });
+      assert(activeRequests.length === 1, 'Still exactly one active SOS');
+      assert(activeRequests[0].id === activeSosIdFromTurn1, 'SOS ID must remain unchanged');
+      const formatted = formatRescueRequest(activeRequests[0]);
+      assert(formatted.peopleCount === 5, `peopleCount should be 5, got ${formatted.peopleCount}`);
+      assert(formatted.injuredCount === 1, `injuredCount should remain 1, got ${formatted.injuredCount}`);
+    });
+
+    // =================================================================
+    // TEST 8: Fifth Turn with Negative Statement ("Not the five people are injured.")
+    // =================================================================
+    await test('8. Fifth turn with negative statement clears injuredCount to 0 while preserving People: 5', async () => {
+      currentTurnTranscript = 'Not the five people are injured.';
+
+      const micBtn = page.locator('#voice-assistant-mic-btn');
+      await micBtn.click();
+      await page.waitForTimeout(1500);
+      await micBtn.click();
+
+      const userBubble5 = page.locator('p:has-text("Not the five people are injured.")').last();
+      await userBubble5.waitFor({ state: 'visible', timeout: 10000 });
+      assert(await userBubble5.isVisible(), 'Turn 5 transcribed utterance must appear in chat');
+
+      await page.waitForTimeout(2500);
+
+      // Verify active rescue beacon banner in browser still displays People: 5
+      const beaconPeople5 = page.locator('text=People: 5').first();
+      assert(await beaconPeople5.isVisible(), 'Active rescue beacon must maintain People: 5');
+
+      // Verify Injured badge is NOT present in the banner
+      const bannerInjuredBadge = page.locator('text=• Injured:');
+      assert(!(await bannerInjuredBadge.isVisible()), 'Injured badge must disappear from beacon banner when injuredCount=0');
+
+      // Database verification
+      const activeRequests = await prisma.emergencyRequest.findMany({
+        where: { householdMemberId: { in: memberIds }, rescueStatus: { not: 'CANCELLED' } },
+        include: { conditions: true },
+      });
+      assert(activeRequests.length === 1, 'Still exactly one active SOS');
+      assert(activeRequests[0].id === activeSosIdFromTurn1, 'SOS ID must remain unchanged');
+      const formatted = formatRescueRequest(activeRequests[0]);
+      assert(formatted.peopleCount === 5, `peopleCount should remain 5, got ${formatted.peopleCount}`);
+      assert(formatted.injuredCount === 0, `injuredCount should be cleared to 0, got ${formatted.injuredCount}`);
+      assert(formatted.elderlyCount === 1, `elderlyCount should remain 1, got ${formatted.elderlyCount}`);
+
+      const condTypes = activeRequests[0].conditions.map((c) => c.conditionType);
+      assert(!condTypes.includes('HEAVILY_INJURED'), `HEAVILY_INJURED must be deleted from database conditions`);
+    });
+
   } finally {
     if (browser) await browser.close();
     mockDeepgramServer?.close();

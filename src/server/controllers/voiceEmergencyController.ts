@@ -172,6 +172,61 @@ export async function applySosLifecycleAndTriage(
       const spokenLoc = extracted.spokenLocation !== undefined ? extracted.spokenLocation : prevFormatted.spokenLocation;
       const isConflict = locationConflict !== undefined ? locationConflict : prevFormatted.locationConflict;
 
+      const currentCondTypes = new Set(existingReq.conditions.map((c) => c.conditionType));
+      currentCondTypes.add('NEED_RESCUE');
+      if (mergedCritical) {
+        currentCondTypes.add('SERIOUSLY_UNWELL');
+      } else {
+        currentCondTypes.delete('SERIOUSLY_UNWELL');
+      }
+
+      if (mergedInjured > 0) {
+        currentCondTypes.add('HEAVILY_INJURED');
+      } else {
+        currentCondTypes.delete('HEAVILY_INJURED');
+      }
+
+      if (mergedChildren > 0) {
+        currentCondTypes.add('CHILDREN_INFANTS_PRESENT');
+      } else {
+        currentCondTypes.delete('CHILDREN_INFANTS_PRESENT');
+      }
+
+      if (mergedDisabled > 0) {
+        currentCondTypes.add('PHYSICALLY_DISABLED');
+      } else {
+        currentCondTypes.delete('PHYSICALLY_DISABLED');
+      }
+
+      if (mergedWaterLevel === 'HIGH' || mergedWaterLevel === 'EXTREME') currentCondTypes.add('WATER_RISING');
+      if (mergedEmergencyType === 'TRAPPED') currentCondTypes.add('TRAPPED');
+      if (mergedEmergencyType === 'FIRE') currentCondTypes.add('FIRE');
+      if (Array.isArray(extracted.conditions)) {
+        extracted.conditions.forEach((c) => currentCondTypes.add(c));
+      }
+      if (mergedInjured === 0) {
+        currentCondTypes.delete('HEAVILY_INJURED');
+      }
+
+      let resolvedEmergencyType = mergedEmergencyType;
+      if (
+        resolvedEmergencyType === 'MEDICAL' &&
+        mergedInjured === 0 &&
+        !mergedCritical
+      ) {
+        if (currentCondTypes.has('TRAPPED') || /trapped/i.test(existingReq.description)) {
+          resolvedEmergencyType = 'TRAPPED';
+        } else if (
+          currentCondTypes.has('WATER_RISING') ||
+          mergedWaterLevel === 'HIGH' ||
+          mergedWaterLevel === 'EXTREME'
+        ) {
+          resolvedEmergencyType = 'FLOOD';
+        } else {
+          resolvedEmergencyType = 'FLOOD';
+        }
+      }
+
       sosUpdateSummary = {
         peopleCount: mergedPeople,
         childrenCount: mergedChildren,
@@ -179,21 +234,8 @@ export async function applySosLifecycleAndTriage(
         disabledCount: mergedDisabled,
         injuredCount: mergedInjured,
         waterLevel: mergedWaterLevel,
-        emergencyType: mergedEmergencyType,
+        emergencyType: resolvedEmergencyType,
       };
-
-      const currentCondTypes = new Set(existingReq.conditions.map((c) => c.conditionType));
-      currentCondTypes.add('NEED_RESCUE');
-      if (mergedCritical) currentCondTypes.add('SERIOUSLY_UNWELL');
-      if (mergedInjured > 0) currentCondTypes.add('HEAVILY_INJURED');
-      if (mergedChildren > 0) currentCondTypes.add('CHILDREN_INFANTS_PRESENT');
-      if (mergedDisabled > 0) currentCondTypes.add('PHYSICALLY_DISABLED');
-      if (mergedWaterLevel === 'HIGH' || mergedWaterLevel === 'EXTREME') currentCondTypes.add('WATER_RISING');
-      if (mergedEmergencyType === 'TRAPPED') currentCondTypes.add('TRAPPED');
-      if (mergedEmergencyType === 'FIRE') currentCondTypes.add('FIRE');
-      if (Array.isArray(extracted.conditions)) {
-        extracted.conditions.forEach((c) => currentCondTypes.add(c));
-      }
 
       // Exact existing STRIDE priority formula (DO NOT MODIFY)
       const breakdown = {
@@ -211,9 +253,9 @@ export async function applySosLifecycleAndTriage(
             ? 10
             : 5,
         trappedOrStructural:
-          mergedEmergencyType === 'TRAPPED' || mergedEmergencyType === 'STRUCTURAL_DANGER'
+          resolvedEmergencyType === 'TRAPPED' || resolvedEmergencyType === 'STRUCTURAL_DANGER'
             ? 20
-            : mergedEmergencyType === 'FIRE'
+            : resolvedEmergencyType === 'FIRE'
             ? 30
             : 0,
       };
@@ -221,7 +263,7 @@ export async function applySosLifecycleAndTriage(
       const calculatedTotal = Object.values(breakdown).reduce((a, b) => a + b, 0);
       const priorityScore = Math.min(100, Math.max(15, calculatedTotal));
 
-      const metaTag = `[SRC:VOICE, P:${mergedPeople}, C:${mergedChildren}, E:${mergedElderly}, D:${mergedDisabled}, I:${mergedInjured}, W:${mergedWaterLevel}, T:${mergedEmergencyType}${spokenLoc ? `, SPOKEN_LOC:${spokenLoc}` : ''}${isConflict ? ', CONFLICT:YES' : ', CONFLICT:NO'}]`;
+      const metaTag = `[SRC:VOICE, P:${mergedPeople}, C:${mergedChildren}, E:${mergedElderly}, D:${mergedDisabled}, I:${mergedInjured}, W:${mergedWaterLevel}, T:${resolvedEmergencyType}${spokenLoc ? `, SPOKEN_LOC:${spokenLoc}` : ''}${isConflict ? ', CONFLICT:YES' : ', CONFLICT:NO'}]`;
       const updatedDesc = `${metaTag} ${prevFormatted.description} | Voice update: ${messageText.trim()}`.trim();
 
       await prisma.emergencyCondition.deleteMany({

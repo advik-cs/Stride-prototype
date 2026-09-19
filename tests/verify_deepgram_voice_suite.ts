@@ -44,7 +44,7 @@ async function runCheck(name: string, fn: () => Promise<void> | void) {
 
 async function runSuite() {
   console.log('================================================================');
-  console.log('STRIDE DEEPGRAM TURN-BASED VOICE SUITE (17 SCENARIOS)');
+  console.log('STRIDE DEEPGRAM TURN-BASED VOICE SUITE (18 SCENARIOS)');
   console.log('================================================================\n');
 
   let mockDeepgramServer: http.Server;
@@ -850,6 +850,166 @@ async function runSuite() {
       assert.equal(formattedDb2.peopleCount, 4, `Persisted incident peopleCount must remain 4 after Turn 2, got ${formattedDb2.peopleCount}`);
       assert.equal(formattedDb2.elderlyCount, 1, `Persisted elderlyCount must be 1, got ${formattedDb2.elderlyCount}`);
       assert.equal(formattedDb2.injuredCount, 1, `Persisted injuredCount must be 1, got ${formattedDb2.injuredCount}`);
+    });
+
+    // -------------------------------------------------------------
+    // SCENARIO 22: Multi-turn Fact Correction and Negation Handling
+    // -------------------------------------------------------------
+    await runCheck('Scenario 22: Negative and corrective statements clear previously asserted facts (Turn 1 -> Turn 2 -> Turn 3 -> Turn 4 "Not the five people are injured.")', async () => {
+      // Clean up previous requests
+      const userMembers = await prisma.householdMember.findMany({
+        where: { household: { userId: testUser.id } },
+      });
+      const memberIds = userMembers.map((m) => m.id);
+      if (memberIds.length > 0) {
+        await prisma.emergencyCondition.deleteMany({
+          where: { emergencyRequest: { householdMemberId: { in: memberIds } } },
+        });
+        await prisma.rescueAssignment.deleteMany({
+          where: { emergencyRequest: { householdMemberId: { in: memberIds } } },
+        });
+        await prisma.emergencyRequest.deleteMany({
+          where: { householdMemberId: { in: memberIds } },
+        });
+      }
+
+      // --- Turn 1: "We are four people and we're trapped upstairs." ---
+      const res1 = await fetch(`http://127.0.0.1:${stridePort}/api/voice/emergency-chat`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${citizenToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: "We are four people and we're trapped upstairs.",
+          clientRequestId: `s22-t1-${Date.now()}`,
+        }),
+      });
+      assert.equal(res1.status, 200);
+      const json1 = await res1.json();
+      assert.ok(json1.activeRequest);
+      assert.equal(json1.activeRequest.peopleCount, 4);
+      assert.equal(json1.activeRequest.emergencyType, 'TRAPPED');
+      const sosId = json1.activeRequest.id;
+
+      // --- Turn 2: "My grandmother is injured." ---
+      const res2 = await fetch(`http://127.0.0.1:${stridePort}/api/voice/emergency-chat`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${citizenToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: 'My grandmother is injured.',
+          activeRequestId: sosId,
+          clientRequestId: `s22-t2-${Date.now()}`,
+        }),
+      });
+      assert.equal(res2.status, 200);
+      const json2 = await res2.json();
+      assert.ok(json2.activeRequest);
+      assert.equal(json2.activeRequest.id, sosId);
+      assert.equal(json2.activeRequest.peopleCount, 4);
+      assert.equal(json2.activeRequest.elderlyCount, 1);
+      assert.equal(json2.activeRequest.injuredCount, 1);
+      assert.equal(json2.activeRequest.emergencyType, 'MEDICAL');
+      const scoreWithInjury = json2.activeRequest.priorityScore;
+
+      // --- Turn 3: "Actually, there are five people with me." ---
+      const res3 = await fetch(`http://127.0.0.1:${stridePort}/api/voice/emergency-chat`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${citizenToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: 'Actually, there are five people with me.',
+          activeRequestId: sosId,
+          clientRequestId: `s22-t3-${Date.now()}`,
+        }),
+      });
+      assert.equal(res3.status, 200);
+      const json3 = await res3.json();
+      assert.ok(json3.activeRequest);
+      assert.equal(json3.activeRequest.id, sosId);
+      assert.equal(json3.activeRequest.peopleCount, 5, `Turn 3 peopleCount must be 5, got ${json3.activeRequest.peopleCount}`);
+      assert.equal(json3.activeRequest.injuredCount, 1, `Turn 3 injuredCount must remain 1, got ${json3.activeRequest.injuredCount}`);
+
+      // --- Turn 4: "Not the five people are injured." ---
+      const res4 = await fetch(`http://127.0.0.1:${stridePort}/api/voice/emergency-chat`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${citizenToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: 'Not the five people are injured.',
+          activeRequestId: sosId,
+          clientRequestId: `s22-t4-${Date.now()}`,
+        }),
+      });
+      assert.equal(res4.status, 200);
+      const json4 = await res4.json();
+      assert.ok(json4.activeRequest);
+      assert.equal(json4.activeRequest.id, sosId, 'Must update same active SOS in-place (no duplicates)');
+      assert.equal(json4.activeRequest.peopleCount, 5, `peopleCount must remain 5, got ${json4.activeRequest.peopleCount}`);
+      assert.equal(json4.activeRequest.injuredCount, 0, `injuredCount must be cleared to 0, got ${json4.activeRequest.injuredCount}`);
+      assert.equal(json4.activeRequest.elderlyCount, 1, `elderlyCount must remain 1, got ${json4.activeRequest.elderlyCount}`);
+      assert.equal(json4.activeRequest.emergencyType, 'TRAPPED', `emergencyType must revert to TRAPPED, got ${json4.activeRequest.emergencyType}`);
+
+      assert.equal(json4.activeRequest.priorityBreakdown?.injured || 0, 0, 'Injured breakdown points must drop to 0');
+      assert.equal(json2.activeRequest.priorityBreakdown?.injured, 15, 'Turn 2 injured breakdown points must be 15');
+      assert.equal(json4.activeRequest.priorityScore, 43, `Priority score must recompute to 43 (35 base trapped + 8 elderly), got ${json4.activeRequest.priorityScore}`);
+
+      // Verify database state after Turn 4
+      const dbReqs4 = await prisma.emergencyRequest.findMany({
+        where: { householdMemberId: { in: memberIds }, rescueStatus: { not: 'CANCELLED' } },
+        include: { conditions: true, rescueAssignments: true },
+      });
+      assert.equal(dbReqs4.length, 1, 'Still exactly one active SOS in database');
+      const formattedDb4 = formatRescueRequest(dbReqs4[0]);
+      assert.equal(formattedDb4.peopleCount, 5, `Persisted peopleCount must be 5`);
+      assert.equal(formattedDb4.injuredCount, 0, `Persisted injuredCount must be 0`);
+      assert.equal(formattedDb4.elderlyCount, 1, `Persisted elderlyCount must be 1`);
+      const condTypes4 = dbReqs4[0].conditions.map((c) => c.conditionType);
+      assert.ok(!condTypes4.includes('HEAVILY_INJURED'), `HEAVILY_INJURED condition must be deleted from database, found: ${condTypes4.join(', ')}`);
+      assert.ok(condTypes4.includes('TRAPPED'), `TRAPPED condition must be preserved, found: ${condTypes4.join(', ')}`);
+
+      // --- Compound Negation + Medical Need Test ---
+      // "Nobody is injured, but my grandmother is seriously unwell."
+      const resCompound = await fetch(`http://127.0.0.1:${stridePort}/api/voice/emergency-chat`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${citizenToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: 'Nobody is injured, but my grandmother is seriously unwell.',
+          activeRequestId: sosId,
+          clientRequestId: `s22-t-compound-${Date.now()}`,
+        }),
+      });
+      assert.equal(resCompound.status, 200);
+      const jsonCompound = await resCompound.json();
+      assert.ok(jsonCompound.activeRequest);
+      assert.equal(jsonCompound.activeRequest.injuredCount, 0, 'Compound: injuredCount must be 0');
+      assert.equal(jsonCompound.activeRequest.criticalMedicalNeed, true, 'Compound: criticalMedicalNeed must be true');
+
+      const dbReqCompound = await prisma.emergencyRequest.findFirst({
+        where: { id: sosId },
+        include: { conditions: true },
+      });
+      const compoundConds = dbReqCompound?.conditions.map((c) => c.conditionType) || [];
+      assert.ok(!compoundConds.includes('HEAVILY_INJURED'), 'Compound: HEAVILY_INJURED must not be present');
+      assert.ok(compoundConds.includes('SERIOUSLY_UNWELL'), 'Compound: SERIOUSLY_UNWELL must be present');
+
+      // --- Unrelated Informational Query Test ---
+      // Asking an unrelated question should NOT alter or clear existing emergency facts
+      const resUnrelated = await fetch(`http://127.0.0.1:${stridePort}/api/voice/emergency-chat`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${citizenToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: 'Where is the nearest evacuation shelter?',
+          activeRequestId: sosId,
+          clientRequestId: `s22-t-unrelated-${Date.now()}`,
+        }),
+      });
+      assert.equal(resUnrelated.status, 200);
+      const jsonUnrelated = await resUnrelated.json();
+      assert.equal(jsonUnrelated.mode, 'ASSIST', 'Unrelated question should produce ASSIST mode');
+      // Verify database still has active SOS intact
+      const dbReqAfterUnrelated = await prisma.emergencyRequest.findFirst({
+        where: { id: sosId },
+        include: { conditions: true },
+      });
+      assert.ok(dbReqAfterUnrelated, 'Active SOS must not be deleted by unrelated question');
+      const formattedAfter = formatRescueRequest(dbReqAfterUnrelated);
+      assert.equal(formattedAfter.peopleCount, 5, 'People count must remain 5 after unrelated question');
     });
 
   } finally {
