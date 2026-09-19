@@ -200,8 +200,8 @@ async function runSuite() {
   const hospitalDetailsPath = path.resolve('src/components/hospital/HospitalDetails.tsx');
   const hospitalDetailsCode = fs.readFileSync(hospitalDetailsPath, 'utf8');
 
-  await test('HospitalDetails: Prominently renders demo disclaimer', () => {
-    assert(hospitalDetailsCode.includes('DEMO DATA DISCLAIMER') || hospitalDetailsCode.includes('DEMO DATA'), 'HospitalDetails missing disclaimer');
+  await test('HospitalDetails: User-facing demo disclaimer is removed per production styling', () => {
+    assert(!hospitalDetailsCode.includes('DEMO DATA DISCLAIMER'), 'HospitalDetails should not render user-facing demo disclaimer');
   });
 
   await test('HospitalDetails: Provides Rescuer casualty routing and direct phone dispatch', () => {

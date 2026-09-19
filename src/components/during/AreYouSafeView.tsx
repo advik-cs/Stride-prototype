@@ -27,7 +27,7 @@ import {
   Mic,
   Sparkles,
 } from 'lucide-react';
-import { VoiceEmergencyAssistant } from './VoiceEmergencyAssistant.tsx';
+import { VoiceEmergencyAssistant } from '../voice/VoiceEmergencyAssistant.tsx';
 
 interface AreYouSafeViewProps {
   user: User;

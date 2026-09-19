@@ -1,12 +1,16 @@
 {
-  "name": "react-example",
+  "name": "stride-platform",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
+  "description": "Sensor Trend Intelligence for Detection & Evaluation: A comprehensive disaster intelligence, preparedness, and rescue management platform.",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
     "build": "prisma generate && vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs && esbuild src/server/serverless.ts --bundle --platform=node --format=esm --packages=external --outfile=api/index.js",
     "start": "node dist/server.cjs",
+    "test": "tsx tests/verify_voice_emergency_suite.ts",
+    "test:regression": "tsx tests/verify_mandatory_regression.ts",
+    "test:grounding": "tsx tests/verify_conversational_grounding.ts",
     "postinstall": "prisma generate",
     "prisma:generate": "prisma generate",
     "prisma:push": "prisma db push",

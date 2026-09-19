@@ -723,8 +723,7 @@ Stride-prototype/
 │   │   │   ├── ShelterCapacityBulletChart.tsx
 │   │   │   └── VulnerableDemographicsChart.tsx
 │   │   ├── auth/                   # Authentication & role selection
-│   │   │   ├── LoginPage.tsx       # 3-Way role login with demo quick-fill
-│   │   │   └── ModeSelection.tsx   # BEFORE / DURING phase switchboard
+│   │   │   └── LoginPage.tsx       # 3-Way role login with demo quick-fill
 │   │   ├── before/                 # Disaster Preparedness components
 │   │   │   ├── BeforeDashboardView.tsx
 │   │   │   ├── BeforeMapView.tsx   # 5km proximity & hazard zone map
@@ -747,8 +746,7 @@ Stride-prototype/
 │   │   │   ├── DuringBuildingsView.tsx
 │   │   │   ├── DuringDashboardView.tsx # Authority command center
 │   │   │   ├── DuringMapView.tsx   # Live tactical GIS map with overlays
-│   │   │   ├── RescueOperationsView.tsx # Rescuer dispatch & mission docket
-│   │   │   └── VoiceEmergencyAssistant.tsx # Gemini-powered voice assistant
+│   │   │   └── RescueOperationsView.tsx # Rescuer dispatch & mission docket
 │   │   ├── floodx/                 # FLOOD-X SAR Satellite view
 │   │   │   └── FloodXView.tsx
 │   │   ├── hospital/               # Hospital telemetry & resource tracking
@@ -756,8 +754,10 @@ Stride-prototype/
 │   │   │   ├── HospitalInformationView.tsx
 │   │   │   ├── HospitalList.tsx
 │   │   │   └── HospitalMap.tsx
-│   │   └── layout/                 # Layout & navigation wrappers
-│   │       └── DashboardLayout.tsx # Persistent header, phase & tab navigation
+│   │   ├── layout/                 # Layout & navigation wrappers
+│   │   │   └── DashboardLayout.tsx # Persistent header, phase & tab navigation
+│   │   └── voice/                  # Multimodal Voice AI components
+│   │       └── VoiceEmergencyAssistant.tsx # Gemini-powered voice assistant
 │   ├── i18n/                       # Internationalization system
 │   │   ├── LanguageContext.tsx     # React language context & translator hook
 │   │   └── locales/                # 12 Indian language translation dictionaries
@@ -790,9 +790,17 @@ Stride-prototype/
 │   │   └── utils/                  # Deterministic algorithms & helpers
 │   │       └── priority.ts         # Linear weighted priority scoring formula
 │   ├── services/                   # Frontend client HTTP services
+│   ├── types/                      # Shared frontend TypeScript interfaces
+│   │   └── index.ts                # Centralized domain models & contracts
 │   ├── App.tsx                     # Main React application component
 │   ├── index.css                   # Global Tailwind v4 styles & animations
 │   └── main.tsx                    # React DOM client bootstrap
+├── tests/                          # Automated verification & regression test suite
+│   ├── README.md                   # Test suite documentation & instructions
+│   ├── verify_mandatory_regression.ts
+│   ├── verify_conversational_grounding.ts
+│   ├── verify_hospital_and_shelter_suite.ts
+│   └── ...                         # E2E & voice endpoint test scripts
 ├── package.json                    # Project dependencies & scripts
 ├── server.ts                       # Dual-mode server entry point (Vite/Node)
 ├── tsconfig.json                   # TypeScript compiler configuration

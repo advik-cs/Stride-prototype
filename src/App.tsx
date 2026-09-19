@@ -7,7 +7,6 @@ import { DashboardLayout, BeforeTab, DuringTab, DisasterMode } from './component
 
 // Before Components
 import { BeforeDashboardView } from './components/before/BeforeDashboardView.tsx';
-import { HouseholdMembersView } from './components/before/HouseholdMembersView.tsx';
 import { ShelterSelectionView } from './components/before/ShelterSelectionView.tsx';
 import { ReconfirmationView } from './components/before/ReconfirmationView.tsx';
 import { ExpectedOccupancyView } from './components/before/ExpectedOccupancyView.tsx';

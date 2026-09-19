@@ -18,7 +18,11 @@ const isLocal =
       window.location.hostname.startsWith('10.')
     : true;
 
-const API_BASE_URL = universalApi || (isLocal ? 'http://localhost:4000/api' : '/api');
+const API_BASE_URL =
+  universalApi ||
+  (isLocal && typeof window !== 'undefined' && window.location.port !== '3000'
+    ? 'http://localhost:4000/api'
+    : '/api');
 
 export class ApiError extends Error {
   statusCode: number;

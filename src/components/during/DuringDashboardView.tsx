@@ -4,7 +4,7 @@ import { DisasterEvent } from '../../services/disasterService.ts';
 import { User } from '../../services/authService.ts';
 import { DuringTab } from '../layout/DashboardLayout.tsx';
 import { LiveWeatherCard } from '../common/LiveWeatherCard.tsx';
-import { VoiceEmergencyAssistant } from './VoiceEmergencyAssistant.tsx';
+import { VoiceEmergencyAssistant } from '../voice/VoiceEmergencyAssistant.tsx';
 import {
   LifeBuoy,
   AlertTriangle,
