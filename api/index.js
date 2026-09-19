@@ -4765,6 +4765,7 @@ async function handleVoiceEmergencyChat(req, res) {
     }
     const sId = typeof sessionId === "string" && sessionId.trim() || `sess-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
     const reqId = typeof clientRequestId === "string" && clientRequestId.trim() || typeof req.headers["x-request-id"] === "string" && req.headers["x-request-id"].trim() || `req-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    const chatStartTime = Date.now();
     const context = await getStrideContext(userId, currentLocation);
     let existingIncidentFacts = void 0;
     const effectiveSosId = activeRequestId || context.activeSos?.id;
@@ -4844,6 +4845,7 @@ async function handleVoiceEmergencyChat(req, res) {
     console.log("SOS BEFORE:", sosBeforeSummary ? JSON.stringify(sosBeforeSummary) : "None");
     console.log("SOS UPDATE:", sosUpdateSummary ? JSON.stringify(sosUpdateSummary) : "None");
     console.log("SOS AFTER:", sosAfterSummary ? JSON.stringify(sosAfterSummary) : "None");
+    console.log("TRIAGE DURATION (ms):", Date.now() - chatStartTime);
     console.log("==================================================");
     res.json({
       sessionId: sId,

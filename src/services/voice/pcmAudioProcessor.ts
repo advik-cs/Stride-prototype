@@ -96,6 +96,10 @@ export class PcmRecorder {
   private processorNode: ScriptProcessorNode | null = null;
   private sourceNode: MediaStreamAudioSourceNode | null = null;
   private isRecording = false;
+  private totalChunksEmitted = 0;
+  private totalBytesEmitted = 0;
+  private peakRms = 0;
+  private sourceSampleRate = 0;
 
   async start(onPcmChunk: (base64Chunk: string) => void): Promise<void> {
     if (this.isRecording) return;
@@ -103,6 +107,10 @@ export class PcmRecorder {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       throw new Error('Microphone access is not supported by your browser environment.');
     }
+
+    this.totalChunksEmitted = 0;
+    this.totalBytesEmitted = 0;
+    this.peakRms = 0;
 
     // Request mono audio with noise suppression and echo cancellation
     const stream = await navigator.mediaDevices.getUserMedia({
@@ -122,7 +130,11 @@ export class PcmRecorder {
       await this.audioContext.resume();
     }
 
-    const sourceSampleRate = this.audioContext.sampleRate;
+    this.sourceSampleRate = this.audioContext.sampleRate;
+    console.log(
+      `[STRIDE PcmRecorder] Mic recording started. AudioContext sampleRate: ${this.sourceSampleRate}Hz (resampling target: 16000Hz).`
+    );
+
     this.sourceNode = this.audioContext.createMediaStreamSource(stream);
 
     // Buffer size 4096 gives ~85-256ms chunk depending on hardware sample rate
@@ -135,17 +147,36 @@ export class PcmRecorder {
 
       // Downsample to 16kHz if audioContext is running at 44.1k or 48k
       const resampled =
-        sourceSampleRate !== 16000
-          ? downsampleTo16k(channelData, sourceSampleRate, 16000)
+        this.sourceSampleRate !== 16000
+          ? downsampleTo16k(channelData, this.sourceSampleRate, 16000)
           : channelData;
 
       // Convert to 16-bit linear PCM little-endian
       const pcm16 = float32ToInt16PCM(resampled);
 
       if (pcm16.length > 0) {
+        // Calculate RMS audio energy for diagnostics
+        let sumSquares = 0;
+        for (let i = 0; i < pcm16.length; i++) {
+          const norm = pcm16[i] / 32768;
+          sumSquares += norm * norm;
+        }
+        const rms = Math.sqrt(sumSquares / pcm16.length);
+        if (rms > this.peakRms) this.peakRms = rms;
+
         const base64 = pcmToBase64(pcm16);
+        const bytes = pcm16.byteLength;
+        this.totalChunksEmitted += 1;
+        this.totalBytesEmitted += bytes;
+
         onPcmChunk(base64);
       }
+
+      // Prevent microphone feedback to local speakers
+      try {
+        const out = event.outputBuffer.getChannelData(0);
+        out.fill(0);
+      } catch {}
     };
 
     this.sourceNode.connect(this.processorNode);
@@ -154,6 +185,14 @@ export class PcmRecorder {
   }
 
   stop(): void {
+    if (!this.isRecording && !this.audioContext && !this.mediaStream) {
+      return;
+    }
+
+    console.log(
+      `[STRIDE PcmRecorder] Mic recording stopped. Total chunks: ${this.totalChunksEmitted}, Total PCM bytes: ${this.totalBytesEmitted}, Peak RMS: ${this.peakRms.toFixed(4)}`
+    );
+
     this.isRecording = false;
 
     if (this.processorNode) {
@@ -182,6 +221,15 @@ export class PcmRecorder {
       } catch {}
       this.audioContext = null;
     }
+  }
+
+  getStats(): { totalChunks: number; totalBytes: number; peakRms: number; sampleRate: number } {
+    return {
+      totalChunks: this.totalChunksEmitted,
+      totalBytes: this.totalBytesEmitted,
+      peakRms: this.peakRms,
+      sampleRate: this.sourceSampleRate,
+    };
   }
 
   isActive(): boolean {

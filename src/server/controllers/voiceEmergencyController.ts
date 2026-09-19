@@ -454,6 +454,8 @@ export async function handleVoiceEmergencyChat(
       (typeof req.headers['x-request-id'] === 'string' && req.headers['x-request-id'].trim()) ||
       `req-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
 
+    const chatStartTime = Date.now();
+
     // 1. Gather authentic STRIDE context
     const context = await getStrideContext(userId, currentLocation);
 
@@ -545,6 +547,7 @@ export async function handleVoiceEmergencyChat(
     console.log('SOS BEFORE:', sosBeforeSummary ? JSON.stringify(sosBeforeSummary) : 'None');
     console.log('SOS UPDATE:', sosUpdateSummary ? JSON.stringify(sosUpdateSummary) : 'None');
     console.log('SOS AFTER:', sosAfterSummary ? JSON.stringify(sosAfterSummary) : 'None');
+    console.log('TRIAGE DURATION (ms):', Date.now() - chatStartTime);
     console.log('==================================================');
 
     res.json({

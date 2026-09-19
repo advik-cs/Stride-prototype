@@ -157,12 +157,14 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
 
     prov.setCallbacks({
       onStatusChange: (status) => {
+        console.log(`[STRIDE Voice] Provider onStatusChange: ${status}`);
         setCurrentStatus(status);
       },
       onInterimTranscript: (text) => {
         setInterimTranscript(text);
       },
       onFinalTranscript: (finalText) => {
+        console.log(`[STRIDE Voice] Provider onFinalTranscript: "${finalText}"`);
         handleFinalVoiceTurn(finalText);
       },
       onAudioChunk: (pcm24k) => {
@@ -171,6 +173,7 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
         }
       },
       onTurnComplete: () => {
+        console.log('[STRIDE Voice] Provider onTurnComplete');
         setInterimTranscript('');
       },
       onError: (err) => {
@@ -186,6 +189,31 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
       pcmPlayerRef.current.stop();
     };
   }, [isOpen, isMuted]);
+
+  // UI Safety Watchdog: Prevent UI from ever hanging in PROCESSING state indefinitely
+  useEffect(() => {
+    let watchdogTimer: any = null;
+    if (currentStatus === 'PROCESSING') {
+      watchdogTimer = setTimeout(() => {
+        if (currentStatus === 'PROCESSING') {
+          console.warn('[STRIDE Voice] UI safety watchdog tripped: PROCESSING exceeded 8s limit. Resetting to IDLE.');
+          setCurrentStatus('IDLE');
+          isSubmittingTurnRef.current = false;
+          const fallbackMsg: MessageItem = {
+            id: 'msg-watchdog-' + Date.now(),
+            role: 'assistant',
+            content: "STRIDE couldn't understand the recording. Please try again.",
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            mode: 'ASSIST',
+          };
+          setMessages((prev) => [...prev, fallbackMsg]);
+        }
+      }, 8000);
+    }
+    return () => {
+      if (watchdogTimer) clearTimeout(watchdogTimer);
+    };
+  }, [currentStatus]);
 
   // Auto-scroll chat
   useEffect(() => {
@@ -245,6 +273,8 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
     setInterimTranscript('');
 
     const clientRequestId = `live-req-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+    const triageStartTime = Date.now();
+    console.log(`[STRIDE Voice] handleFinalVoiceTurn dispatching to STRIDE triage: "${trimmed}"`);
 
     // 1. Display authoritative user utterance with 🎤 prefix
     const userMsg: MessageItem = {
@@ -279,6 +309,10 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
         sessionId,
         clientRequestId,
       });
+
+      console.log(
+        `[STRIDE Voice] STRIDE deterministic triage resolved in ${Date.now() - triageStartTime}ms. Mode: ${res.mode}, Score: ${res.activeRequest?.priorityScore}`
+      );
 
       setCurrentMode(res.mode);
 

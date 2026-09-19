@@ -25,6 +25,14 @@ export class GeminiLiveProvider implements VoiceProvider {
   private connectionPromise: Promise<void> | null = null;
   private lastServerError: any = null;
 
+  // Turn management & transcript accumulation
+  private accumulatedTranscript = '';
+  private hasEmittedFinalTranscript = false;
+  private isFinalizingTurn = false;
+  private stopWatchdogTimer: any = null;
+  private audioChunksSentCount = 0;
+  private audioBytesSentCount = 0;
+
   setCallbacks(callbacks: VoiceProviderCallbacks): void {
     this.callbacks = callbacks;
   }
@@ -250,6 +258,42 @@ export class GeminiLiveProvider implements VoiceProvider {
     });
   }
 
+  private emitFinalTranscript(text: string): void {
+    if (this.hasEmittedFinalTranscript) return;
+    this.hasEmittedFinalTranscript = true;
+
+    if (this.stopWatchdogTimer) {
+      clearTimeout(this.stopWatchdogTimer);
+      this.stopWatchdogTimer = null;
+    }
+
+    const trimmed = text.trim();
+    console.log('[STRIDE GeminiLiveProvider] Emitting authoritative final transcript to STRIDE triage:', trimmed);
+    this.callbacks.onFinalTranscript?.(trimmed);
+  }
+
+  private handleTurnWatchdogTimeout(): void {
+    if (this.hasEmittedFinalTranscript) {
+      return;
+    }
+
+    console.warn('[STRIDE GeminiLiveProvider] Watchdog timeout (3.5s) waiting for server turn/transcription.');
+
+    if (this.accumulatedTranscript && this.accumulatedTranscript.trim().length > 0) {
+      console.log(
+        '[STRIDE GeminiLiveProvider] Watchdog promoting accumulated interim transcript:',
+        this.accumulatedTranscript.trim()
+      );
+      this.emitFinalTranscript(this.accumulatedTranscript.trim());
+    } else {
+      console.warn(
+        '[STRIDE GeminiLiveProvider] Watchdog: No speech detected in recording. Recovering UI directly without STRIDE triage.'
+      );
+      this.setStatus('IDLE');
+      this.callbacks.onError?.(new Error('No speech detected in recording. Please try speaking again.'));
+    }
+  }
+
   private handleServerMessage(msg: any): void {
     const serverContent = msg.serverContent;
     if (!serverContent) return;
@@ -258,24 +302,29 @@ export class GeminiLiveProvider implements VoiceProvider {
     const interimText =
       serverContent.interimInputTranscription?.text ||
       serverContent.interimTranscript?.text ||
-      serverContent.interim_input_transcription?.text;
+      serverContent.interim_input_transcription?.text ||
+      msg.interimInputTranscription?.text;
 
     if (typeof interimText === 'string' && interimText.trim()) {
-      this.callbacks.onInterimTranscript?.(interimText.trim());
+      const cleanInterim = interimText.trim();
+      this.accumulatedTranscript = cleanInterim;
+      this.callbacks.onInterimTranscript?.(cleanInterim);
     }
 
     // 2. Authoritative final input transcription
     const finalText =
       serverContent.inputTranscription?.text ||
       serverContent.input_transcription?.text ||
-      serverContent.finalTranscript?.text;
+      serverContent.finalTranscript?.text ||
+      msg.inputTranscription?.text;
 
     if (typeof finalText === 'string' && finalText.trim()) {
-      console.log('[STRIDE GeminiLiveProvider] Authoritative final transcript:', finalText.trim());
-      this.callbacks.onFinalTranscript?.(finalText.trim());
+      const cleanFinal = finalText.trim();
+      this.accumulatedTranscript = cleanFinal;
+      this.emitFinalTranscript(cleanFinal);
     }
 
-    // 3. Model spoken response audio chunks (24kHz 16-bit PCM)
+    // 3. Model spoken response audio chunks (24kHz 16-bit PCM) & text
     const modelParts = serverContent.modelTurn?.parts || [];
     for (const part of modelParts) {
       if (part.inlineData && part.inlineData.data) {
@@ -288,11 +337,34 @@ export class GeminiLiveProvider implements VoiceProvider {
           }
         }
       }
+      if (part.text && typeof part.text === 'string' && part.text.trim()) {
+        console.log('[STRIDE GeminiLiveProvider] Model response text part:', part.text.trim());
+      }
     }
 
-    // 4. Turn completion
+    // 4. Turn completion handling
     if (serverContent.turnComplete) {
-      console.log('[STRIDE GeminiLiveProvider] Model turn complete.');
+      console.log('[STRIDE GeminiLiveProvider] Model turnComplete frame received from server.');
+
+      if (this.stopWatchdogTimer) {
+        clearTimeout(this.stopWatchdogTimer);
+        this.stopWatchdogTimer = null;
+      }
+
+      // If server sent turnComplete without an explicit inputTranscription frame, promote accumulated interim transcript
+      if (!this.hasEmittedFinalTranscript && this.accumulatedTranscript.trim().length > 0) {
+        console.log(
+          '[STRIDE GeminiLiveProvider] Promoting accumulated interim transcript on turnComplete:',
+          this.accumulatedTranscript.trim()
+        );
+        this.emitFinalTranscript(this.accumulatedTranscript.trim());
+      } else if (!this.hasEmittedFinalTranscript) {
+        console.warn('[STRIDE GeminiLiveProvider] TurnComplete received but no transcript accumulated.');
+        if (this.status === 'PROCESSING') {
+          this.setStatus('IDLE');
+        }
+      }
+
       this.callbacks.onTurnComplete?.();
       if (this.status === 'SPEAKING' || this.status === 'PROCESSING') {
         this.setStatus('IDLE');
@@ -321,6 +393,18 @@ export class GeminiLiveProvider implements VoiceProvider {
       await this.connect();
     }
 
+    if (this.stopWatchdogTimer) {
+      clearTimeout(this.stopWatchdogTimer);
+      this.stopWatchdogTimer = null;
+    }
+
+    // Reset per-turn state
+    this.accumulatedTranscript = '';
+    this.hasEmittedFinalTranscript = false;
+    this.isFinalizingTurn = false;
+    this.audioChunksSentCount = 0;
+    this.audioBytesSentCount = 0;
+
     this.setStatus('LISTENING');
 
     try {
@@ -342,6 +426,15 @@ export class GeminiLiveProvider implements VoiceProvider {
         };
 
         this.sendJson(realtimeMessage);
+
+        this.audioChunksSentCount += 1;
+        this.audioBytesSentCount += Math.floor((base64PcmChunk.length * 3) / 4);
+
+        if (this.audioChunksSentCount === 1 || this.audioChunksSentCount % 20 === 0) {
+          console.log(
+            `[STRIDE GeminiLiveProvider] Streaming audio chunk #${this.audioChunksSentCount} (~${this.audioBytesSentCount} bytes total)...`
+          );
+        }
       });
     } catch (err: any) {
       console.error('[STRIDE GeminiLiveProvider] Error starting microphone capture:', err);
@@ -352,23 +445,52 @@ export class GeminiLiveProvider implements VoiceProvider {
   }
 
   async stopListening(): Promise<void> {
-    if (this.status !== 'LISTENING') return;
+    // Idempotent guard against rapid user taps or racing events
+    if (this.status !== 'LISTENING' || this.isFinalizingTurn) {
+      return;
+    }
+    this.isFinalizingTurn = true;
 
     this.setStatus('PROCESSING');
     this.pcmRecorder.stop();
 
-    // Signal end of audio stream
+    const recorderStats = this.pcmRecorder.getStats();
+    console.log(
+      `[STRIDE GeminiLiveProvider] stopListening: Finalizing turn. Total chunks streamed: ${this.audioChunksSentCount} (~${this.audioBytesSentCount} bytes), peak RMS: ${recorderStats.peakRms.toFixed(4)}`
+    );
+
+    // Signal end of audio stream AND client turn completion
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      const endStreamMessage = {
+      console.log(
+        '[STRIDE GeminiLiveProvider] Transmitting audioStreamEnd and clientContent.turnComplete...'
+      );
+      this.sendJson({
         realtimeInput: {
           audioStreamEnd: true,
         },
-      };
-      this.sendJson(endStreamMessage);
+      });
+      this.sendJson({
+        clientContent: {
+          turnComplete: true,
+        },
+      });
     }
+
+    // Safety watchdog timer (3.5s) to guarantee UI never hangs in PROCESSING
+    if (this.stopWatchdogTimer) {
+      clearTimeout(this.stopWatchdogTimer);
+    }
+    this.stopWatchdogTimer = setTimeout(() => {
+      this.handleTurnWatchdogTimeout();
+    }, 3500);
   }
 
   async disconnect(): Promise<void> {
+    if (this.stopWatchdogTimer) {
+      clearTimeout(this.stopWatchdogTimer);
+      this.stopWatchdogTimer = null;
+    }
+
     this.pcmRecorder.stop();
 
     if (this.ws) {
@@ -380,6 +502,7 @@ export class GeminiLiveProvider implements VoiceProvider {
 
     this.isConnected = false;
     this.isSetupComplete = false;
+    this.isFinalizingTurn = false;
     this.setStatus('IDLE');
   }
 }
