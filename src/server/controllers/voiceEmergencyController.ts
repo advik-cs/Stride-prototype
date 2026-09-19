@@ -11,6 +11,10 @@ import {
   normalizeAudioMimeType,
 } from '../services/geminiVoiceService.ts';
 import { createLiveSessionToken } from '../services/liveVoiceService.ts';
+import {
+  transcribeAudioWithDeepgram,
+  synthesizeSpeechWithDeepgram,
+} from '../services/deepgramService.ts';
 import { formatRescueRequest } from './rescueController.ts';
 import { calculateHaversineDistance } from '../utils/geo.ts';
 
@@ -936,6 +940,105 @@ export async function handleGetSessionToken(
       model: process.env.GEMINI_LIVE_MODEL || 'gemini-3.8-live',
       webSocketUrl: '',
       reason: err.message || 'Internal server error generating live session token.',
+    });
+  }
+}
+
+/**
+ * Handles Deepgram Speech-to-Text (STT) requests.
+ * Accepts audio upload via multipart file (or base64 fallback in JSON body).
+ * Calls deepgramService.transcribeAudioWithDeepgram.
+ * Returns { transcript: string }.
+ */
+export async function handleDeepgramStt(
+  req: AuthenticatedRequest,
+  res: Response
+): Promise<void> {
+  const correlationId =
+    (typeof req.body?.clientRequestId === 'string' && req.body.clientRequestId.trim()) ||
+    (typeof req.headers['x-request-id'] === 'string' && req.headers['x-request-id'].trim()) ||
+    `stt-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+
+  try {
+    const file = req.file;
+    let audioBuffer: Buffer | null = null;
+    let mimeType = 'audio/webm';
+
+    if (file && file.buffer && file.buffer.length > 0) {
+      audioBuffer = file.buffer;
+      mimeType = file.mimetype || 'audio/webm';
+    } else if (typeof req.body?.audioBase64 === 'string' && req.body.audioBase64.trim().length > 0) {
+      try {
+        audioBuffer = Buffer.from(req.body.audioBase64.trim(), 'base64');
+        mimeType = req.body.mimeType || req.body.mimetype || 'audio/webm';
+      } catch (decodeErr: any) {
+        console.warn(`[STRIDE Deepgram STT Controller] Base64 decode failed (${correlationId}):`, decodeErr?.message);
+      }
+    }
+
+    if (!audioBuffer || audioBuffer.length === 0) {
+      res.status(400).json({ error: 'Audio recording file or base64 audio data is required.', transcript: '' });
+      return;
+    }
+
+    if (audioBuffer.length < 100) {
+      console.warn(`[STRIDE Deepgram STT Controller] Audio recording too short: ${audioBuffer.length} bytes.`);
+      res.status(400).json({ error: 'Audio recording was too short or empty.', transcript: '' });
+      return;
+    }
+
+    const transcript = await transcribeAudioWithDeepgram(audioBuffer, mimeType, correlationId);
+
+    res.json({
+      transcript,
+      clientRequestId: correlationId,
+    });
+  } catch (err: any) {
+    console.error(`[STRIDE Deepgram STT Controller] Transcription error (${correlationId}):`, err?.message || err);
+    const status = err?.message?.includes('DEEPGRAM_API_KEY') ? 503 : 500;
+    res.status(status).json({
+      error: err?.message || 'Failed to transcribe audio with Deepgram.',
+      transcript: '',
+    });
+  }
+}
+
+/**
+ * Handles Deepgram Text-to-Speech (TTS) requests.
+ * Accepts { text: string }.
+ * Calls deepgramService.synthesizeSpeechWithDeepgram.
+ * Returns { audioBase64: string, mimeType: string }.
+ */
+export async function handleDeepgramTts(
+  req: AuthenticatedRequest,
+  res: Response
+): Promise<void> {
+  const correlationId =
+    (typeof req.body?.clientRequestId === 'string' && req.body.clientRequestId.trim()) ||
+    (typeof req.headers['x-request-id'] === 'string' && req.headers['x-request-id'].trim()) ||
+    `tts-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+
+  try {
+    const text = req.body?.text;
+    if (!text || typeof text !== 'string' || text.trim() === '') {
+      res.status(400).json({ error: 'Text parameter is required for TTS synthesis.' });
+      return;
+    }
+
+    const result = await synthesizeSpeechWithDeepgram(text.trim(), correlationId);
+
+    res.json({
+      audioBase64: result.audioBuffer.toString('base64'),
+      mimeType: result.mimeType,
+      clientRequestId: correlationId,
+    });
+  } catch (err: any) {
+    console.error(`[STRIDE Deepgram TTS Controller] Synthesis error (${correlationId}):`, err?.message || err);
+    const status = err?.message?.includes('DEEPGRAM_API_KEY') ? 503 : 500;
+    res.status(status).json({
+      error: err?.message || 'Failed to synthesize speech with Deepgram.',
+      audioBase64: null,
+      mimeType: null,
     });
   }
 }

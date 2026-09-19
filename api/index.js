@@ -4417,6 +4417,136 @@ async function createLiveSessionToken(correlationId) {
   }
 }
 
+// src/server/services/deepgramService.ts
+function getDeepgramSttModel() {
+  return (process.env.DEEPGRAM_STT_MODEL || "nova-3").trim();
+}
+function getDeepgramTtsModel() {
+  return (process.env.DEEPGRAM_TTS_MODEL || "aura-asteria-en").trim();
+}
+function getDeepgramBaseUrl() {
+  return (process.env.DEEPGRAM_BASE_URL || "https://api.deepgram.com").replace(/\/+$/, "");
+}
+async function transcribeAudioWithDeepgram(audioBuffer, mimeType = "audio/webm", correlationId) {
+  const reqId = correlationId || `stt-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+  if (!audioBuffer || audioBuffer.length < 100) {
+    throw new Error(`Audio recording too short or empty (${audioBuffer?.length || 0} bytes).`);
+  }
+  const apiKey = (process.env.DEEPGRAM_API_KEY || "").trim();
+  if (!apiKey) {
+    throw new Error("DEEPGRAM_API_KEY is not configured on the server.");
+  }
+  const sttModel = getDeepgramSttModel();
+  const baseUrl = getDeepgramBaseUrl();
+  const cleanMime = mimeType.split(";")[0].trim() || "audio/webm";
+  const targetUrl = `${baseUrl}/v1/listen?model=${encodeURIComponent(sttModel)}&smart_format=true&punctuate=true`;
+  const startTime = Date.now();
+  console.log(`[STRIDE Deepgram STT] Dispatching transcription request (id: ${reqId}):`, {
+    model: sttModel,
+    bufferBytes: audioBuffer.length,
+    mimeType: cleanMime
+  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15e3);
+  try {
+    const response = await fetch(targetUrl, {
+      method: "POST",
+      headers: {
+        Authorization: `Token ${apiKey}`,
+        "Content-Type": cleanMime
+      },
+      body: audioBuffer,
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+    const durationMs = Date.now() - startTime;
+    if (!response.ok) {
+      let errorBody = "";
+      try {
+        errorBody = await response.text();
+      } catch {
+      }
+      console.warn(`[STRIDE Deepgram STT] Deepgram API returned status ${response.status} (id: ${reqId}, duration: ${durationMs}ms):`, errorBody);
+      throw new Error(`Deepgram STT failed with status ${response.status}: ${errorBody || response.statusText}`);
+    }
+    const data = await response.json();
+    const transcript = data.results?.channels?.[0]?.alternatives?.[0]?.transcript || data.results?.utterances?.map((u) => u.transcript).join(" ") || "";
+    const trimmed = transcript.trim();
+    console.log(`[STRIDE Deepgram STT] Transcription succeeded in ${durationMs}ms (id: ${reqId}):`, {
+      transcriptLength: trimmed.length,
+      hasConfidence: typeof data.results?.channels?.[0]?.alternatives?.[0]?.confidence === "number"
+    });
+    return trimmed;
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (err.name === "AbortError") {
+      console.error(`[STRIDE Deepgram STT] Transcription timed out after 15s (id: ${reqId}).`);
+      throw new Error("Deepgram STT request timed out (15s).");
+    }
+    throw err;
+  }
+}
+async function synthesizeSpeechWithDeepgram(text, correlationId) {
+  const reqId = correlationId || `tts-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+  if (!text || typeof text !== "string" || text.trim() === "") {
+    throw new Error("Text is required for Deepgram TTS synthesis.");
+  }
+  const apiKey = (process.env.DEEPGRAM_API_KEY || "").trim();
+  if (!apiKey) {
+    throw new Error("DEEPGRAM_API_KEY is not configured on the server.");
+  }
+  const ttsModel = getDeepgramTtsModel();
+  const baseUrl = getDeepgramBaseUrl();
+  const targetUrl = `${baseUrl}/v1/speak?model=${encodeURIComponent(ttsModel)}`;
+  const startTime = Date.now();
+  console.log(`[STRIDE Deepgram TTS] Dispatching speech synthesis (id: ${reqId}):`, {
+    model: ttsModel,
+    textLength: text.trim().length
+  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 12e3);
+  try {
+    const response = await fetch(targetUrl, {
+      method: "POST",
+      headers: {
+        Authorization: `Token ${apiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ text: text.trim() }),
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+    const durationMs = Date.now() - startTime;
+    if (!response.ok) {
+      let errorBody = "";
+      try {
+        errorBody = await response.text();
+      } catch {
+      }
+      console.warn(`[STRIDE Deepgram TTS] Deepgram API returned status ${response.status} (id: ${reqId}, duration: ${durationMs}ms):`, errorBody);
+      throw new Error(`Deepgram TTS failed with status ${response.status}: ${errorBody || response.statusText}`);
+    }
+    const mimeType = response.headers.get("content-type") || "audio/mp3";
+    const arrayBuffer = await response.arrayBuffer();
+    const audioBuffer = Buffer.from(arrayBuffer);
+    console.log(`[STRIDE Deepgram TTS] Speech synthesis succeeded in ${durationMs}ms (id: ${reqId}):`, {
+      audioBytes: audioBuffer.length,
+      mimeType
+    });
+    return {
+      audioBuffer,
+      mimeType
+    };
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (err.name === "AbortError") {
+      console.error(`[STRIDE Deepgram TTS] Speech synthesis timed out after 12s (id: ${reqId}).`);
+      throw new Error("Deepgram TTS request timed out (12s).");
+    }
+    throw err;
+  }
+}
+
 // src/server/controllers/voiceEmergencyController.ts
 var KNOWN_LOCALITY_COORDS = {
   indiranagar: [12.9784, 77.6408],
@@ -5163,6 +5293,70 @@ async function handleGetSessionToken(req, res) {
     });
   }
 }
+async function handleDeepgramStt(req, res) {
+  const correlationId = typeof req.body?.clientRequestId === "string" && req.body.clientRequestId.trim() || typeof req.headers["x-request-id"] === "string" && req.headers["x-request-id"].trim() || `stt-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+  try {
+    const file = req.file;
+    let audioBuffer = null;
+    let mimeType = "audio/webm";
+    if (file && file.buffer && file.buffer.length > 0) {
+      audioBuffer = file.buffer;
+      mimeType = file.mimetype || "audio/webm";
+    } else if (typeof req.body?.audioBase64 === "string" && req.body.audioBase64.trim().length > 0) {
+      try {
+        audioBuffer = Buffer.from(req.body.audioBase64.trim(), "base64");
+        mimeType = req.body.mimeType || req.body.mimetype || "audio/webm";
+      } catch (decodeErr) {
+        console.warn(`[STRIDE Deepgram STT Controller] Base64 decode failed (${correlationId}):`, decodeErr?.message);
+      }
+    }
+    if (!audioBuffer || audioBuffer.length === 0) {
+      res.status(400).json({ error: "Audio recording file or base64 audio data is required.", transcript: "" });
+      return;
+    }
+    if (audioBuffer.length < 100) {
+      console.warn(`[STRIDE Deepgram STT Controller] Audio recording too short: ${audioBuffer.length} bytes.`);
+      res.status(400).json({ error: "Audio recording was too short or empty.", transcript: "" });
+      return;
+    }
+    const transcript = await transcribeAudioWithDeepgram(audioBuffer, mimeType, correlationId);
+    res.json({
+      transcript,
+      clientRequestId: correlationId
+    });
+  } catch (err) {
+    console.error(`[STRIDE Deepgram STT Controller] Transcription error (${correlationId}):`, err?.message || err);
+    const status = err?.message?.includes("DEEPGRAM_API_KEY") ? 503 : 500;
+    res.status(status).json({
+      error: err?.message || "Failed to transcribe audio with Deepgram.",
+      transcript: ""
+    });
+  }
+}
+async function handleDeepgramTts(req, res) {
+  const correlationId = typeof req.body?.clientRequestId === "string" && req.body.clientRequestId.trim() || typeof req.headers["x-request-id"] === "string" && req.headers["x-request-id"].trim() || `tts-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+  try {
+    const text = req.body?.text;
+    if (!text || typeof text !== "string" || text.trim() === "") {
+      res.status(400).json({ error: "Text parameter is required for TTS synthesis." });
+      return;
+    }
+    const result = await synthesizeSpeechWithDeepgram(text.trim(), correlationId);
+    res.json({
+      audioBase64: result.audioBuffer.toString("base64"),
+      mimeType: result.mimeType,
+      clientRequestId: correlationId
+    });
+  } catch (err) {
+    console.error(`[STRIDE Deepgram TTS Controller] Synthesis error (${correlationId}):`, err?.message || err);
+    const status = err?.message?.includes("DEEPGRAM_API_KEY") ? 503 : 500;
+    res.status(status).json({
+      error: err?.message || "Failed to synthesize speech with Deepgram.",
+      audioBase64: null,
+      mimeType: null
+    });
+  }
+}
 
 // src/server/routes/voiceRoutes.ts
 var router9 = Router9();
@@ -5186,6 +5380,10 @@ var safeAudioUpload = (req, res, next) => {
     next();
   }
 };
+router9.post("/voice/deepgram-stt", requireAuth, safeAudioUpload, handleDeepgramStt);
+router9.post("/deepgram-stt", requireAuth, safeAudioUpload, handleDeepgramStt);
+router9.post("/voice/deepgram-tts", requireAuth, handleDeepgramTts);
+router9.post("/deepgram-tts", requireAuth, handleDeepgramTts);
 router9.post("/voice/session-token", requireAuth, handleGetSessionToken);
 router9.get("/voice/session-token", requireAuth, handleGetSessionToken);
 router9.post("/voice/emergency-chat", requireAuth, handleVoiceEmergencyChat);

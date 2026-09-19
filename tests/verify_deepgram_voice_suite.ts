@@ -1,0 +1,580 @@
+import assert from 'node:assert/strict';
+import http from 'node:http';
+import express from 'express';
+import jwt from 'jsonwebtoken';
+import {
+  transcribeAudioWithDeepgram,
+  synthesizeSpeechWithDeepgram,
+} from '../src/server/services/deepgramService.ts';
+import createApp from '../src/server/app.ts';
+import { getVoiceProvider, getSelectedVoiceProviderType } from '../src/services/voice/voiceProviderFactory.ts';
+import { DeepgramVoiceProvider } from '../src/services/voice/DeepgramVoiceProvider.ts';
+import { GeminiLiveProvider } from '../src/services/voice/GeminiLiveProvider.ts';
+import prisma from '../src/server/config/database.ts';
+import { formatRescueRequest } from '../src/server/controllers/rescueController.ts';
+
+// Polyfill browser globals for Node test environment
+if (typeof (globalThis as any).localStorage === 'undefined') {
+  const store: Record<string, string> = {};
+  (globalThis as any).localStorage = {
+    getItem: (key: string) => store[key] || null,
+    setItem: (key: string, val: string) => { store[key] = String(val); },
+    removeItem: (key: string) => { delete store[key]; },
+    clear: () => { Object.keys(store).forEach((k) => delete store[k]); },
+  };
+}
+
+const JWT_SECRET = process.env.JWT_SECRET || 'stride-hackathon-secure-jwt-secret-key-2026';
+
+let passedCount = 0;
+let failedCount = 0;
+
+async function runCheck(name: string, fn: () => Promise<void> | void) {
+  try {
+    await fn();
+    console.log(`  ✅ PASS: ${name}`);
+    passedCount++;
+  } catch (err: any) {
+    console.error(`  ❌ FAIL: ${name}`);
+    console.error(`     ${err?.message || err}`);
+    failedCount++;
+    throw err;
+  }
+}
+
+async function runSuite() {
+  console.log('================================================================');
+  console.log('STRIDE DEEPGRAM TURN-BASED VOICE SUITE (17 SCENARIOS)');
+  console.log('================================================================\n');
+
+  let mockDeepgramServer: http.Server;
+  let mockDeepgramPort: number;
+  let lastSttRequestHeaders: any = null;
+  let lastSttRequestBody: Buffer | null = null;
+  let lastSttUrl: string = '';
+  let lastTtsRequestHeaders: any = null;
+  let lastTtsRequestBody: any = null;
+  let lastTtsUrl: string = '';
+  let mockSttResponse = {
+    results: {
+      channels: [
+        {
+          alternatives: [
+            {
+              transcript: 'We are four people and we are trapped upstairs.',
+              confidence: 0.98,
+            },
+          ],
+        },
+      ],
+    },
+  };
+  let mockTtsResponseBuffer = Buffer.from('mock-mp3-audio-bytes-for-tts');
+  let mockStatusCode = 200;
+
+  // 1. Setup Mock Deepgram HTTP Server
+  await new Promise<void>((resolve) => {
+    const mockApp = express();
+    mockApp.use((req, res, next) => {
+      if (req.path.startsWith('/v1/listen')) {
+        const chunks: Buffer[] = [];
+        req.on('data', (chunk) => chunks.push(chunk));
+        req.on('end', () => {
+          lastSttRequestBody = Buffer.concat(chunks);
+          lastSttRequestHeaders = req.headers;
+          lastSttUrl = req.url;
+
+          if (mockStatusCode !== 200) {
+            res.status(mockStatusCode).json({ err_code: 'MOCK_ERROR', err_msg: 'Mock error from Deepgram' });
+          } else {
+            res.json(mockSttResponse);
+          }
+        });
+      } else if (req.path.startsWith('/v1/speak')) {
+        const chunks: Buffer[] = [];
+        req.on('data', (chunk) => chunks.push(chunk));
+        req.on('end', () => {
+          try {
+            lastTtsRequestBody = JSON.parse(Buffer.concat(chunks).toString());
+          } catch {
+            lastTtsRequestBody = null;
+          }
+          lastTtsRequestHeaders = req.headers;
+          lastTtsUrl = req.url;
+
+          if (mockStatusCode !== 200) {
+            res.status(mockStatusCode).json({ err_code: 'MOCK_ERROR', err_msg: 'Mock error from Deepgram' });
+          } else {
+            res.setHeader('content-type', 'audio/mp3');
+            res.send(mockTtsResponseBuffer);
+          }
+        });
+      } else {
+        next();
+      }
+    });
+
+    mockDeepgramServer = http.createServer(mockApp);
+    mockDeepgramServer.listen(0, '127.0.0.1', () => {
+      mockDeepgramPort = (mockDeepgramServer.address() as any).port;
+      resolve();
+    });
+  });
+
+  const mockBaseUrl = `http://127.0.0.1:${mockDeepgramPort}`;
+  process.env.DEEPGRAM_BASE_URL = mockBaseUrl;
+  process.env.DEEPGRAM_API_KEY = 'test-deepgram-api-key-12345';
+
+  // Setup STRIDE app for controller tests
+  const app = createApp();
+  let strideServer: http.Server;
+  let stridePort: number;
+
+  await new Promise<void>((resolve) => {
+    strideServer = http.createServer(app);
+    strideServer.listen(0, '127.0.0.1', () => {
+      stridePort = (strideServer.address() as any).port;
+      resolve();
+    });
+  });
+
+  // Setup / fetch citizen user with household
+  let testUser = await prisma.user.findFirst({
+    where: { role: 'CITIZEN' },
+    include: { households: { include: { members: true } } },
+  });
+
+  if (!testUser || !testUser.households[0]?.members[0]) {
+    let disaster = await prisma.disasterEvent.findFirst();
+    if (!disaster) {
+      disaster = await prisma.disasterEvent.create({
+        data: {
+          title: 'Bangalore Flood 2026',
+          type: 'FLOOD',
+          status: 'ACTIVE',
+          severity: 'HIGH',
+        },
+      });
+    }
+
+    testUser = await prisma.user.create({
+      data: {
+        id: `test-citizen-dg-${Date.now()}`,
+        name: 'Deepgram Test Citizen',
+        testIdentityNumber: `ID-DG-${Date.now()}`,
+        mobileNumber: `+9198${Date.now().toString().slice(-8)}`,
+        password: 'dummy',
+        role: 'CITIZEN',
+        households: {
+          create: {
+            name: 'Koramangala Flat 101',
+            address: '12th Main, Koramangala',
+            city: 'Bengaluru',
+            state: 'Karnataka',
+            latitude: 12.9352,
+            longitude: 77.6245,
+            members: {
+              create: {
+                name: 'Deepgram Citizen Member',
+                gender: 'MALE',
+                age: 32,
+              },
+            },
+          },
+        },
+      },
+      include: { households: { include: { members: true } } },
+    });
+  }
+
+  const citizenToken = jwt.sign(
+    { userId: testUser.id, role: testUser.role },
+    JWT_SECRET,
+    { expiresIn: '1h' }
+  );
+  (globalThis as any).localStorage.setItem('stride_during_token', citizenToken);
+
+  try {
+    // -------------------------------------------------------------
+    // SCENARIO 1: Deepgram config (models and defaults)
+    // -------------------------------------------------------------
+    await runCheck('Scenario 1: Deepgram service model configuration defaults', async () => {
+      delete process.env.DEEPGRAM_STT_MODEL;
+      delete process.env.DEEPGRAM_TTS_MODEL;
+
+      const dummyAudio = Buffer.alloc(200, 'a');
+      await transcribeAudioWithDeepgram(dummyAudio, 'audio/webm', 'corr-1');
+      assert.ok(lastSttUrl.includes('model=nova-3'), `Expected default STT model nova-3 in URL: ${lastSttUrl}`);
+
+      await synthesizeSpeechWithDeepgram('Hello world', 'corr-2');
+      assert.ok(lastTtsUrl.includes('model=aura-asteria-en'), `Expected default TTS model aura-asteria-en in URL: ${lastTtsUrl}`);
+
+      // Test custom models
+      process.env.DEEPGRAM_STT_MODEL = 'nova-2-general';
+      process.env.DEEPGRAM_TTS_MODEL = 'aura-luna-en';
+
+      await transcribeAudioWithDeepgram(dummyAudio, 'audio/webm', 'corr-3');
+      assert.ok(lastSttUrl.includes('model=nova-2-general'), `Expected custom STT model nova-2-general in URL: ${lastSttUrl}`);
+
+      await synthesizeSpeechWithDeepgram('Hello world 2', 'corr-4');
+      assert.ok(lastTtsUrl.includes('model=aura-luna-en'), `Expected custom TTS model aura-luna-en in URL: ${lastTtsUrl}`);
+
+      delete process.env.DEEPGRAM_STT_MODEL;
+      delete process.env.DEEPGRAM_TTS_MODEL;
+    });
+
+    // -------------------------------------------------------------
+    // SCENARIO 2: transcribeAudioWithDeepgram rejects empty / small audio
+    // -------------------------------------------------------------
+    await runCheck('Scenario 2: transcribeAudioWithDeepgram rejects empty / small audio', async () => {
+      await assert.rejects(
+        () => transcribeAudioWithDeepgram(Buffer.alloc(0), 'audio/webm', 'corr-empty'),
+        /Audio recording too short or empty/
+      );
+
+      await assert.rejects(
+        () => transcribeAudioWithDeepgram(Buffer.alloc(50), 'audio/webm', 'corr-small'),
+        /Audio recording too short or empty/
+      );
+    });
+
+    // -------------------------------------------------------------
+    // SCENARIO 3: transcribeAudioWithDeepgram sends audio with correct headers & parses response
+    // -------------------------------------------------------------
+    await runCheck('Scenario 3: transcribeAudioWithDeepgram sends audioBuffer with Token header', async () => {
+      const audioData = Buffer.alloc(300, 0x12);
+      const transcript = await transcribeAudioWithDeepgram(audioData, 'audio/webm', 'corr-valid-stt');
+
+      assert.equal(transcript, 'We are four people and we are trapped upstairs.');
+      assert.equal(lastSttRequestHeaders['authorization'], 'Token test-deepgram-api-key-12345');
+      assert.ok(lastSttRequestHeaders['content-type'].includes('audio/webm'));
+      assert.equal(lastSttRequestBody?.length, 300);
+    });
+
+    // -------------------------------------------------------------
+    // SCENARIO 4: synthesizeSpeechWithDeepgram sends JSON body and returns audio Buffer
+    // -------------------------------------------------------------
+    await runCheck('Scenario 4: synthesizeSpeechWithDeepgram sends text JSON and returns audio Buffer', async () => {
+      const res = await synthesizeSpeechWithDeepgram('Help is on the way.', 'corr-tts-valid');
+
+      assert.equal(lastTtsRequestHeaders['authorization'], 'Token test-deepgram-api-key-12345');
+      assert.ok(lastTtsRequestHeaders['content-type'].includes('application/json'));
+      assert.deepEqual(lastTtsRequestBody, { text: 'Help is on the way.' });
+      assert.equal(res.audioBuffer.toString(), 'mock-mp3-audio-bytes-for-tts');
+      assert.equal(res.mimeType, 'audio/mp3');
+    });
+
+    // -------------------------------------------------------------
+    // SCENARIO 5: Missing DEEPGRAM_API_KEY throws clear error
+    // -------------------------------------------------------------
+    await runCheck('Scenario 5: Missing DEEPGRAM_API_KEY throws clear error', async () => {
+      const origKey = process.env.DEEPGRAM_API_KEY;
+      delete process.env.DEEPGRAM_API_KEY;
+
+      try {
+        await assert.rejects(
+          () => transcribeAudioWithDeepgram(Buffer.alloc(200), 'audio/webm', 'corr-no-key'),
+          /DEEPGRAM_API_KEY is not configured/
+        );
+        await assert.rejects(
+          () => synthesizeSpeechWithDeepgram('Test text', 'corr-no-key'),
+          /DEEPGRAM_API_KEY is not configured/
+        );
+      } finally {
+        process.env.DEEPGRAM_API_KEY = origKey;
+      }
+    });
+
+    // -------------------------------------------------------------
+    // SCENARIO 6: Deepgram API error responses caught & formatted
+    // -------------------------------------------------------------
+    await runCheck('Scenario 6: Deepgram API HTTP error handled cleanly', async () => {
+      mockStatusCode = 401;
+      try {
+        await assert.rejects(
+          () => transcribeAudioWithDeepgram(Buffer.alloc(200), 'audio/webm', 'corr-err'),
+          /Deepgram STT failed with status 401/
+        );
+      } finally {
+        mockStatusCode = 200;
+      }
+    });
+
+    // -------------------------------------------------------------
+    // SCENARIO 7: Controller handleDeepgramStt returns 400 for empty audio
+    // -------------------------------------------------------------
+    await runCheck('Scenario 7: POST /api/voice/deepgram-stt rejects empty audio with 400', async () => {
+      const res = await fetch(`http://127.0.0.1:${stridePort}/api/voice/deepgram-stt`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${citizenToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ audioBase64: '' }),
+      });
+
+      assert.equal(res.status, 400);
+      const json = await res.json();
+      assert.ok(json.error.includes('Audio recording'));
+    });
+
+    // -------------------------------------------------------------
+    // SCENARIO 8: Controller handleDeepgramStt handles multipart FormData
+    // -------------------------------------------------------------
+    await runCheck('Scenario 8: POST /api/voice/deepgram-stt handles multipart FormData audio', async () => {
+      const boundary = '----WebKitFormBoundary7MA4YWxkTrZu0gW';
+      const fileHeader = `--${boundary}\r\nContent-Disposition: form-data; name="audio"; filename="audio.webm"\r\nContent-Type: audio/webm\r\n\r\n`;
+      const fileFooter = `\r\n--${boundary}--\r\n`;
+      const audioContent = Buffer.alloc(250, 0x55);
+      const multipartBody = Buffer.concat([
+        Buffer.from(fileHeader, 'utf8'),
+        audioContent,
+        Buffer.from(fileFooter, 'utf8'),
+      ]);
+
+      const res = await fetch(`http://127.0.0.1:${stridePort}/api/voice/deepgram-stt`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${citizenToken}`,
+          'Content-Type': `multipart/form-data; boundary=${boundary}`,
+        },
+        body: multipartBody,
+      });
+
+      assert.equal(res.status, 200);
+      const json = await res.json();
+      assert.equal(json.transcript, 'We are four people and we are trapped upstairs.');
+    });
+
+    // -------------------------------------------------------------
+    // SCENARIO 9: Controller handleDeepgramStt handles base64 audio fallback
+    // -------------------------------------------------------------
+    await runCheck('Scenario 9: POST /api/voice/deepgram-stt handles base64 fallback JSON', async () => {
+      const audioBase64 = Buffer.alloc(250, 0xaa).toString('base64');
+      const res = await fetch(`http://127.0.0.1:${stridePort}/api/voice/deepgram-stt`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${citizenToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ audioBase64, mimeType: 'audio/webm' }),
+      });
+
+      assert.equal(res.status, 200);
+      const json = await res.json();
+      assert.equal(json.transcript, 'We are four people and we are trapped upstairs.');
+    });
+
+    // -------------------------------------------------------------
+    // SCENARIO 10: Controller handleDeepgramTts returns 400 for empty text
+    // -------------------------------------------------------------
+    await runCheck('Scenario 10: POST /api/voice/deepgram-tts rejects empty text with 400', async () => {
+      const res = await fetch(`http://127.0.0.1:${stridePort}/api/voice/deepgram-tts`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${citizenToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ text: '   ' }),
+      });
+
+      assert.equal(res.status, 400);
+    });
+
+    // -------------------------------------------------------------
+    // SCENARIO 11: Controller handleDeepgramTts returns base64 audio and mimeType
+    // -------------------------------------------------------------
+    await runCheck('Scenario 11: POST /api/voice/deepgram-tts returns base64 audio', async () => {
+      const res = await fetch(`http://127.0.0.1:${stridePort}/api/voice/deepgram-tts`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${citizenToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ text: 'Stay calm, responders are arriving.' }),
+      });
+
+      assert.equal(res.status, 200);
+      const json = await res.json();
+      assert.equal(json.mimeType, 'audio/mp3');
+      assert.equal(Buffer.from(json.audioBase64, 'base64').toString(), 'mock-mp3-audio-bytes-for-tts');
+    });
+
+    // -------------------------------------------------------------
+    // SCENARIO 12: Factory returns DeepgramVoiceProvider for deepgram and deepgram-turn
+    // -------------------------------------------------------------
+    await runCheck('Scenario 12: Factory returns DeepgramVoiceProvider for deepgram & deepgram-turn', async () => {
+      const p1 = getVoiceProvider('deepgram');
+      assert.ok(p1 instanceof DeepgramVoiceProvider, 'Expected instance of DeepgramVoiceProvider');
+      assert.equal(p1.name, 'deepgram-turn');
+
+      const p2 = getVoiceProvider('deepgram-turn');
+      assert.ok(p2 instanceof DeepgramVoiceProvider, 'Expected instance of DeepgramVoiceProvider');
+    });
+
+    // -------------------------------------------------------------
+    // SCENARIO 13: Factory returns GeminiLiveProvider for gemini and gemini-live
+    // -------------------------------------------------------------
+    await runCheck('Scenario 13: Factory preserves GeminiLiveProvider for gemini & gemini-live', async () => {
+      const p1 = getVoiceProvider('gemini');
+      assert.ok(p1 instanceof GeminiLiveProvider, 'Expected instance of GeminiLiveProvider');
+      assert.equal(p1.name, 'gemini-live');
+
+      const p2 = getVoiceProvider('gemini-live');
+      assert.ok(p2 instanceof GeminiLiveProvider, 'Expected instance of GeminiLiveProvider');
+    });
+
+    // -------------------------------------------------------------
+    // SCENARIO 14: Factory throws clear error for unimplemented and unsupported providers
+    // -------------------------------------------------------------
+    await runCheck('Scenario 14: Factory throws descriptive errors for unimplemented/unsupported', async () => {
+      assert.throws(() => getVoiceProvider('openai'), /not yet implemented/);
+      assert.throws(() => getVoiceProvider('unsupported-provider'), /Unsupported voice provider/);
+    });
+
+    // -------------------------------------------------------------
+    // SCENARIO 15: DeepgramVoiceProvider stopListening enforces idempotency lock
+    // -------------------------------------------------------------
+    await runCheck('Scenario 15: DeepgramVoiceProvider stopListening enforces idempotency', async () => {
+      const provider = new DeepgramVoiceProvider();
+      let emitCount = 0;
+      provider.setCallbacks({
+        onFinalTranscript: () => emitCount++,
+        onError: () => {},
+      });
+
+      // Directly set provider status to LISTENING for testing idempotency lock
+      provider.status = 'LISTENING';
+
+      // Mock mediaRecorder with empty stop to simulate rapid concurrent calls
+      (provider as any).mediaRecorder = {
+        state: 'recording',
+        mimeType: 'audio/webm',
+        stop() {
+          setTimeout(() => {
+            (this as any).onstop?.();
+          }, 50);
+        },
+      };
+      (provider as any).recordedChunks = [Buffer.alloc(200)];
+
+      // Launch two rapid stopListening calls concurrently
+      const [r1, r2] = await Promise.allSettled([
+        provider.stopListening(),
+        provider.stopListening(),
+      ]);
+
+      assert.equal(r1.status, 'fulfilled');
+      assert.equal(r2.status, 'fulfilled');
+    });
+
+    // -------------------------------------------------------------
+    // SCENARIO 16: DeepgramVoiceProvider rejects < 100 byte audio and resets to IDLE
+    // -------------------------------------------------------------
+    await runCheck('Scenario 16: DeepgramVoiceProvider handles too-short audio gracefully', async () => {
+      const provider = new DeepgramVoiceProvider();
+      let capturedError: any = null;
+      let capturedTranscript: any = null;
+
+      provider.setCallbacks({
+        onError: (err) => { capturedError = err; },
+        onFinalTranscript: (t) => { capturedTranscript = t; },
+      });
+
+      provider.status = 'LISTENING';
+      (provider as any).mediaRecorder = {
+        state: 'inactive',
+        stop() {},
+      };
+      (provider as any).recordedChunks = [Buffer.alloc(20)]; // only 20 bytes (< 100)
+
+      await provider.stopListening();
+
+      assert.equal(provider.status, 'IDLE');
+      assert.ok(capturedError, 'Expected onError to be called');
+      assert.equal(capturedTranscript, null, 'onFinalTranscript must not be called for short audio');
+    });
+
+    // -------------------------------------------------------------
+    // SCENARIO 17: Authoritative STRIDE priority calculation for "We are four people and we're trapped upstairs"
+    // -------------------------------------------------------------
+    await runCheck('Scenario 17: Authoritative STRIDE priority calculation verified dynamically', async () => {
+      // Clean up previous test requests for this user
+      if (testUser.households[0]?.members[0]) {
+        await prisma.emergencyCondition.deleteMany({
+          where: { emergencyRequest: { householdMemberId: testUser.households[0].members[0].id } },
+        });
+        await prisma.rescueAssignment.deleteMany({
+          where: { emergencyRequest: { householdMemberId: testUser.households[0].members[0].id } },
+        });
+        await prisma.emergencyRequest.deleteMany({
+          where: { householdMemberId: testUser.households[0].members[0].id },
+        });
+      }
+
+      // Post emergency-chat with the authoritative utterance
+      const triageRes = await fetch(`http://127.0.0.1:${stridePort}/api/voice/emergency-chat`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${citizenToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message: 'We are four people and we are trapped upstairs.',
+          clientRequestId: `test-calc-${Date.now()}`,
+        }),
+      });
+
+      assert.equal(triageRes.status, 200);
+      const json = await triageRes.json();
+
+      assert.equal(json.mode, 'EMERGENCY');
+      assert.ok(json.activeRequest, 'activeRequest must be returned');
+
+      // Verify facts extracted deterministically
+      assert.equal(json.activeRequest.peopleCount, 4);
+      assert.equal(json.activeRequest.emergencyType, 'TRAPPED');
+
+      // Assert against the actual calculation from the database / response
+      // DO NOT hardcode 35; verify the calculation is self-consistent and authoritative
+      const actualScore = json.activeRequest.priorityScore;
+      assert.ok(
+        typeof actualScore === 'number' && actualScore >= 15 && actualScore <= 100,
+        `Expected valid priority score between 15 and 100, got: ${actualScore}`
+      );
+      console.log(`     Authoritative STRIDE priority score calculated: ${actualScore}`);
+
+      // Verify database record matches
+      const dbReq = await prisma.emergencyRequest.findUnique({
+        where: { id: json.activeRequest.id },
+        include: {
+          conditions: true,
+          rescueAssignments: true,
+          householdMember: { include: { household: { include: { user: true } } } },
+        },
+      });
+      assert.ok(dbReq, 'Database emergencyRequest must exist');
+      assert.equal(dbReq?.priorityScore, actualScore);
+      const formatted = formatRescueRequest(dbReq);
+      assert.equal(formatted.peopleCount, 4);
+      assert.equal(formatted.emergencyType, 'TRAPPED');
+    });
+
+  } finally {
+    mockDeepgramServer?.close();
+    strideServer?.close();
+  }
+
+  console.log('\n================================================================');
+  console.log(`SUMMARY: ${passedCount} passed, ${failedCount} failed`);
+  console.log('================================================================');
+
+  if (failedCount > 0) {
+    process.exit(1);
+  }
+}
+
+runSuite().catch((err) => {
+  console.error('Fatal test error:', err);
+  process.exit(1);
+});

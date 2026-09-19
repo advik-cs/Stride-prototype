@@ -381,6 +381,70 @@ export const duringApi = {
     });
   },
 
+  // Deepgram Voice STT (Turn-based speech-to-text)
+  async deepgramStt(audioBlob: Blob, clientRequestId?: string): Promise<{ transcript: string }> {
+    const cId = clientRequestId || `stt-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    const formData = new FormData();
+    formData.append('audio', audioBlob, 'recording.webm');
+    formData.append('clientRequestId', cId);
+
+    try {
+      return await duringRequest<{ transcript: string }>('/voice/deepgram-stt', {
+        method: 'POST',
+        body: formData,
+      });
+    } catch (multipartErr: any) {
+      console.warn(
+        `[STRIDE Deepgram STT] Multipart upload failed (${multipartErr?.message || 'unknown'}). Retrying once with JSON base64 fallback...`
+      );
+
+      let base64Audio = '';
+      try {
+        const reader = new FileReader();
+        base64Audio = await new Promise<string>((resolve, reject) => {
+          reader.onloadend = () => {
+            const res = reader.result as string;
+            const b64 = res ? res.split(',')[1] : '';
+            resolve(b64 || '');
+          };
+          reader.onerror = () => reject(new Error('Failed to convert audio blob to base64'));
+          reader.readAsDataURL(audioBlob);
+        });
+      } catch (readErr: any) {
+        console.error('[STRIDE Deepgram STT] FileReader base64 conversion failed:', readErr);
+        throw multipartErr;
+      }
+
+      if (!base64Audio) {
+        throw multipartErr;
+      }
+
+      return await duringRequest<{ transcript: string }>('/voice/deepgram-stt', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          audioBase64: base64Audio,
+          mimeType: audioBlob.type || 'audio/webm',
+          clientRequestId: cId,
+        }),
+      });
+    }
+  },
+
+  // Deepgram Voice TTS (Turn-based text-to-speech)
+  async deepgramTts(text: string, clientRequestId?: string): Promise<{ audioBase64: string; mimeType: string }> {
+    const cId = clientRequestId || `tts-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    return duringRequest<{ audioBase64: string; mimeType: string }>('/voice/deepgram-tts', {
+      method: 'POST',
+      body: JSON.stringify({
+        text,
+        clientRequestId: cId,
+      }),
+    });
+  },
+
   // Authority Dispatch Operations
   async getRankedRequests(): Promise<RescueRequest[]> {
     return duringRequest<RescueRequest[]>('/authority/rescue-requests/ranked');

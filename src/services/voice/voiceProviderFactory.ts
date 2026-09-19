@@ -1,5 +1,6 @@
 import { VoiceProvider } from './VoiceProvider';
 import { GeminiLiveProvider } from './GeminiLiveProvider';
+import { DeepgramVoiceProvider } from './DeepgramVoiceProvider';
 
 /**
  * Resolves the currently configured voice provider type from environment or configuration.
@@ -9,6 +10,15 @@ import { GeminiLiveProvider } from './GeminiLiveProvider';
  * 3. Default: 'gemini'
  */
 export function getSelectedVoiceProviderType(): string {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const stored = localStorage.getItem('stride_voice_provider');
+      if (stored && stored.trim()) {
+        return stored.toLowerCase().trim();
+      }
+    }
+  } catch {}
+
   try {
     if (typeof import.meta !== 'undefined' && (import.meta as any)?.env?.VITE_VOICE_PROVIDER) {
       return String((import.meta as any).env.VITE_VOICE_PROVIDER).toLowerCase().trim();
@@ -27,12 +37,12 @@ export function getSelectedVoiceProviderType(): string {
 /**
  * Factory creating the active VoiceProvider instance.
  *
- * Current supported provider:
- * - 'gemini' | 'gemini-live' -> GeminiLiveProvider
+ * Supported providers:
+ * - 'deepgram' | 'deepgram-turn' -> DeepgramVoiceProvider (Turn-based STT + TTS)
+ * - 'gemini' | 'gemini-live' -> GeminiLiveProvider (Real-time WebSocket Live API)
  *
  * Future prospective providers:
  * - 'openai' | 'openai-realtime'
- * - 'deepgram'
  *
  * Fails fast with a clear descriptive error if an unsupported or unimplemented provider is configured.
  */
@@ -40,6 +50,10 @@ export function getVoiceProvider(explicitType?: string): VoiceProvider {
   const providerType = (explicitType || getSelectedVoiceProviderType()).toLowerCase().trim();
 
   switch (providerType) {
+    case 'deepgram':
+    case 'deepgram-turn':
+      return new DeepgramVoiceProvider();
+
     case 'gemini':
     case 'gemini-live':
       return new GeminiLiveProvider();
@@ -47,17 +61,12 @@ export function getVoiceProvider(explicitType?: string): VoiceProvider {
     case 'openai':
     case 'openai-realtime':
       throw new Error(
-        `Voice provider "${providerType}" is not yet implemented in this release. Please set VITE_VOICE_PROVIDER=gemini.`
-      );
-
-    case 'deepgram':
-      throw new Error(
-        `Voice provider "${providerType}" is not yet implemented in this release. Please set VITE_VOICE_PROVIDER=gemini.`
+        `Voice provider "${providerType}" is not yet implemented in this release. Please set VITE_VOICE_PROVIDER=deepgram or gemini.`
       );
 
     default:
       throw new Error(
-        `Unsupported voice provider: "${providerType}". Configured via VITE_VOICE_PROVIDER. Supported options: "gemini".`
+        `Unsupported voice provider: "${providerType}". Configured via VITE_VOICE_PROVIDER. Supported options: "deepgram", "gemini".`
       );
   }
 }

@@ -5,6 +5,8 @@ import {
   handleVoiceEmergencyAudio,
   handleResetTestBeacon,
   handleGetSessionToken,
+  handleDeepgramStt,
+  handleDeepgramTts,
 } from '../controllers/voiceEmergencyController.ts';
 import { requireAuth } from '../middleware/auth.ts';
 
@@ -33,6 +35,12 @@ const safeAudioUpload = (req: any, res: any, next: any) => {
     next();
   }
 };
+
+// Deepgram Turn-Based Speech Services (Server-Side Secret DEEPGRAM_API_KEY)
+router.post('/voice/deepgram-stt', requireAuth, safeAudioUpload, handleDeepgramStt);
+router.post('/deepgram-stt', requireAuth, safeAudioUpload, handleDeepgramStt);
+router.post('/voice/deepgram-tts', requireAuth, handleDeepgramTts);
+router.post('/deepgram-tts', requireAuth, handleDeepgramTts);
 
 // Ephemeral session token endpoint for Gemini Live API
 router.post('/voice/session-token', requireAuth, handleGetSessionToken);

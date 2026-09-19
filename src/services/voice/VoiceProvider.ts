@@ -51,4 +51,7 @@ export interface VoiceProvider {
 
   /** Registers event callbacks for transcripts, audio, turn completions, and errors */
   setCallbacks(callbacks: VoiceProviderCallbacks): void;
+
+  /** Synthesizes and plays spoken audio for assistant responses (e.g. Deepgram TTS) */
+  speak?(text: string): Promise<void>;
 }

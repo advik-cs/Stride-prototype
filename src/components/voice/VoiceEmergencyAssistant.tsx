@@ -337,16 +337,21 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
       };
 
       setMessages((prev) => [...prev, assistantMsg]);
-      setCurrentStatus('IDLE');
 
-      // Native audio from Gemini Live is played via onAudioChunk.
-      // If no native audio chunks arrived within 500ms, use speakText fallback.
-      setTimeout(() => {
-        if (currentStatus === 'IDLE' && !isMuted) {
-          // Voice fallback if provider did not stream audio
-          // (PcmPlayer handles audio chunks if they were streamed)
+      // 5. Spoken response playback
+      if (!isMuted && res.assistantResponse) {
+        if (typeof providerRef.current?.speak === 'function') {
+          providerRef.current.speak(res.assistantResponse).catch((speakErr) => {
+            console.warn('[STRIDE Voice] Provider speak failed, falling back to browser TTS:', speakErr);
+            speakText(res.assistantResponse);
+          });
+        } else {
+          // Native audio from Gemini Live is played via onAudioChunk.
+          setCurrentStatus('IDLE');
         }
-      }, 500);
+      } else {
+        setCurrentStatus('IDLE');
+      }
     } catch (err: any) {
       console.error('[STRIDE Voice] Triage execution error:', err);
       setCurrentStatus('IDLE');
@@ -473,8 +478,18 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
       };
 
       setMessages((prev) => [...prev, assistantMsg]);
-      setCurrentStatus('IDLE');
-      speakText(res.assistantResponse);
+      if (!isMuted && res.assistantResponse) {
+        if (typeof providerRef.current?.speak === 'function') {
+          providerRef.current.speak(res.assistantResponse).catch((speakErr) => {
+            console.warn('[STRIDE Voice] Provider speak failed in text chat, falling back to browser TTS:', speakErr);
+            speakText(res.assistantResponse);
+          });
+        } else {
+          speakText(res.assistantResponse);
+        }
+      } else {
+        setCurrentStatus('IDLE');
+      }
     } catch (err: any) {
       console.error('Voice chat error:', err);
       setCurrentStatus('IDLE');
