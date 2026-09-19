@@ -28,6 +28,47 @@ export function getDeepgramBaseUrl(): string {
 }
 
 /**
+ * STRIDE Emergency Domain Vocabulary for Nova-3 Keyterm Prompting.
+ * Boosts speech recognition accuracy for critical disaster terms naturally
+ * without string replacement or fuzzy tampering.
+ */
+export const DEFAULT_STRIDE_EMERGENCY_KEYTERMS: string[] = [
+  'trapped',
+  'trapped upstairs',
+  'need rescue',
+  'water rising',
+  'fire',
+  'injured',
+  'heavily injured',
+  'seriously unwell',
+  'physically disabled',
+  'children',
+  'infants',
+  'elderly',
+  'grandmother',
+  'grandfather',
+  'rescue',
+  'bleeding',
+  'unconscious',
+  'missing',
+  'cannot move',
+];
+
+/**
+ * Retrieves configured keyterms for Nova-3 STT.
+ * Defaults to DEFAULT_STRIDE_EMERGENCY_KEYTERMS, overridable via DEEPGRAM_KEYTERMS.
+ */
+export function getDeepgramKeyterms(): string[] {
+  if (process.env.DEEPGRAM_KEYTERMS) {
+    const custom = process.env.DEEPGRAM_KEYTERMS.split(',')
+      .map((t) => t.trim())
+      .filter((t) => t.length > 0);
+    if (custom.length > 0) return custom;
+  }
+  return [...DEFAULT_STRIDE_EMERGENCY_KEYTERMS];
+}
+
+/**
  * Transcribes audio buffer using Deepgram STT REST API (/v1/listen).
  */
 export async function transcribeAudioWithDeepgram(
@@ -48,14 +89,24 @@ export async function transcribeAudioWithDeepgram(
 
   const sttModel = getDeepgramSttModel();
   const baseUrl = getDeepgramBaseUrl();
+  const keyterms = getDeepgramKeyterms();
   const cleanMime = mimeType.split(';')[0].trim() || 'audio/webm';
-  const targetUrl = `${baseUrl}/v1/listen?model=${encodeURIComponent(sttModel)}&smart_format=true&punctuate=true`;
+
+  const queryParams = [
+    `model=${encodeURIComponent(sttModel)}`,
+    'smart_format=true',
+    'punctuate=true',
+    ...keyterms.map((term) => `keyterm=${encodeURIComponent(term)}`),
+  ].join('&');
+
+  const targetUrl = `${baseUrl}/v1/listen?${queryParams}`;
 
   const startTime = Date.now();
   console.log(`[STRIDE Deepgram STT] Dispatching transcription request (id: ${reqId}):`, {
     model: sttModel,
     bufferBytes: audioBuffer.length,
     mimeType: cleanMime,
+    keytermsCount: keyterms.length,
   });
 
   const controller = new AbortController();

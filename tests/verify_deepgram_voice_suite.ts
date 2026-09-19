@@ -196,31 +196,43 @@ async function runSuite() {
 
   try {
     // -------------------------------------------------------------
-    // SCENARIO 1: Deepgram config (models and defaults)
+    // SCENARIO 1: Deepgram config (models, keyterms and defaults)
     // -------------------------------------------------------------
-    await runCheck('Scenario 1: Deepgram service model configuration defaults', async () => {
+    await runCheck('Scenario 1: Deepgram service model and keyterm configuration defaults', async () => {
       delete process.env.DEEPGRAM_STT_MODEL;
       delete process.env.DEEPGRAM_TTS_MODEL;
+      delete process.env.DEEPGRAM_KEYTERMS;
 
       const dummyAudio = Buffer.alloc(200, 'a');
       await transcribeAudioWithDeepgram(dummyAudio, 'audio/webm', 'corr-1');
       assert.ok(lastSttUrl.includes('model=nova-3'), `Expected default STT model nova-3 in URL: ${lastSttUrl}`);
+      assert.ok(lastSttUrl.includes('smart_format=true'), `Expected smart_format=true in URL: ${lastSttUrl}`);
+      assert.ok(lastSttUrl.includes('punctuate=true'), `Expected punctuate=true in URL: ${lastSttUrl}`);
+      assert.ok(lastSttUrl.includes('keyterm=trapped'), `Expected keyterm=trapped in URL: ${lastSttUrl}`);
+      assert.ok(lastSttUrl.includes('keyterm=trapped%20upstairs'), `Expected keyterm=trapped%20upstairs in URL: ${lastSttUrl}`);
+      assert.ok(lastSttUrl.includes('keyterm=water%20rising'), `Expected keyterm=water%20rising in URL: ${lastSttUrl}`);
+      assert.ok(lastSttUrl.includes('keyterm=need%20rescue'), `Expected keyterm=need%20rescue in URL: ${lastSttUrl}`);
+      assert.ok(lastSttUrl.includes('keyterm=cannot%20move'), `Expected keyterm=cannot%20move in URL: ${lastSttUrl}`);
 
       await synthesizeSpeechWithDeepgram('Hello world', 'corr-2');
       assert.ok(lastTtsUrl.includes('model=aura-asteria-en'), `Expected default TTS model aura-asteria-en in URL: ${lastTtsUrl}`);
 
-      // Test custom models
+      // Test custom models and custom keyterms
       process.env.DEEPGRAM_STT_MODEL = 'nova-2-general';
       process.env.DEEPGRAM_TTS_MODEL = 'aura-luna-en';
+      process.env.DEEPGRAM_KEYTERMS = 'custom-term,another-term';
 
       await transcribeAudioWithDeepgram(dummyAudio, 'audio/webm', 'corr-3');
       assert.ok(lastSttUrl.includes('model=nova-2-general'), `Expected custom STT model nova-2-general in URL: ${lastSttUrl}`);
+      assert.ok(lastSttUrl.includes('keyterm=custom-term'), `Expected custom keyterm in URL: ${lastSttUrl}`);
+      assert.ok(lastSttUrl.includes('keyterm=another-term'), `Expected custom keyterm in URL: ${lastSttUrl}`);
 
       await synthesizeSpeechWithDeepgram('Hello world 2', 'corr-4');
       assert.ok(lastTtsUrl.includes('model=aura-luna-en'), `Expected custom TTS model aura-luna-en in URL: ${lastTtsUrl}`);
 
       delete process.env.DEEPGRAM_STT_MODEL;
       delete process.env.DEEPGRAM_TTS_MODEL;
+      delete process.env.DEEPGRAM_KEYTERMS;
     });
 
     // -------------------------------------------------------------
@@ -558,6 +570,193 @@ async function runSuite() {
       const formatted = formatRescueRequest(dbReq);
       assert.equal(formatted.peopleCount, 4);
       assert.equal(formatted.emergencyType, 'TRAPPED');
+    });
+
+    // -------------------------------------------------------------
+    // SCENARIO 18 (TASK 4): Exact Failure Case Regression: "We are four people and we're trapped upstairs."
+    // -------------------------------------------------------------
+    await runCheck('Scenario 18: Exact failure case: "We are four people and we\'re trapped upstairs."', async () => {
+      // Clean up previous test requests for this user
+      if (testUser.households[0]?.members[0]) {
+        await prisma.emergencyCondition.deleteMany({
+          where: { emergencyRequest: { householdMemberId: testUser.households[0].members[0].id } },
+        });
+        await prisma.rescueAssignment.deleteMany({
+          where: { emergencyRequest: { householdMemberId: testUser.households[0].members[0].id } },
+        });
+        await prisma.emergencyRequest.deleteMany({
+          where: { householdMemberId: testUser.households[0].members[0].id },
+        });
+      }
+
+      // Exact phrase where "trapped" was previously misrecognized as "Westpac"
+      const exactUtterance = "We are four people and we're trapped upstairs.";
+
+      const triageRes = await fetch(`http://127.0.0.1:${stridePort}/api/voice/emergency-chat`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${citizenToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message: exactUtterance,
+          clientRequestId: `test-exact-trapped-${Date.now()}`,
+        }),
+      });
+
+      assert.equal(triageRes.status, 200);
+      const json = await triageRes.json();
+
+      assert.equal(json.mode, 'EMERGENCY');
+      assert.ok(json.activeRequest, 'Active request must be generated for trapped emergency');
+
+      // Check extracted facts
+      assert.equal(json.activeRequest.peopleCount, 4, `Expected peopleCount = 4, got ${json.activeRequest.peopleCount}`);
+      assert.equal(json.activeRequest.emergencyType, 'TRAPPED', `Expected emergencyType = TRAPPED, got ${json.activeRequest.emergencyType}`);
+
+      // Dynamic priority assertion: formula output is authoritative (NOT hardcoded)
+      const dynamicScore = json.activeRequest.priorityScore;
+      assert.ok(
+        typeof dynamicScore === 'number' && dynamicScore >= 15 && dynamicScore <= 100,
+        `Expected valid priority score between 15 and 100, got: ${dynamicScore}`
+      );
+      console.log(`     Exact failure case dynamic priority score: ${dynamicScore}`);
+
+      // Verify conditions in database include TRAPPED
+      const dbReq = await prisma.emergencyRequest.findUnique({
+        where: { id: json.activeRequest.id },
+        include: {
+          conditions: true,
+          rescueAssignments: true,
+          householdMember: { include: { household: { include: { user: true } } } },
+        },
+      });
+      assert.ok(dbReq, 'Database emergencyRequest must exist');
+      const conditionTypes = dbReq!.conditions.map((c) => c.conditionType);
+      assert.ok(conditionTypes.includes('TRAPPED'), `Conditions must include TRAPPED, got: ${conditionTypes.join(', ')}`);
+      assert.equal(dbReq!.priorityScore, dynamicScore);
+    });
+
+    // -------------------------------------------------------------
+    // SCENARIO 19 (TASK 5): Representative Emergency Phrases
+    // -------------------------------------------------------------
+    await runCheck('Scenario 19: Test representative emergency phrases', async () => {
+      const phrases = [
+        { phrase: 'We are trapped upstairs.', expectedType: 'TRAPPED', expectedCond: 'TRAPPED' },
+        { phrase: 'The water is rising.', expectedWater: 'HIGH', expectedCond: 'WATER_RISING' },
+        { phrase: 'There is a fire.', expectedType: 'FIRE', expectedCond: 'FIRE' },
+        { phrase: 'My grandmother is injured.', expectedElderly: 1, expectedInjured: 1, expectedCond: 'HEAVILY_INJURED' },
+        { phrase: 'One person is bleeding heavily.', expectedInjured: 1, expectedCond: 'HEAVILY_INJURED' },
+        { phrase: 'We need rescue.', expectedCond: 'NEED_RESCUE' },
+        { phrase: 'I cannot move.', expectedMode: ['ASSESS', 'EMERGENCY'] },
+      ];
+
+      for (const item of phrases) {
+        // Reset beacon before each phrase to test fresh turn extraction
+        if (testUser.households[0]?.members[0]) {
+          await prisma.emergencyCondition.deleteMany({
+            where: { emergencyRequest: { householdMemberId: testUser.households[0].members[0].id } },
+          });
+          await prisma.rescueAssignment.deleteMany({
+            where: { emergencyRequest: { householdMemberId: testUser.households[0].members[0].id } },
+          });
+          await prisma.emergencyRequest.deleteMany({
+            where: { householdMemberId: testUser.households[0].members[0].id },
+          });
+        }
+
+        const res = await fetch(`http://127.0.0.1:${stridePort}/api/voice/emergency-chat`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${citizenToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            message: item.phrase,
+            clientRequestId: `test-phrase-${Date.now()}`,
+          }),
+        });
+
+        assert.equal(res.status, 200, `Request failed for phrase: "${item.phrase}"`);
+        const json = await res.json();
+        assert.ok(json.assistantResponse && json.assistantResponse.length > 0, `Empty assistant response for: "${item.phrase}"`);
+
+        if (item.expectedType && json.activeRequest) {
+          assert.equal(json.activeRequest.emergencyType, item.expectedType, `Expected ${item.expectedType} for "${item.phrase}"`);
+        }
+        if (item.expectedWater && json.activeRequest) {
+          assert.equal(json.activeRequest.waterLevel, item.expectedWater, `Expected ${item.expectedWater} for "${item.phrase}"`);
+        }
+        if (item.expectedInjured && json.activeRequest) {
+          assert.equal(json.activeRequest.injuredCount, item.expectedInjured, `Expected injured=${item.expectedInjured} for "${item.phrase}"`);
+        }
+        if (item.expectedElderly && json.activeRequest) {
+          assert.equal(json.activeRequest.elderlyCount, item.expectedElderly, `Expected elderly=${item.expectedElderly} for "${item.phrase}"`);
+        }
+        if (item.expectedCond && json.activeRequest) {
+          const dbReq = await prisma.emergencyRequest.findUnique({
+            where: { id: json.activeRequest.id },
+            include: { conditions: true },
+          });
+          const types = dbReq?.conditions.map((c) => c.conditionType) || [];
+          assert.ok(types.includes(item.expectedCond), `Expected condition ${item.expectedCond} in ${types.join(', ')} for "${item.phrase}"`);
+        }
+      }
+    });
+
+    // -------------------------------------------------------------
+    // SCENARIO 20 (TASK 2 & 5): Ordinary Speech Not Over-Biased
+    // -------------------------------------------------------------
+    await runCheck('Scenario 20: Ordinary speech preservation without false positive emergency SOS', async () => {
+      // Clean up previous requests across all households and members for testUser
+      const userMembers = await prisma.householdMember.findMany({
+        where: { household: { userId: testUser.id } },
+      });
+      const memberIds = userMembers.map((m) => m.id);
+      if (memberIds.length > 0) {
+        await prisma.emergencyCondition.deleteMany({
+          where: { emergencyRequest: { householdMemberId: { in: memberIds } } },
+        });
+        await prisma.rescueAssignment.deleteMany({
+          where: { emergencyRequest: { householdMemberId: { in: memberIds } } },
+        });
+        await prisma.emergencyRequest.deleteMany({
+          where: { householdMemberId: { in: memberIds } },
+        });
+      }
+
+      const ordinaryQuestions = [
+        'Where is the nearest evacuation shelter?',
+        'What should I pack in an emergency supply kit?',
+        'Can you hear me?',
+      ];
+
+      for (const question of ordinaryQuestions) {
+        const res = await fetch(`http://127.0.0.1:${stridePort}/api/voice/emergency-chat`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${citizenToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            message: question,
+            clientRequestId: `test-ordinary-${Date.now()}`,
+          }),
+        });
+
+        assert.equal(res.status, 200);
+        const json = await res.json();
+
+        // Must remain in ASSIST mode
+        assert.equal(json.mode, 'ASSIST', `Expected ASSIST mode for ordinary question: "${question}", got ${json.mode}`);
+        assert.ok(!json.activeRequest, `No active SOS should be created for ordinary question: "${question}"`);
+
+        // Verify zero emergency requests created in database
+        const activeRequests = await prisma.emergencyRequest.findMany({
+          where: { householdMemberId: { in: testUser.households[0].members.map((m) => m.id) }, rescueStatus: { not: 'CANCELLED' } },
+        });
+        assert.equal(activeRequests.length, 0, `No database emergencyRequest must exist for ordinary speech`);
+      }
     });
 
   } finally {

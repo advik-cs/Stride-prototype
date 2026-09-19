@@ -4427,6 +4427,34 @@ function getDeepgramTtsModel() {
 function getDeepgramBaseUrl() {
   return (process.env.DEEPGRAM_BASE_URL || "https://api.deepgram.com").replace(/\/+$/, "");
 }
+var DEFAULT_STRIDE_EMERGENCY_KEYTERMS = [
+  "trapped",
+  "trapped upstairs",
+  "need rescue",
+  "water rising",
+  "fire",
+  "injured",
+  "heavily injured",
+  "seriously unwell",
+  "physically disabled",
+  "children",
+  "infants",
+  "elderly",
+  "grandmother",
+  "grandfather",
+  "rescue",
+  "bleeding",
+  "unconscious",
+  "missing",
+  "cannot move"
+];
+function getDeepgramKeyterms() {
+  if (process.env.DEEPGRAM_KEYTERMS) {
+    const custom = process.env.DEEPGRAM_KEYTERMS.split(",").map((t) => t.trim()).filter((t) => t.length > 0);
+    if (custom.length > 0) return custom;
+  }
+  return [...DEFAULT_STRIDE_EMERGENCY_KEYTERMS];
+}
 async function transcribeAudioWithDeepgram(audioBuffer, mimeType = "audio/webm", correlationId) {
   const reqId = correlationId || `stt-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
   if (!audioBuffer || audioBuffer.length < 100) {
@@ -4438,13 +4466,21 @@ async function transcribeAudioWithDeepgram(audioBuffer, mimeType = "audio/webm",
   }
   const sttModel = getDeepgramSttModel();
   const baseUrl = getDeepgramBaseUrl();
+  const keyterms = getDeepgramKeyterms();
   const cleanMime = mimeType.split(";")[0].trim() || "audio/webm";
-  const targetUrl = `${baseUrl}/v1/listen?model=${encodeURIComponent(sttModel)}&smart_format=true&punctuate=true`;
+  const queryParams = [
+    `model=${encodeURIComponent(sttModel)}`,
+    "smart_format=true",
+    "punctuate=true",
+    ...keyterms.map((term) => `keyterm=${encodeURIComponent(term)}`)
+  ].join("&");
+  const targetUrl = `${baseUrl}/v1/listen?${queryParams}`;
   const startTime = Date.now();
   console.log(`[STRIDE Deepgram STT] Dispatching transcription request (id: ${reqId}):`, {
     model: sttModel,
     bufferBytes: audioBuffer.length,
-    mimeType: cleanMime
+    mimeType: cleanMime,
+    keytermsCount: keyterms.length
   });
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 15e3);

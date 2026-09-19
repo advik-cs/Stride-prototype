@@ -44,7 +44,8 @@ async function runRealBrowserDeepgramSuite() {
   let browser: any = null;
   let sttCallCount = 0;
   let ttsCallCount = 0;
-  let currentTurnTranscript = 'There are four people with me and we are trapped upstairs.';
+  let lastReceivedSttUrl = '';
+  let currentTurnTranscript = "We are four people and we're trapped upstairs.";
 
   // 1. Setup Mock Deepgram HTTP Server
   await new Promise<void>((resolve) => {
@@ -55,6 +56,7 @@ async function runRealBrowserDeepgramSuite() {
         req.on('data', (chunk) => chunks.push(chunk));
         req.on('end', () => {
           sttCallCount++;
+          lastReceivedSttUrl = req.url;
           console.log(`  [Mock Deepgram STT] Received audio stream (${chunks.reduce((a, c) => a + c.length, 0)} bytes). Transcribing: "${currentTurnTranscript}"`);
           res.json({
             results: {
@@ -296,6 +298,11 @@ async function runRealBrowserDeepgramSuite() {
       const providerBadge = page.locator('text=DEEPGRAM-TURN');
       await providerBadge.waitFor({ state: 'visible', timeout: 5000 });
       assert(await providerBadge.isVisible(), 'Provider badge must display DEEPGRAM-TURN');
+
+      // Verify Subtitle displays provider-neutral copy
+      const subtitle = page.locator('text=Voice emergency reporting & deterministic priority triage powered by STRIDE');
+      await subtitle.waitFor({ state: 'visible', timeout: 5000 });
+      assert(await subtitle.isVisible(), 'Provider-neutral subtitle must be visible');
     });
 
     // =================================================================
@@ -324,7 +331,7 @@ async function runRealBrowserDeepgramSuite() {
       await micBtn.click();
 
       // Wait for user bubble with transcribed text to appear in chat
-      const userBubble = page.locator('p:has-text("There are four people with me and we are trapped upstairs.")').last();
+      const userBubble = page.locator('p:has-text("We are four people and we\'re trapped upstairs.")').last();
       await userBubble.waitFor({ state: 'visible', timeout: 10000 });
       assert(await userBubble.isVisible(), 'Transcribed user message must appear in chat');
 
@@ -333,8 +340,12 @@ async function runRealBrowserDeepgramSuite() {
       await sosBanner.waitFor({ state: 'visible', timeout: 10000 });
       assert(await sosBanner.isVisible(), 'ACTIVE RESCUE BEACON banner must appear');
 
-      // Verify STT and TTS were called
+      // Verify STT was called with Nova-3 keyterms
       assert(sttCallCount >= 1, `Deepgram STT should have been called at least once (got ${sttCallCount})`);
+      assert(lastReceivedSttUrl.includes('keyterm=trapped'), 'Deepgram STT request URL must include keyterm=trapped');
+      assert(lastReceivedSttUrl.includes('keyterm=trapped%20upstairs'), 'Deepgram STT request URL must include keyterm=trapped%20upstairs');
+
+      // Verify TTS was called
       assert(ttsCallCount >= 1, `Deepgram TTS should have been called at least once (got ${ttsCallCount})`);
 
       // Verify database record: peopleCount = 4, emergencyType = TRAPPED, priority calculated
@@ -400,6 +411,40 @@ async function runRealBrowserDeepgramSuite() {
         `Expected valid priority score between 15 and 100, got: ${req2.priorityScore}`
       );
       console.log(`     Turn 2 updated authoritative priority score: ${req2.priorityScore}`);
+    });
+
+    // =================================================================
+    // TEST 6: Third Turn with Informational Speech Preserves Active SOS
+    // =================================================================
+    await test('6. Third turn with informational query preserves active SOS and receives assistant guidance', async () => {
+      // Set mock STT transcript for turn 3
+      currentTurnTranscript = 'Where is the nearest evacuation shelter?';
+
+      // Start recording turn 3
+      const micBtn = page.locator('#voice-assistant-mic-btn');
+      await micBtn.click();
+      await page.waitForTimeout(1500);
+
+      // Stop recording turn 3
+      await micBtn.click();
+
+      // Wait for turn 3 user message in chat
+      const userBubble3 = page.locator('p:has-text("Where is the nearest evacuation shelter?")').last();
+      await userBubble3.waitFor({ state: 'visible', timeout: 10000 });
+      assert(await userBubble3.isVisible(), 'Turn 3 transcribed utterance must appear in chat');
+
+      await page.waitForTimeout(2000);
+
+      // Active SOS must remain active in database with unchanged SOS id
+      const activeRequests = await prisma.emergencyRequest.findMany({
+        where: { householdMemberId: { in: memberIds }, rescueStatus: { not: 'CANCELLED' } },
+      });
+      assert(activeRequests.length === 1, 'Active SOS must still exist');
+      assert(activeRequests[0].id === activeSosIdFromTurn1, 'Active SOS ID must remain unchanged');
+
+      // Banner must still be visible
+      const sosBanner = page.locator('text=ACTIVE RESCUE BEACON');
+      assert(await sosBanner.isVisible(), 'ACTIVE RESCUE BEACON banner must remain visible');
     });
 
   } finally {

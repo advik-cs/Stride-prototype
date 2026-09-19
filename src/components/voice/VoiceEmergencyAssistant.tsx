@@ -622,7 +622,7 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
                 </span>
               </div>
               <p className="text-[11px] text-[#567C8D]">
-                Real-time speech & deterministic priority triage powered by Gemini Live & STRIDE
+                Voice emergency reporting & deterministic priority triage powered by STRIDE
               </p>
             </div>
           </div>
