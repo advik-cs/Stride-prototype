@@ -23,6 +23,7 @@ export class GeminiLiveProvider implements VoiceProvider {
   private isConnected = false;
   private isSetupComplete = false;
   private connectionPromise: Promise<void> | null = null;
+  private lastServerError: any = null;
 
   setCallbacks(callbacks: VoiceProviderCallbacks): void {
     this.callbacks = callbacks;
@@ -59,8 +60,10 @@ export class GeminiLiveProvider implements VoiceProvider {
   private async performConnect(): Promise<void> {
     this.setStatus('IDLE');
     this.isSetupComplete = false;
+    this.lastServerError = null;
 
     // 1. Request short-lived ephemeral token from STRIDE backend
+    console.log('[STRIDE GeminiLiveProvider] Requesting ephemeral session token via POST /api/voice/session-token...');
     let tokenData: {
       liveEnabled: boolean;
       token?: string;
@@ -80,6 +83,27 @@ export class GeminiLiveProvider implements VoiceProvider {
       throw new Error(msg);
     }
 
+    let hostAndPath = '';
+    let hasAccessToken = false;
+    try {
+      const u = new URL(tokenData.webSocketUrl);
+      hostAndPath = `${u.origin}${u.pathname}`;
+      hasAccessToken = u.searchParams.has('access_token');
+    } catch {
+      hostAndPath = tokenData.webSocketUrl || 'none';
+    }
+
+    console.log('[STRIDE GeminiLiveProvider] Session token response received:', {
+      liveEnabled: tokenData.liveEnabled,
+      model: tokenData.model,
+      tokenName: tokenData.tokenName || 'none',
+      hasToken: !!tokenData.token,
+      tokenLength: tokenData.token ? tokenData.token.length : 0,
+      tokenPrefix: tokenData.token ? tokenData.token.slice(0, 15) : 'none',
+      webSocketHostAndPath: hostAndPath,
+      hasAccessToken,
+    });
+
     if (!tokenData.liveEnabled || !tokenData.webSocketUrl) {
       const reason = tokenData.reason || 'Gemini Live is not enabled on the server.';
       console.warn('[STRIDE GeminiLiveProvider] Live connection unconfigured:', reason);
@@ -91,7 +115,7 @@ export class GeminiLiveProvider implements VoiceProvider {
     // 2. Open WebSocket connection to BidiGenerateContentConstrained
     return new Promise<void>((resolve, reject) => {
       try {
-        console.log('[STRIDE GeminiLiveProvider] Connecting to Live WebSocket...');
+        console.log(`[STRIDE GeminiLiveProvider] Connecting to Live WebSocket at: ${hostAndPath}?access_token=<MASKED>`);
         this.ws = new WebSocket(tokenData.webSocketUrl);
 
         let setupResolved = false;
@@ -128,10 +152,10 @@ export class GeminiLiveProvider implements VoiceProvider {
                 ],
               },
               inputAudioTranscription: {},
-              outputAudioTranscription: {},
             },
           };
 
+          console.log('[STRIDE GeminiLiveProvider] Setup frame payload:', JSON.stringify(setupMessage, null, 2));
           this.sendJson(setupMessage);
         };
 
@@ -147,32 +171,45 @@ export class GeminiLiveProvider implements VoiceProvider {
 
           try {
             const msg = JSON.parse(textData);
+            console.log('[STRIDE GeminiLiveProvider] Server message received:', JSON.stringify(msg, null, 2));
+
+            if (msg.error) {
+              console.error('[STRIDE GeminiLiveProvider] Server returned ERROR frame:', msg.error);
+              this.lastServerError = msg.error;
+            }
+
+            if (msg.goaway) {
+              console.warn('[STRIDE GeminiLiveProvider] Server sent GOAWAY frame:', msg.goaway);
+              this.lastServerError = msg.goaway;
+            }
+
             this.handleServerMessage(msg);
 
             // Resolve initial connection once setup is acknowledged
             if (msg.setupComplete && !setupResolved) {
               setupResolved = true;
               this.isSetupComplete = true;
-              console.log('[STRIDE GeminiLiveProvider] SetupComplete confirmed. Provider ready.');
+              console.log('[STRIDE GeminiLiveProvider] SetupComplete confirmed! Provider ready for live audio.');
               resolve();
             }
           } catch (jsonErr) {
-            console.warn('[STRIDE GeminiLiveProvider] Error parsing server message:', jsonErr);
+            console.warn('[STRIDE GeminiLiveProvider] Error parsing server message:', jsonErr, 'Raw data:', textData);
           }
         };
 
         this.ws.onerror = (errEvent: Event) => {
-          console.error('[STRIDE GeminiLiveProvider] WebSocket error:', errEvent);
-          this.setStatus('ERROR');
-          const err = new Error('Gemini Live WebSocket encountered a connection error.');
-          this.callbacks.onError?.(err);
-          if (!setupResolved) {
-            reject(err);
-          }
+          console.error('[STRIDE GeminiLiveProvider] WebSocket onerror event triggered:', errEvent);
+          // onerror typically does not contain detailed message; onclose will follow
         };
 
         this.ws.onclose = (closeEvent: CloseEvent) => {
-          console.log('[STRIDE GeminiLiveProvider] WebSocket closed:', closeEvent.code, closeEvent.reason);
+          console.warn('[STRIDE GeminiLiveProvider] WebSocket closed:', {
+            code: closeEvent.code,
+            reason: closeEvent.reason,
+            wasClean: closeEvent.wasClean,
+            lastServerError: this.lastServerError,
+          });
+
           this.isConnected = false;
           this.isSetupComplete = false;
           if (this.status === 'LISTENING') {
@@ -181,15 +218,26 @@ export class GeminiLiveProvider implements VoiceProvider {
           if (this.status !== 'ERROR') {
             this.setStatus('IDLE');
           }
+
           if (!setupResolved) {
-            reject(new Error(`WebSocket closed before setup completed (code: ${closeEvent.code}).`));
+            const reasonDetail = closeEvent.reason ? ` - ${closeEvent.reason}` : '';
+            const serverErrDetail = this.lastServerError
+              ? ` (Server error payload: ${typeof this.lastServerError === 'object' ? JSON.stringify(this.lastServerError) : this.lastServerError})`
+              : '';
+            const fullErrorMsg = `WebSocket closed before setup completed (code: ${closeEvent.code}${reasonDetail})${serverErrDetail}`;
+
+            console.error('[STRIDE GeminiLiveProvider] Connection failed:', fullErrorMsg);
+            const err = new Error(fullErrorMsg);
+            this.setStatus('ERROR');
+            this.callbacks.onError?.(err);
+            reject(err);
           }
         };
 
         // 10s connection timeout
         setTimeout(() => {
           if (!setupResolved) {
-            const timeoutErr = new Error('Timeout waiting for Gemini Live setup completion.');
+            const timeoutErr = new Error('Timeout waiting for Gemini Live setup completion (10s).');
             this.disconnect();
             reject(timeoutErr);
           }

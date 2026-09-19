@@ -1,4 +1,4 @@
-import { DURING_API_BASE_URL, ApiError } from './config';
+import { DURING_API_BASE_URL, getDuringApiBaseUrl, ApiError } from './config';
 
 /**
  * Standard HTTP helper for DURING Backend
@@ -18,7 +18,8 @@ async function duringRequest<T>(endpoint: string, options: RequestInit = {}): Pr
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const url = `${DURING_API_BASE_URL}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+  const baseUrl = (typeof getDuringApiBaseUrl === 'function' ? getDuringApiBaseUrl() : DURING_API_BASE_URL);
+  const url = `${baseUrl}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
 
   try {
     const res = await fetch(url, { ...options, headers });

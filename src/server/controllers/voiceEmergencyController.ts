@@ -889,18 +889,48 @@ export async function handleGetSessionToken(
   req: AuthenticatedRequest,
   res: Response
 ): Promise<void> {
-  try {
-    const correlationId =
-      (typeof req.headers['x-request-id'] === 'string' && req.headers['x-request-id'].trim()) ||
-      `live-tok-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+  const correlationId =
+    (typeof req.headers['x-request-id'] === 'string' && req.headers['x-request-id'].trim()) ||
+    `live-tok-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
 
+  console.log('[STRIDE Live Voice Session-Token Controller] Request received:', {
+    correlationId,
+    userId: req.user?.userId || 'unknown',
+    method: req.method,
+    url: req.originalUrl || req.url,
+  });
+
+  try {
     const tokenResult = await createLiveSessionToken(correlationId);
+
+    let hostAndPath = '';
+    try {
+      const u = new URL(tokenResult.webSocketUrl);
+      hostAndPath = `${u.origin}${u.pathname}`;
+    } catch {
+      hostAndPath = tokenResult.webSocketUrl ? 'invalid-url' : 'none';
+    }
+
+    console.log('[STRIDE Live Voice Session-Token Controller] Response ready:', {
+      correlationId,
+      liveEnabled: tokenResult.liveEnabled,
+      model: tokenResult.model,
+      tokenName: tokenResult.tokenName || 'none',
+      hasToken: !!tokenResult.token,
+      tokenLength: tokenResult.token ? tokenResult.token.length : 0,
+      tokenPrefix: tokenResult.token ? tokenResult.token.slice(0, 15) : 'none',
+      webSocketHostAndPath: hostAndPath,
+    });
+
     res.json(tokenResult);
   } catch (err: any) {
-    console.error('Get live session token controller error:', err);
+    console.error('[STRIDE Live Voice Session-Token Controller] Error generating token:', {
+      correlationId,
+      error: err?.message || err,
+    });
     res.status(500).json({
       liveEnabled: false,
-      model: process.env.GEMINI_LIVE_MODEL || 'gemini-2.0-flash',
+      model: process.env.GEMINI_LIVE_MODEL || 'gemini-3.8-live',
       webSocketUrl: '',
       reason: err.message || 'Internal server error generating live session token.',
     });

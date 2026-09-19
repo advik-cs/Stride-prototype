@@ -1,7 +1,7 @@
 /**
  * Global API configuration and error handling.
  */
-const env = (import.meta as any).env || {};
+const env = (import.meta as any).env || (typeof process !== 'undefined' ? process.env : {}) || {};
 
 // Universal production API base URL (configurable in Vercel as VITE_API_BASE_URL or VITE_API_URL)
 const universalBase = env.VITE_API_BASE_URL || env.VITE_API_URL || '';
@@ -26,12 +26,18 @@ export const BEFORE_API_BASE_URL =
     ? 'http://localhost:4000/api'
     : '/api');
 
-export const DURING_API_BASE_URL =
-  env.VITE_DURING_API_URL ||
-  universalApi ||
-  (isLocal && typeof window !== 'undefined' && window.location.port !== '3000'
-    ? 'http://localhost:5000/api'
-    : '/api');
+export function getDuringApiBaseUrl(): string {
+  const currentEnv = (import.meta as any).env || (typeof process !== 'undefined' ? process.env : {}) || {};
+  return (
+    currentEnv.VITE_DURING_API_URL ||
+    universalApi ||
+    (isLocal && typeof window !== 'undefined' && window.location.port !== '3000'
+      ? 'http://localhost:5000/api'
+      : '/api')
+  );
+}
+
+export const DURING_API_BASE_URL = getDuringApiBaseUrl();
 
 export const FLOODX_EMBED_URL =
   env.VITE_FLOODX_EMBED_URL ||

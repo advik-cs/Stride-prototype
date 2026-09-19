@@ -4306,9 +4306,11 @@ import { GoogleGenAI as GoogleGenAI2 } from "@google/genai";
 async function createLiveSessionToken(correlationId) {
   const reqId = correlationId || `token-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
   const apiKey = getGeminiApiKey();
-  const liveModel = process.env.GEMINI_LIVE_MODEL || "gemini-2.0-flash";
-  const webSocketBaseUrl = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContentConstrained";
+  const liveModel = process.env.GEMINI_LIVE_MODEL || "gemini-3.8-live";
+  const webSocketBaseUrl = process.env.GEMINI_LIVE_WS_BASE_URL || "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContentConstrained";
+  console.log(`[STRIDE Live Voice] createLiveSessionToken called (id: ${reqId}, model: ${liveModel})`);
   if (apiKey && (apiKey.startsWith("test-") || process.env.NODE_ENV === "test") && process.env.GEMINI_LIVE_WS_URL) {
+    console.log(`[STRIDE Live Voice] Test environment detected. Returning mock WebSocket URL (id: ${reqId})`);
     return {
       liveEnabled: true,
       token: "test-ephemeral-live-token",
@@ -4340,17 +4342,26 @@ async function createLiveSessionToken(correlationId) {
       });
       const tokenValue = tokenResp.token || tokenResp.name || "";
       const tokenName = tokenResp.name || "";
-      console.log(`[STRIDE Live Voice] Ephemeral token created via SDK (id: ${reqId}, tokenName: ${tokenName || "ok"})`);
+      const u = new URL(webSocketBaseUrl);
+      console.log(`[STRIDE Live Voice] Ephemeral token created via SDK (id: ${reqId}):`, {
+        liveEnabled: true,
+        model: liveModel,
+        tokenName: tokenName || "ok",
+        tokenLength: tokenValue.length,
+        tokenPrefix: tokenValue.slice(0, 15),
+        webSocketHost: u.host,
+        webSocketPath: u.pathname
+      });
       return {
         liveEnabled: true,
         token: tokenValue,
         tokenName,
         model: liveModel,
-        webSocketUrl: `${webSocketBaseUrl}?access_token=${encodeURIComponent(tokenValue)}`
+        webSocketUrl: `${webSocketBaseUrl}?access_token=${tokenValue}`
       };
     }
   } catch (sdkErr) {
-    console.warn(`[STRIDE Live Voice] SDK authTokens.create failed, trying direct REST fallback (id: ${reqId}):`, sdkErr?.message || sdkErr);
+    console.warn(`[STRIDE Live Voice] SDK authTokens.create not available, using direct REST fallback (id: ${reqId}):`, sdkErr?.message || sdkErr);
   }
   try {
     const restResp = await fetch("https://generativelanguage.googleapis.com/v1beta/auth_tokens", {
@@ -4378,13 +4389,22 @@ async function createLiveSessionToken(correlationId) {
     const data = await restResp.json();
     const tokenValue = data.token || data.name || "";
     const tokenName = data.name || "";
-    console.log(`[STRIDE Live Voice] Ephemeral token created via REST (id: ${reqId}, tokenName: ${tokenName})`);
+    const u = new URL(webSocketBaseUrl);
+    console.log(`[STRIDE Live Voice] Ephemeral token created via REST (id: ${reqId}):`, {
+      liveEnabled: true,
+      model: liveModel,
+      tokenName: tokenName || "none",
+      tokenLength: tokenValue.length,
+      tokenPrefix: tokenValue.slice(0, 15),
+      webSocketHost: u.host,
+      webSocketPath: u.pathname
+    });
     return {
       liveEnabled: true,
       token: tokenValue,
       tokenName,
       model: liveModel,
-      webSocketUrl: `${webSocketBaseUrl}?access_token=${encodeURIComponent(tokenValue)}`
+      webSocketUrl: `${webSocketBaseUrl}?access_token=${tokenValue}`
     };
   } catch (restErr) {
     console.error(`[STRIDE Live Voice] Network error requesting ephemeral token (id: ${reqId}):`, restErr?.message || restErr);
@@ -5101,15 +5121,41 @@ async function handleResetTestBeacon(req, res) {
   }
 }
 async function handleGetSessionToken(req, res) {
+  const correlationId = typeof req.headers["x-request-id"] === "string" && req.headers["x-request-id"].trim() || `live-tok-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+  console.log("[STRIDE Live Voice Session-Token Controller] Request received:", {
+    correlationId,
+    userId: req.user?.userId || "unknown",
+    method: req.method,
+    url: req.originalUrl || req.url
+  });
   try {
-    const correlationId = typeof req.headers["x-request-id"] === "string" && req.headers["x-request-id"].trim() || `live-tok-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
     const tokenResult = await createLiveSessionToken(correlationId);
+    let hostAndPath = "";
+    try {
+      const u = new URL(tokenResult.webSocketUrl);
+      hostAndPath = `${u.origin}${u.pathname}`;
+    } catch {
+      hostAndPath = tokenResult.webSocketUrl ? "invalid-url" : "none";
+    }
+    console.log("[STRIDE Live Voice Session-Token Controller] Response ready:", {
+      correlationId,
+      liveEnabled: tokenResult.liveEnabled,
+      model: tokenResult.model,
+      tokenName: tokenResult.tokenName || "none",
+      hasToken: !!tokenResult.token,
+      tokenLength: tokenResult.token ? tokenResult.token.length : 0,
+      tokenPrefix: tokenResult.token ? tokenResult.token.slice(0, 15) : "none",
+      webSocketHostAndPath: hostAndPath
+    });
     res.json(tokenResult);
   } catch (err) {
-    console.error("Get live session token controller error:", err);
+    console.error("[STRIDE Live Voice Session-Token Controller] Error generating token:", {
+      correlationId,
+      error: err?.message || err
+    });
     res.status(500).json({
       liveEnabled: false,
-      model: process.env.GEMINI_LIVE_MODEL || "gemini-2.0-flash",
+      model: process.env.GEMINI_LIVE_MODEL || "gemini-3.8-live",
       webSocketUrl: "",
       reason: err.message || "Internal server error generating live session token."
     });
