@@ -257,6 +257,27 @@ export const duringApi = {
     });
   },
 
+  // Gemini Live API Ephemeral Token Provisioning
+  async getLiveSessionToken(): Promise<{
+    liveEnabled: boolean;
+    token?: string;
+    tokenName?: string;
+    model: string;
+    webSocketUrl: string;
+    reason?: string;
+  }> {
+    return duringRequest<{
+      liveEnabled: boolean;
+      token?: string;
+      tokenName?: string;
+      model: string;
+      webSocketUrl: string;
+      reason?: string;
+    }>('/voice/session-token', {
+      method: 'POST',
+    });
+  },
+
   // STRIDE Voice Emergency AI Assistant (Text fallback / Direct transcript)
   async voiceEmergencyChat(data: {
     message: string;

@@ -4,6 +4,7 @@ import {
   handleVoiceEmergencyChat,
   handleVoiceEmergencyAudio,
   handleResetTestBeacon,
+  handleGetSessionToken,
 } from '../controllers/voiceEmergencyController.ts';
 import { requireAuth } from '../middleware/auth.ts';
 
@@ -32,6 +33,10 @@ const safeAudioUpload = (req: any, res: any, next: any) => {
     next();
   }
 };
+
+// Ephemeral session token endpoint for Gemini Live API
+router.post('/voice/session-token', requireAuth, handleGetSessionToken);
+router.get('/voice/session-token', requireAuth, handleGetSessionToken);
 
 // Text / transcribed chat endpoint
 router.post('/voice/emergency-chat', requireAuth, handleVoiceEmergencyChat);

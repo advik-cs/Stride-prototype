@@ -4301,6 +4301,102 @@ async function processEmergencyAudioInput(audioBuffer, mimeType, history, contex
   }
 }
 
+// src/server/services/liveVoiceService.ts
+import { GoogleGenAI as GoogleGenAI2 } from "@google/genai";
+async function createLiveSessionToken(correlationId) {
+  const reqId = correlationId || `token-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+  const apiKey = getGeminiApiKey();
+  const liveModel = process.env.GEMINI_LIVE_MODEL || "gemini-2.0-flash";
+  const webSocketBaseUrl = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContentConstrained";
+  if (apiKey && (apiKey.startsWith("test-") || process.env.NODE_ENV === "test") && process.env.GEMINI_LIVE_WS_URL) {
+    return {
+      liveEnabled: true,
+      token: "test-ephemeral-live-token",
+      tokenName: "test-token",
+      model: liveModel,
+      webSocketUrl: `${process.env.GEMINI_LIVE_WS_URL}?access_token=test-ephemeral-live-token`
+    };
+  }
+  if (!apiKey) {
+    console.warn(`[STRIDE Live Voice] No GEMINI_API_KEY found in server environment (id: ${reqId}). Live API direct WebSockets unavailable.`);
+    return {
+      liveEnabled: false,
+      model: liveModel,
+      webSocketUrl: webSocketBaseUrl,
+      reason: "GEMINI_API_KEY is not configured on the server. Please check server environment configuration."
+    };
+  }
+  const expireTime = new Date(Date.now() + 30 * 60 * 1e3).toISOString();
+  const newSessionExpireTime = new Date(Date.now() + 5 * 60 * 1e3).toISOString();
+  try {
+    const ai = new GoogleGenAI2({ apiKey });
+    if (ai.authTokens && typeof ai.authTokens.create === "function") {
+      const tokenResp = await ai.authTokens.create({
+        config: {
+          uses: 1,
+          expireTime,
+          newSessionExpireTime
+        }
+      });
+      const tokenValue = tokenResp.token || tokenResp.name || "";
+      const tokenName = tokenResp.name || "";
+      console.log(`[STRIDE Live Voice] Ephemeral token created via SDK (id: ${reqId}, tokenName: ${tokenName || "ok"})`);
+      return {
+        liveEnabled: true,
+        token: tokenValue,
+        tokenName,
+        model: liveModel,
+        webSocketUrl: `${webSocketBaseUrl}?access_token=${encodeURIComponent(tokenValue)}`
+      };
+    }
+  } catch (sdkErr) {
+    console.warn(`[STRIDE Live Voice] SDK authTokens.create failed, trying direct REST fallback (id: ${reqId}):`, sdkErr?.message || sdkErr);
+  }
+  try {
+    const restResp = await fetch("https://generativelanguage.googleapis.com/v1beta/auth_tokens", {
+      method: "POST",
+      headers: {
+        "x-goog-api-key": apiKey,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        uses: 1,
+        expireTime,
+        newSessionExpireTime
+      })
+    });
+    if (!restResp.ok) {
+      const errBody = await restResp.text();
+      console.error(`[STRIDE Live Voice] REST auth_tokens failed with status ${restResp.status} (id: ${reqId}): ${errBody}`);
+      return {
+        liveEnabled: false,
+        model: liveModel,
+        webSocketUrl: webSocketBaseUrl,
+        reason: `Gemini Token API error: ${restResp.status} ${errBody}`
+      };
+    }
+    const data = await restResp.json();
+    const tokenValue = data.token || data.name || "";
+    const tokenName = data.name || "";
+    console.log(`[STRIDE Live Voice] Ephemeral token created via REST (id: ${reqId}, tokenName: ${tokenName})`);
+    return {
+      liveEnabled: true,
+      token: tokenValue,
+      tokenName,
+      model: liveModel,
+      webSocketUrl: `${webSocketBaseUrl}?access_token=${encodeURIComponent(tokenValue)}`
+    };
+  } catch (restErr) {
+    console.error(`[STRIDE Live Voice] Network error requesting ephemeral token (id: ${reqId}):`, restErr?.message || restErr);
+    return {
+      liveEnabled: false,
+      model: liveModel,
+      webSocketUrl: webSocketBaseUrl,
+      reason: `Failed to connect to Gemini Token API: ${restErr?.message || "Network error"}`
+    };
+  }
+}
+
 // src/server/controllers/voiceEmergencyController.ts
 var KNOWN_LOCALITY_COORDS = {
   indiranagar: [12.9784, 77.6408],
@@ -5004,6 +5100,21 @@ async function handleResetTestBeacon(req, res) {
     res.status(500).json({ error: err.message || "Failed to reset test beacon." });
   }
 }
+async function handleGetSessionToken(req, res) {
+  try {
+    const correlationId = typeof req.headers["x-request-id"] === "string" && req.headers["x-request-id"].trim() || `live-tok-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    const tokenResult = await createLiveSessionToken(correlationId);
+    res.json(tokenResult);
+  } catch (err) {
+    console.error("Get live session token controller error:", err);
+    res.status(500).json({
+      liveEnabled: false,
+      model: process.env.GEMINI_LIVE_MODEL || "gemini-2.0-flash",
+      webSocketUrl: "",
+      reason: err.message || "Internal server error generating live session token."
+    });
+  }
+}
 
 // src/server/routes/voiceRoutes.ts
 var router9 = Router9();
@@ -5027,6 +5138,8 @@ var safeAudioUpload = (req, res, next) => {
     next();
   }
 };
+router9.post("/voice/session-token", requireAuth, handleGetSessionToken);
+router9.get("/voice/session-token", requireAuth, handleGetSessionToken);
 router9.post("/voice/emergency-chat", requireAuth, handleVoiceEmergencyChat);
 router9.post("/emergency-chat", requireAuth, handleVoiceEmergencyChat);
 router9.post("/voice/emergency-audio", requireAuth, safeAudioUpload, handleVoiceEmergencyAudio);

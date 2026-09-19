@@ -10,6 +10,7 @@ import {
   AudioFailureStage,
   normalizeAudioMimeType,
 } from '../services/geminiVoiceService.ts';
+import { createLiveSessionToken } from '../services/liveVoiceService.ts';
 import { formatRescueRequest } from './rescueController.ts';
 import { calculateHaversineDistance } from '../utils/geo.ts';
 
@@ -877,6 +878,32 @@ export async function handleResetTestBeacon(
   } catch (err: any) {
     console.error('Reset test beacon error:', err);
     res.status(500).json({ error: err.message || 'Failed to reset test beacon.' });
+  }
+}
+
+/**
+ * Ephemeral session token provisioning endpoint for Gemini Live API.
+ * Authenticated via JWT; provisions a short-lived token without exposing GEMINI_API_KEY.
+ */
+export async function handleGetSessionToken(
+  req: AuthenticatedRequest,
+  res: Response
+): Promise<void> {
+  try {
+    const correlationId =
+      (typeof req.headers['x-request-id'] === 'string' && req.headers['x-request-id'].trim()) ||
+      `live-tok-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+
+    const tokenResult = await createLiveSessionToken(correlationId);
+    res.json(tokenResult);
+  } catch (err: any) {
+    console.error('Get live session token controller error:', err);
+    res.status(500).json({
+      liveEnabled: false,
+      model: process.env.GEMINI_LIVE_MODEL || 'gemini-2.0-flash',
+      webSocketUrl: '',
+      reason: err.message || 'Internal server error generating live session token.',
+    });
   }
 }
 

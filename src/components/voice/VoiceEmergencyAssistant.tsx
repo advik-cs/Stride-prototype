@@ -1,28 +1,24 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { duringApi, RescueRequest } from '../../api/duringApi';
 import { DisasterEvent } from '../../services/disasterService.ts';
+import { VoiceProvider, VoiceProviderStatus } from '../../services/voice/VoiceProvider';
+import { getVoiceProvider } from '../../services/voice/voiceProviderFactory';
+import { PcmPlayer } from '../../services/voice/pcmAudioProcessor';
 import {
   Mic,
-  MicOff,
   Volume2,
   VolumeX,
   Send,
   LifeBuoy,
   AlertTriangle,
-  CheckCircle2,
-  ShieldCheck,
   Clock,
-  MapPin,
   X,
   Loader2,
-  Radio,
   Users,
-  Droplets,
-  Flame,
-  Activity,
   Sparkles,
   Square,
   RotateCcw,
+  RefreshCw,
 } from 'lucide-react';
 
 interface VoiceEmergencyAssistantProps {
@@ -61,28 +57,28 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
   ]);
 
   const [inputVal, setInputVal] = useState('');
-  const [currentStatus, setCurrentStatus] = useState<'IDLE' | 'LISTENING' | 'PROCESSING' | 'SPEAKING'>('IDLE');
+  const [currentStatus, setCurrentStatus] = useState<VoiceProviderStatus>('IDLE');
   const [currentMode, setCurrentMode] = useState<'ASSIST' | 'ASSESS' | 'EMERGENCY'>('ASSIST');
   const [activeRequest, setActiveRequest] = useState<RescueRequest | null>(null);
   const [isMuted, setIsMuted] = useState(false);
   const [micError, setMicError] = useState<string | null>(null);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [interimTranscript, setInterimTranscript] = useState('');
   const [locationConflict, setLocationConflict] = useState(false);
   const [currentLocation, setCurrentLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [providerName, setProviderName] = useState('gemini-live');
   const [sessionId, setSessionId] = useState<string>(
     () => `sess-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`
   );
 
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioStreamRef = useRef<MediaStream | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
+  const providerRef = useRef<VoiceProvider | null>(null);
+  const pcmPlayerRef = useRef<PcmPlayer>(new PcmPlayer());
   const recordingTimerRef = useRef<any>(null);
   const chatBottomRef = useRef<HTMLDivElement>(null);
-  const isRecordingRef = useRef(false);
-  const hasStoppedRef = useRef(false);
-  const isSubmittingAudioRef = useRef(false);
+  const isSubmittingTurnRef = useRef(false);
   const isSubmittingTextRef = useRef(false);
-  const recordingStartTimeRef = useRef<number>(0);
+  const activeRequestIdRef = useRef<string | null>(null);
+  activeRequestIdRef.current = activeRequest?.id || null;
 
   // Initialize GPS location
   useEffect(() => {
@@ -95,44 +91,390 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
           });
         },
         () => {
-          // Default to Bengaluru central coords
           setCurrentLocation({ latitude: 12.9716, longitude: 77.5946 });
         }
       );
     }
   }, []);
 
-  // Track modal open transitions to initialize clean conversation history
-  const prevIsOpenRef = useRef(isOpen);
+  // Initialize active request
   useEffect(() => {
-    if (isOpen && !prevIsOpenRef.current) {
-      // Opening a new assistant session initializes clean conversation history
-      setSessionId(`sess-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`);
-      setMessages([
-        {
-          id: 'welcome-msg-' + Date.now(),
-          role: 'assistant',
-          content:
-            "Hello, I am the STRIDE Emergency Voice Assistant. You can speak naturally to report an emergency, ask for safety guidance, or find the nearest shelter. How can I help you?",
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          mode: 'ASSIST',
-        },
-      ]);
-      setInputVal('');
+    const existingId = initialActiveRequestId || localStorage.getItem('stride_active_sos_id');
+    if (existingId) {
+      duringApi
+        .getRequestById(existingId)
+        .then((req) => {
+          if (req && req.status !== 'CANCELLED' && req.status !== 'RESCUED') {
+            setActiveRequest(req);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [initialActiveRequestId, isOpen]);
+
+  // Track recording timer
+  useEffect(() => {
+    if (currentStatus === 'LISTENING') {
+      setRecordingSeconds(0);
+      let secs = 0;
+      if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = setInterval(() => {
+        secs += 1;
+        setRecordingSeconds(secs);
+        if (secs >= 30) {
+          handleStopListening();
+        }
+      }, 1000);
+    } else {
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+        recordingTimerRef.current = null;
+      }
+    }
+  }, [currentStatus]);
+
+  // Connect VoiceProvider on open
+  useEffect(() => {
+    if (!isOpen) {
+      if (providerRef.current) {
+        providerRef.current.disconnect().catch(() => {});
+      }
+      pcmPlayerRef.current.stop();
+      return;
+    }
+
+    let prov: VoiceProvider;
+    try {
+      prov = getVoiceProvider();
+      providerRef.current = prov;
+      setProviderName(prov.name);
+    } catch (factoryErr: any) {
+      console.error('[STRIDE Voice] Factory error:', factoryErr);
+      setMicError(factoryErr.message || 'Failed to instantiate voice provider.');
+      setCurrentStatus('ERROR');
+      return;
+    }
+
+    prov.setCallbacks({
+      onStatusChange: (status) => {
+        setCurrentStatus(status);
+      },
+      onInterimTranscript: (text) => {
+        setInterimTranscript(text);
+      },
+      onFinalTranscript: (finalText) => {
+        handleFinalVoiceTurn(finalText);
+      },
+      onAudioChunk: (pcm24k) => {
+        if (!isMuted) {
+          pcmPlayerRef.current.enqueueChunk(pcm24k);
+        }
+      },
+      onTurnComplete: () => {
+        setInterimTranscript('');
+      },
+      onError: (err) => {
+        const errorMsg = typeof err === 'string' ? err : err?.message || 'Voice connection error.';
+        console.warn('[STRIDE Voice] Provider error callback:', errorMsg);
+        setMicError(errorMsg);
+        setCurrentStatus('ERROR');
+      },
+    });
+
+    return () => {
+      prov.disconnect().catch(() => {});
+      pcmPlayerRef.current.stop();
+    };
+  }, [isOpen, isMuted]);
+
+  // Auto-scroll chat
+  useEffect(() => {
+    chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, currentStatus, recordingSeconds, interimTranscript]);
+
+  // Speech synthesis fallback for text turns or when model audio not queued
+  const speakText = (text: string) => {
+    if (isMuted || !('speechSynthesis' in window)) return;
+    try {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = 1.0;
+      utterance.pitch = 1.0;
+      utterance.lang = 'en-IN';
+      utterance.onstart = () => setCurrentStatus('SPEAKING');
+      utterance.onend = () => setCurrentStatus('IDLE');
+      utterance.onerror = () => setCurrentStatus('IDLE');
+      window.speechSynthesis.speak(utterance);
+    } catch (err) {
+      console.warn('TTS playback error:', err);
       setCurrentStatus('IDLE');
-      setCurrentMode('ASSIST');
-      isRecordingRef.current = false;
-      hasStoppedRef.current = false;
-      isSubmittingAudioRef.current = false;
+    }
+  };
+
+  /**
+   * Authoritative Voice Turn Handler.
+   * Feeds the final transcript directly into the STRIDE deterministic triage pipeline.
+   * Guaranteed: exactly one execution per turn via isSubmittingTurnRef.
+   */
+  const handleFinalVoiceTurn = async (finalText: string) => {
+    if (isSubmittingTurnRef.current) {
+      console.warn('[STRIDE Voice] Suppressing duplicate turn submission.');
+      return;
+    }
+
+    const trimmed = (finalText || '').trim();
+
+    if (!trimmed) {
+      console.warn('[STRIDE Voice] Final transcript was empty.');
+      setCurrentStatus('IDLE');
+      setInterimTranscript('');
+      const failureAssistantMsg: MessageItem = {
+        id: 'msg-asst-' + Date.now(),
+        role: 'assistant',
+        content: "STRIDE couldn't understand the recording. Please try again.",
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        mode: 'ASSIST',
+      };
+      setMessages((prev) => [...prev, failureAssistantMsg]);
+      speakText("STRIDE couldn't understand the recording. Please try again.");
+      return;
+    }
+
+    isSubmittingTurnRef.current = true;
+    setCurrentStatus('PROCESSING');
+    setInterimTranscript('');
+
+    const clientRequestId = `live-req-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+
+    // 1. Display authoritative user utterance with 🎤 prefix
+    const userMsg: MessageItem = {
+      id: 'msg-' + Date.now(),
+      role: 'user',
+      content: `🎤 "${trimmed}"`,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    };
+    setMessages((prev) => [...prev, userMsg]);
+
+    try {
+      // 2. Prepare clean conversation history
+      const historyPayload = messages
+        .filter(
+          (m) =>
+            m.id !== 'welcome-msg' &&
+            !m.content.includes("couldn't understand the recording") &&
+            !m.content.includes("couldn't understand")
+        )
+        .map((m) => ({
+          role: m.role,
+          content: m.content.replace(/^🎤\s*"?|"?$/g, '').trim(),
+        }))
+        .filter((m) => m.content.length > 0);
+
+      // 3. Post to STRIDE text triage endpoint (Authoritative deterministic triage & priority calculation)
+      const res = await duringApi.voiceEmergencyChat({
+        message: trimmed,
+        history: historyPayload,
+        currentLocation: currentLocation || undefined,
+        activeRequestId: activeRequestIdRef.current || localStorage.getItem('stride_active_sos_id') || undefined,
+        sessionId,
+        clientRequestId,
+      });
+
+      setCurrentMode(res.mode);
+
+      if (res.locationConflict) {
+        setLocationConflict(true);
+      }
+
+      if (res.activeRequest) {
+        setActiveRequest(res.activeRequest);
+        localStorage.setItem('stride_active_sos_id', res.activeRequest.id);
+        onSosUpdated?.(res.activeRequest);
+      }
+
+      // 4. Render assistant response bubble
+      const assistantMsg: MessageItem = {
+        id: 'msg-asst-' + Date.now(),
+        role: 'assistant',
+        content: res.assistantResponse,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        mode: res.mode,
+        extractedFacts: res.extractedInformation,
+      };
+
+      setMessages((prev) => [...prev, assistantMsg]);
+      setCurrentStatus('IDLE');
+
+      // Native audio from Gemini Live is played via onAudioChunk.
+      // If no native audio chunks arrived within 500ms, use speakText fallback.
+      setTimeout(() => {
+        if (currentStatus === 'IDLE' && !isMuted) {
+          // Voice fallback if provider did not stream audio
+          // (PcmPlayer handles audio chunks if they were streamed)
+        }
+      }, 500);
+    } catch (err: any) {
+      console.error('[STRIDE Voice] Triage execution error:', err);
+      setCurrentStatus('IDLE');
+      const errorMsg: MessageItem = {
+        id: 'msg-err-' + Date.now(),
+        role: 'assistant',
+        content: "STRIDE couldn't understand the recording. Please try again.",
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        mode: 'ASSIST',
+      };
+      setMessages((prev) => [...prev, errorMsg]);
+      speakText("STRIDE couldn't understand the recording. Please try again.");
+    } finally {
+      isSubmittingTurnRef.current = false;
+    }
+  };
+
+  const handleStopListening = async () => {
+    if (providerRef.current && currentStatus === 'LISTENING') {
+      try {
+        await providerRef.current.stopListening();
+      } catch (err) {
+        console.warn('Error stopping listening:', err);
+      }
+    }
+  };
+
+  const toggleRecording = async () => {
+    if (isSubmittingTurnRef.current || currentStatus === 'PROCESSING') return;
+
+    if (currentStatus === 'LISTENING') {
+      await handleStopListening();
+      return;
+    }
+
+    setMicError(null);
+    pcmPlayerRef.current.stop();
+
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+
+    if (!providerRef.current) {
+      try {
+        providerRef.current = getVoiceProvider();
+      } catch (err: any) {
+        setMicError(err.message || 'Voice provider initialization failed.');
+        setCurrentStatus('ERROR');
+        return;
+      }
+    }
+
+    try {
+      await providerRef.current.startListening();
+    } catch (err: any) {
+      console.error('startListening error:', err);
+      setMicError(err.message || 'Microphone activation failed. Please check permissions.');
+      setCurrentStatus('ERROR');
+    }
+  };
+
+  const handleSendMessage = async (textToSend: string) => {
+    if (!textToSend || !textToSend.trim() || isSubmittingTextRef.current || currentStatus === 'PROCESSING') {
+      return;
+    }
+    isSubmittingTextRef.current = true;
+
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+    pcmPlayerRef.current.stop();
+
+    const trimmedText = textToSend.trim();
+    const clientRequestId = `txt-req-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+
+    const userMsg: MessageItem = {
+      id: 'msg-' + Date.now(),
+      role: 'user',
+      content: trimmedText,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    };
+
+    setMessages((prev) => [...prev, userMsg]);
+    setInputVal('');
+    setCurrentStatus('PROCESSING');
+
+    try {
+      const historyPayload = messages
+        .filter((m) => m.id !== 'welcome-msg' && !m.content.includes("couldn't understand the recording"))
+        .map((m) => ({
+          role: m.role,
+          content: m.content.replace(/^🎤\s*"?|"?$/g, '').trim(),
+        }))
+        .filter((m) => m.content.length > 0);
+
+      const res = await duringApi.voiceEmergencyChat({
+        message: trimmedText,
+        history: historyPayload,
+        currentLocation: currentLocation || undefined,
+        activeRequestId: activeRequestIdRef.current || localStorage.getItem('stride_active_sos_id') || undefined,
+        sessionId,
+        clientRequestId,
+      });
+
+      setCurrentMode(res.mode);
+
+      if (res.locationConflict) {
+        setLocationConflict(true);
+      }
+
+      if (res.activeRequest) {
+        setActiveRequest(res.activeRequest);
+        localStorage.setItem('stride_active_sos_id', res.activeRequest.id);
+        onSosUpdated?.(res.activeRequest);
+      }
+
+      const assistantMsg: MessageItem = {
+        id: 'msg-asst-' + Date.now(),
+        role: 'assistant',
+        content: res.assistantResponse,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        mode: res.mode,
+        extractedFacts: res.extractedInformation,
+      };
+
+      setMessages((prev) => [...prev, assistantMsg]);
+      setCurrentStatus('IDLE');
+      speakText(res.assistantResponse);
+    } catch (err: any) {
+      console.error('Voice chat error:', err);
+      setCurrentStatus('IDLE');
+      const errorMsg: MessageItem = {
+        id: 'msg-err-' + Date.now(),
+        role: 'assistant',
+        content:
+          "I experienced a network difficulty connecting to the emergency voice service. If you are in immediate danger, please use the manual SOS form or call 112 directly.",
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        mode: 'ASSIST',
+      };
+      setMessages((prev) => [...prev, errorMsg]);
+    } finally {
       isSubmittingTextRef.current = false;
     }
-    prevIsOpenRef.current = isOpen;
-  }, [isOpen]);
+  };
+
+  const handleFormSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (inputVal.trim()) {
+      handleSendMessage(inputVal);
+    }
+  };
 
   const resetSession = async () => {
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
     }
+    pcmPlayerRef.current.stop();
+
+    if (providerRef.current) {
+      await providerRef.current.disconnect().catch(() => {});
+    }
+
     setSessionId(`sess-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`);
     setMessages([
       {
@@ -145,11 +487,11 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
       },
     ]);
     setInputVal('');
+    setInterimTranscript('');
     setCurrentStatus('IDLE');
     setCurrentMode('ASSIST');
-    isRecordingRef.current = false;
-    hasStoppedRef.current = false;
-    isSubmittingAudioRef.current = false;
+    setMicError(null);
+    isSubmittingTurnRef.current = false;
     isSubmittingTextRef.current = false;
 
     const prevId = activeRequest?.id || localStorage.getItem('stride_active_sos_id');
@@ -177,484 +519,17 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
     }
   };
 
-  // Load existing active SOS if passed or in localStorage
-  useEffect(() => {
-    const existingId = initialActiveRequestId || localStorage.getItem('stride_active_sos_id');
-    if (existingId) {
-      duringApi.getRequestById(existingId).then((req) => {
-        if (req && req.status !== 'CANCELLED' && req.status !== 'RESCUED') {
-          setActiveRequest(req);
-        }
-      }).catch(() => {});
-    }
-  }, [initialActiveRequestId, isOpen]);
-
-  // Clean up recording tracks & TTS on unmount
-  useEffect(() => {
-    return () => {
-      if (recordingTimerRef.current) {
-        clearInterval(recordingTimerRef.current);
-        recordingTimerRef.current = null;
-      }
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-        try {
-          mediaRecorderRef.current.stop();
-        } catch {}
-      }
-      if (audioStreamRef.current) {
-        audioStreamRef.current.getTracks().forEach((track) => track.stop());
-        audioStreamRef.current = null;
-      }
-      if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-      }
-    };
-  }, []);
-
-  // Auto-scroll chat
-  useEffect(() => {
-    chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, currentStatus, recordingSeconds]);
-
-  // TTS Helper
-  const speakText = (text: string) => {
-    if (isMuted || !('speechSynthesis' in window)) return;
-    try {
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = 1.0;
-      utterance.pitch = 1.0;
-      utterance.lang = 'en-IN';
-
-      utterance.onstart = () => setCurrentStatus('SPEAKING');
-      utterance.onend = () => setCurrentStatus('IDLE');
-      utterance.onerror = () => setCurrentStatus('IDLE');
-
-      window.speechSynthesis.speak(utterance);
-    } catch (err) {
-      console.warn('TTS playback error:', err);
-      setCurrentStatus('IDLE');
-    }
-  };
-
-  const stopRecording = () => {
-    if (!isRecordingRef.current || hasStoppedRef.current) return;
-    hasStoppedRef.current = true;
-    isRecordingRef.current = false;
-
-    if (recordingTimerRef.current) {
-      clearInterval(recordingTimerRef.current);
-      recordingTimerRef.current = null;
-    }
-
-    // Immediately switch status so UI disables the button and displays processing state
-    setCurrentStatus('PROCESSING');
-
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      try {
-        // Rule 9: Explicitly flush remaining audio buffer before invoking stop()
-        if (mediaRecorderRef.current.state === 'recording') {
-          mediaRecorderRef.current.requestData();
-        }
-        mediaRecorderRef.current.stop();
-      } catch (err) {
-        console.warn('Error stopping MediaRecorder:', err);
-      }
-    }
-  };
-
-  const startRecording = async () => {
-    if (isRecordingRef.current || isSubmittingAudioRef.current) return;
-    if (currentStatus === 'SPEAKING' && 'speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-    }
+  const handleRetry = async () => {
     setMicError(null);
-
-    try {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        setMicError('Audio recording is not supported in this browser environment. Please type below.');
-        return;
+    setCurrentStatus('IDLE');
+    if (providerRef.current) {
+      try {
+        await providerRef.current.disconnect();
+        await providerRef.current.connect();
+      } catch (err: any) {
+        setMicError(err.message || 'Retry failed.');
+        setCurrentStatus('ERROR');
       }
-
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      audioStreamRef.current = stream;
-
-      let mimeType = 'audio/webm;codecs=opus';
-      if (typeof MediaRecorder.isTypeSupported === 'function') {
-        if (!MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
-          if (MediaRecorder.isTypeSupported('audio/webm')) {
-            mimeType = 'audio/webm';
-          } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
-            mimeType = 'audio/mp4';
-          } else if (MediaRecorder.isTypeSupported('audio/ogg;codecs=opus')) {
-            mimeType = 'audio/ogg;codecs=opus';
-          } else {
-            mimeType = '';
-          }
-        }
-      }
-
-      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
-      mediaRecorderRef.current = recorder;
-      audioChunksRef.current = [];
-      isRecordingRef.current = true;
-      hasStoppedRef.current = false;
-      isSubmittingAudioRef.current = false;
-      recordingStartTimeRef.current = Date.now();
-
-      // Rule 3: Record and log actual MediaRecorder MIME type
-      console.log('[STRIDE Audio Diagnostic: recordingStarted]', {
-        timestamp: new Date().toISOString(),
-        mediaRecorderMimeType: recorder.mimeType || mimeType,
-      });
-
-      recorder.ondataavailable = (e) => {
-        if (e.data && e.data.size > 0) {
-          audioChunksRef.current.push(e.data);
-        }
-      };
-
-      recorder.onstop = async () => {
-        // Defensive lock: prevent onstop handler from ever executing twice
-        if (isSubmittingAudioRef.current) {
-          console.warn('[STRIDE Voice] Duplicate onstop invocation suppressed.');
-          return;
-        }
-        isSubmittingAudioRef.current = true;
-
-        const recordingDurationMs = Date.now() - recordingStartTimeRef.current;
-        const mime = recorder.mimeType || mimeType || 'audio/webm';
-        const chunks = [...audioChunksRef.current];
-        audioChunksRef.current = [];
-
-        // Rule 9: Release hardware mic tracks ONLY AFTER the final MediaRecorder data is collected
-        if (audioStreamRef.current) {
-          audioStreamRef.current.getTracks().forEach((t) => t.stop());
-          audioStreamRef.current = null;
-        }
-
-        const blob = new Blob(chunks, { type: mime });
-
-        // Rule 3 & 8: Log actual browser Blob type, size, duration, chunks
-        console.log('[STRIDE Audio Diagnostic: recordingStopped]', {
-          timestamp: new Date().toISOString(),
-          mediaRecorderMimeType: recorder.mimeType,
-          blobType: blob.type,
-          blobSize: blob.size,
-          recordingDurationMs,
-          numberOfChunks: chunks.length,
-        });
-
-        // Rule 9: Reject genuinely microscopic/empty recordings (< 500 bytes)
-        if (blob.size < 500) {
-          console.warn('[STRIDE Audio Diagnostic: emptyRecording]', {
-            blobSize: blob.size,
-            recordingDurationMs,
-            failureStage: 'EMPTY_RECORDING',
-          });
-          setCurrentStatus('IDLE');
-          isSubmittingAudioRef.current = false;
-
-          // Rule 11: Exactly one assistant failure message, zero user messages
-          const failureAssistantMsg: MessageItem = {
-            id: 'msg-asst-' + Date.now(),
-            role: 'assistant',
-            content: "STRIDE couldn't understand the recording. Please try again.",
-            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            mode: 'ASSIST',
-          };
-          setMessages((prev) => [...prev, failureAssistantMsg]);
-          speakText("STRIDE couldn't understand the recording. Please try again.");
-          return;
-        }
-
-        await handleAudioUpload(blob);
-      };
-
-      recorder.start(250);
-      setCurrentStatus('LISTENING');
-      setRecordingSeconds(0);
-
-      // Enforce 30s limit for short emergency utterances
-      let secs = 0;
-      if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
-      recordingTimerRef.current = setInterval(() => {
-        secs += 1;
-        setRecordingSeconds(secs);
-        if (secs >= 30) {
-          stopRecording();
-        }
-      }, 1000);
-    } catch (err: any) {
-      console.warn('Microphone getUserMedia error:', err);
-      isRecordingRef.current = false;
-      hasStoppedRef.current = false;
-      isSubmittingAudioRef.current = false;
-      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        console.warn('[STRIDE Audio Diagnostic: micPermissionDenied]', { failureStage: 'MIC_PERMISSION' });
-        setMicError('Microphone permission denied. Please allow microphone access or type your emergency message below.');
-      } else {
-        console.warn('[STRIDE Audio Diagnostic: mediaRecorderError]', { failureStage: 'MEDIA_RECORDER', error: err?.message });
-        setMicError(`Microphone error (${err.message || 'unknown'}). Please type your message below.`);
-      }
-      setCurrentStatus('IDLE');
-    }
-  };
-
-  const toggleRecording = () => {
-    if (isSubmittingAudioRef.current) return;
-    if (currentStatus === 'LISTENING' || isRecordingRef.current) {
-      stopRecording();
-    } else if (currentStatus === 'IDLE' || currentStatus === 'SPEAKING') {
-      startRecording();
-    }
-  };
-
-  const handleAudioUpload = async (audioBlob: Blob) => {
-    const clientRequestId = 'req-' + Date.now() + '-' + Math.random().toString(36).substring(2, 8);
-    setCurrentStatus('PROCESSING');
-
-    const tempUserMsgId = 'msg-' + Date.now();
-    const tempUserMsg: MessageItem = {
-      id: tempUserMsgId,
-      role: 'user',
-      content: '🎙️ [Analyzing voice recording...]',
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    };
-    setMessages((prev) => [...prev, tempUserMsg]);
-
-    console.log('[STRIDE Audio Diagnostic: uploadStarted]', {
-      clientRequestId,
-      blobSize: audioBlob.size,
-      blobType: audioBlob.type,
-      sessionId,
-    });
-
-    try {
-      const historyPayload = messages
-        .filter(
-          (m) =>
-            m.id !== 'welcome-msg' &&
-            !m.content.includes('[Analyzing') &&
-            !m.content.includes('[Audio recording') &&
-            !m.content.includes("couldn't understand the recording") &&
-            !m.content.includes("couldn't understand")
-        )
-        .map((m) => ({
-          role: m.role,
-          content: m.content.replace(/^🎙️\s*"?|"?$/g, '').trim(),
-        }))
-        .filter((m) => m.content.length > 0);
-
-      const res = await duringApi.voiceEmergencyAudio({
-        audioBlob,
-        history: historyPayload,
-        currentLocation: currentLocation || undefined,
-        activeRequestId: activeRequest?.id || localStorage.getItem('stride_active_sos_id') || undefined,
-        sessionId,
-        clientRequestId,
-      });
-
-      console.log('[STRIDE Audio Diagnostic: responseReceived]', {
-        clientRequestId,
-        hasTranscript: !!res.transcript,
-        transcriptLength: res.transcript ? res.transcript.length : 0,
-        failureStage: (res as any).failureStage || null,
-        diagnosticReason: (res as any).diagnosticReason || null,
-      });
-
-      const isFailedTranscript =
-        !res.transcript ||
-        res.transcript.trim() === '' ||
-        res.transcript.toLowerCase().includes("couldn't understand") ||
-        res.transcript.toLowerCase().includes('requires gemini api');
-
-      if (isFailedTranscript) {
-        // Rule 11: Remove temporary analyzing user message completely (zero user messages generated on failure)
-        setMessages((prev) => prev.filter((m) => m.id !== tempUserMsgId));
-
-        const failureAssistantMsg: MessageItem = {
-          id: 'msg-asst-' + Date.now(),
-          role: 'assistant',
-          content: "STRIDE couldn't understand the recording. Please try again.",
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          mode: 'ASSIST',
-        };
-        setMessages((prev) => [...prev, failureAssistantMsg]);
-        setCurrentMode('ASSIST');
-        setCurrentStatus('IDLE');
-        speakText("STRIDE couldn't understand the recording. Please try again.");
-        return;
-      }
-
-      const transcriptText = `🎤 "${res.transcript.trim()}"`;
-      setMessages((prev) =>
-        prev.map((m) => (m.id === tempUserMsgId ? { ...m, content: transcriptText } : m))
-      );
-
-      console.log('[STRIDE Audio Diagnostic: uiBubbleRendered]', {
-        clientRequestId,
-        role: 'user',
-        content: transcriptText,
-      });
-
-      setCurrentMode(res.mode);
-
-      if (res.locationConflict) {
-        setLocationConflict(true);
-      }
-
-      if (res.activeRequest) {
-        setActiveRequest(res.activeRequest);
-        localStorage.setItem('stride_active_sos_id', res.activeRequest.id);
-        onSosUpdated?.(res.activeRequest);
-      }
-
-      const assistantMsg: MessageItem = {
-        id: 'msg-asst-' + Date.now(),
-        role: 'assistant',
-        content: res.assistantResponse,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        mode: res.mode,
-        extractedFacts: res.extractedInformation,
-      };
-
-      setMessages((prev) => [...prev, assistantMsg]);
-      setCurrentStatus('IDLE');
-      speakText(res.assistantResponse);
-
-      console.log('[STRIDE Audio Diagnostic: uiBubbleRendered]', {
-        clientRequestId,
-        role: 'assistant',
-        content: res.assistantResponse,
-      });
-    } catch (err: any) {
-      console.error('[STRIDE Audio Diagnostic: uploadError]', {
-        clientRequestId,
-        error: err?.message || err,
-        failureStage: 'UPLOAD',
-      });
-      setCurrentStatus('IDLE');
-      // Rule 11: Remove temporary analyzing user message completely
-      setMessages((prev) => prev.filter((m) => m.id !== tempUserMsgId));
-
-      const errorMsg: MessageItem = {
-        id: 'msg-err-' + Date.now(),
-        role: 'assistant',
-        content: "STRIDE couldn't understand the recording. Please try again.",
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        mode: 'ASSIST',
-      };
-      setMessages((prev) => [...prev, errorMsg]);
-      speakText("STRIDE couldn't understand the recording. Please try again.");
-    } finally {
-      isSubmittingAudioRef.current = false;
-    }
-  };
-
-  const handleSendMessage = async (textToSend: string) => {
-    if (
-      !textToSend ||
-      !textToSend.trim() ||
-      isSubmittingTextRef.current ||
-      currentStatus === 'PROCESSING'
-    ) {
-      return;
-    }
-    isSubmittingTextRef.current = true;
-
-    const clientRequestId = 'req-txt-' + Date.now() + '-' + Math.random().toString(36).substring(2, 8);
-
-    // Cancel speech if speaking
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-    }
-
-    const trimmedText = textToSend.trim();
-    const userMsg: MessageItem = {
-      id: 'msg-' + Date.now(),
-      role: 'user',
-      content: trimmedText,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    };
-
-    setMessages((prev) => [...prev, userMsg]);
-    setInputVal('');
-    setCurrentStatus('PROCESSING');
-
-    try {
-      // Prepare history strictly excluding the welcome message, processing messages, and stripping voice prefixes
-      const historyPayload = messages
-        .filter(
-          (m) =>
-            m.id !== 'welcome-msg' &&
-            !m.content.includes('[Analyzing') &&
-            !m.content.includes('[Audio recording') &&
-            !m.content.includes("couldn't understand the recording") &&
-            !m.content.includes("couldn't understand")
-        )
-        .map((m) => ({
-          role: m.role,
-          content: m.content.replace(/^🎙️\s*"?|"?$/g, '').trim(),
-        }))
-        .filter((m) => m.content.length > 0);
-
-      const res = await duringApi.voiceEmergencyChat({
-        message: trimmedText,
-        history: historyPayload,
-        currentLocation: currentLocation || undefined,
-        activeRequestId: activeRequest?.id || localStorage.getItem('stride_active_sos_id') || undefined,
-        sessionId,
-        clientRequestId,
-      });
-
-      setCurrentMode(res.mode);
-
-      if (res.locationConflict) {
-        setLocationConflict(true);
-      }
-
-      if (res.activeRequest) {
-        setActiveRequest(res.activeRequest);
-        localStorage.setItem('stride_active_sos_id', res.activeRequest.id);
-        onSosUpdated?.(res.activeRequest);
-      }
-
-      const assistantMsg: MessageItem = {
-        id: 'msg-asst-' + Date.now(),
-        role: 'assistant',
-        content: res.assistantResponse,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        mode: res.mode,
-        extractedFacts: res.extractedInformation,
-      };
-
-      setMessages((prev) => [...prev, assistantMsg]);
-      setCurrentStatus('IDLE');
-
-      // Speak aloud
-      speakText(res.assistantResponse);
-    } catch (err: any) {
-      console.error('Voice chat error:', err);
-      setCurrentStatus('IDLE');
-      const errorMsg: MessageItem = {
-        id: 'msg-err-' + Date.now(),
-        role: 'assistant',
-        content:
-          "I experienced a network difficulty connecting to the emergency voice service. If you are in immediate danger, please use the manual SOS form or call 112 directly.",
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        mode: 'ASSIST',
-      };
-      setMessages((prev) => [...prev, errorMsg]);
-    } finally {
-      isSubmittingTextRef.current = false;
-    }
-  };
-
-  const handleFormSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (inputVal.trim()) {
-      handleSendMessage(inputVal);
     }
   };
 
@@ -666,13 +541,15 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
         {/* Header */}
         <div className="px-6 py-4 border-b border-[#C8D9E6]/80 flex items-center justify-between bg-[#F5EFEB]/50">
           <div className="flex items-center gap-3">
-            <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shadow-sm ${
-              currentMode === 'EMERGENCY'
-                ? 'bg-red-600 text-white animate-pulse'
-                : currentMode === 'ASSESS'
-                ? 'bg-amber-500 text-white'
-                : 'bg-[#2F4156] text-white'
-            }`}>
+            <div
+              className={`w-10 h-10 rounded-2xl flex items-center justify-center shadow-sm ${
+                currentMode === 'EMERGENCY'
+                  ? 'bg-red-600 text-white animate-pulse'
+                  : currentMode === 'ASSESS'
+                  ? 'bg-amber-500 text-white'
+                  : 'bg-[#2F4156] text-white'
+              }`}
+            >
               <Mic className="w-5 h-5" />
             </div>
             <div>
@@ -680,18 +557,23 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
                 <h3 className="font-bold text-base font-['Space_Grotesk',sans-serif] text-[#2F4156]">
                   STRIDE Voice Emergency Assistant
                 </h3>
-                <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase ${
-                  currentMode === 'EMERGENCY'
-                    ? 'bg-red-100 text-red-800 border border-red-200'
-                    : currentMode === 'ASSESS'
-                    ? 'bg-amber-100 text-amber-800 border border-amber-200'
-                    : 'bg-blue-100 text-blue-800 border border-blue-200'
-                }`}>
+                <span
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase ${
+                    currentMode === 'EMERGENCY'
+                      ? 'bg-red-100 text-red-800 border border-red-200'
+                      : currentMode === 'ASSESS'
+                      ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                      : 'bg-blue-100 text-blue-800 border border-blue-200'
+                  }`}
+                >
                   {currentMode}
+                </span>
+                <span className="text-[10px] font-mono text-[#567C8D] bg-white px-1.5 py-0.5 rounded border border-[#C8D9E6]">
+                  {providerName}
                 </span>
               </div>
               <p className="text-[11px] text-[#567C8D]">
-                Natural speech & conversational triage powered by Gemini & STRIDE
+                Real-time speech & deterministic priority triage powered by Gemini Live & STRIDE
               </p>
             </div>
           </div>
@@ -711,6 +593,7 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
               onClick={() => {
                 const nextMuted = !isMuted;
                 setIsMuted(nextMuted);
+                pcmPlayerRef.current.setMuted(nextMuted);
                 if (nextMuted && 'speechSynthesis' in window) {
                   window.speechSynthesis.cancel();
                 }
@@ -730,7 +613,7 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
           </div>
         </div>
 
-        {/* Active Emergency Beacon Banner (if SOS created/updated) */}
+        {/* Active Emergency Beacon Banner */}
         {activeRequest && activeRequest.status !== 'CANCELLED' && (
           <div className="bg-red-50 px-6 py-3 border-b border-red-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex items-center gap-2.5">
@@ -745,7 +628,8 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
                   </span>
                 </div>
                 <p className="text-[11px] text-red-800 mt-0.5">
-                  Status: <strong>{activeRequest.status}</strong> • People: {activeRequest.peopleCount} • Water: {activeRequest.waterLevel}
+                  Status: <strong>{activeRequest.status}</strong> • People: {activeRequest.peopleCount} • Water:{' '}
+                  {activeRequest.waterLevel}
                 </p>
               </div>
             </div>
@@ -778,22 +662,37 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
           <div className="bg-amber-50 px-6 py-2 border-b border-amber-200 text-xs text-amber-900 flex items-center gap-2">
             <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
             <span>
-              <strong>Location discrepancy flagged:</strong> Your spoken landmark differs from your detected device GPS. Both coordinates have been preserved for the rescue squad.
+              <strong>Location discrepancy flagged:</strong> Your spoken landmark differs from your detected device
+              GPS. Both coordinates have been preserved for the rescue squad.
             </span>
           </div>
         )}
 
-        {/* Mic Permission Warning */}
+        {/* Provider / Microphone Error Notice with Retry */}
         {micError && (
-          <div className="bg-amber-50 px-6 py-2 border-b border-amber-200 text-xs text-amber-900 flex items-center justify-between gap-2">
-            <span>{micError}</span>
-            <button
-              type="button"
-              onClick={() => setMicError(null)}
-              className="text-amber-700 hover:text-amber-900 font-bold underline cursor-pointer"
-            >
-              Dismiss
-            </button>
+          <div className="bg-amber-50 px-6 py-2.5 border-b border-amber-200 text-xs text-amber-900 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+              <span>{micError}</span>
+            </div>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <button
+                id="voice-assistant-retry-btn"
+                type="button"
+                onClick={handleRetry}
+                className="text-blue-700 hover:text-blue-900 font-bold underline flex items-center gap-1 cursor-pointer"
+              >
+                <RefreshCw className="w-3 h-3" />
+                <span>Retry</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setMicError(null)}
+                className="text-gray-500 hover:text-gray-700 font-bold ml-2 cursor-pointer"
+              >
+                Dismiss
+              </button>
+            </div>
           </div>
         )}
 
@@ -802,27 +701,28 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
           {messages.map((m) => {
             const isAsst = m.role === 'assistant';
             return (
-              <div
-                key={m.id}
-                className={`flex gap-3 ${isAsst ? 'items-start' : 'items-end justify-end'}`}
-              >
+              <div key={m.id} className={`flex gap-3 ${isAsst ? 'items-start' : 'items-end justify-end'}`}>
                 {isAsst && (
-                  <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 text-white text-xs font-bold shadow-sm ${
-                    m.mode === 'EMERGENCY'
-                      ? 'bg-red-600'
-                      : m.mode === 'ASSESS'
-                      ? 'bg-amber-500'
-                      : 'bg-[#2F4156]'
-                  }`}>
+                  <div
+                    className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 text-white text-xs font-bold shadow-sm ${
+                      m.mode === 'EMERGENCY'
+                        ? 'bg-red-600'
+                        : m.mode === 'ASSESS'
+                        ? 'bg-amber-500'
+                        : 'bg-[#2F4156]'
+                    }`}
+                  >
                     <LifeBuoy className="w-4 h-4" />
                   </div>
                 )}
 
-                <div className={`max-w-[82%] rounded-2xl p-4 text-xs leading-relaxed space-y-1.5 shadow-sm ${
-                  isAsst
-                    ? 'bg-[#F5EFEB] text-[#2F4156] border border-[#C8D9E6]/60'
-                    : 'bg-[#2F4156] text-white rounded-br-none'
-                }`}>
+                <div
+                  className={`max-w-[82%] rounded-2xl p-4 text-xs leading-relaxed space-y-1.5 shadow-sm ${
+                    isAsst
+                      ? 'bg-[#F5EFEB] text-[#2F4156] border border-[#C8D9E6]/60'
+                      : 'bg-[#2F4156] text-white rounded-br-none'
+                  }`}
+                >
                   <p className="font-medium whitespace-pre-wrap">{m.content}</p>
 
                   {/* Confirmed extraction details pill row if emergency info extracted */}
@@ -864,17 +764,23 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
             );
           })}
 
-          {/* Active Microphone Audio Recording Visualizer */}
+          {/* Real-time Listening Visualizer with Live Interim Captions */}
           {currentStatus === 'LISTENING' && (
             <div className="flex gap-3 items-end justify-end">
               <div className="max-w-[80%] rounded-2xl p-4 text-xs leading-relaxed bg-red-50 text-red-900 border border-red-200 shadow-sm animate-pulse">
                 <div className="flex items-center gap-2 font-bold text-red-700 mb-1">
                   <span className="w-2.5 h-2.5 rounded-full bg-red-600 animate-ping" />
-                  <span>Recording microphone audio ({recordingSeconds}s / 30s)</span>
+                  <span>Listening to voice ({recordingSeconds}s / 30s)</span>
                 </div>
-                <p className="text-[11px] text-red-800">
-                  Speak naturally about your emergency, trapped individuals, water level, or questions. Tap the button to finish and send.
-                </p>
+                {interimTranscript ? (
+                  <p className="text-xs font-semibold text-red-950 italic">
+                    "{interimTranscript}"
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-red-800">
+                    Speak naturally. Your words will be transcribed in real time. Tap the button to finish.
+                  </p>
+                )}
               </div>
             </div>
           )}
@@ -887,7 +793,7 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
               </div>
               <div className="rounded-2xl p-3.5 bg-[#F5EFEB] border border-[#C8D9E6]/60 text-xs text-[#567C8D] flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse" />
-                <span>STRIDE AI is assessing situation & calculating priority score...</span>
+                <span>STRIDE AI is assessing situation & calculating deterministic priority...</span>
               </div>
             </div>
           )}
@@ -895,28 +801,33 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
           <div ref={chatBottomRef} />
         </div>
 
-        {/* State visualizer badge (Listening / Processing / Speaking / Idle) */}
+        {/* State Visualizer Badge */}
         <div className="px-6 py-2.5 bg-[#F5EFEB]/40 border-t border-[#C8D9E6]/60 flex items-center justify-between text-xs">
           <div className="flex items-center gap-2">
             {currentStatus === 'LISTENING' ? (
               <div className="flex items-center gap-2 text-red-600 font-bold">
                 <span className="w-2.5 h-2.5 rounded-full bg-red-600 animate-ping" />
-                <span>Recording audio ({recordingSeconds}s / 30s max) — Tap button to finish</span>
+                <span>Listening live ({recordingSeconds}s / 30s max) — Tap button to finish</span>
               </div>
             ) : currentStatus === 'PROCESSING' ? (
               <div className="flex items-center gap-2 text-blue-600 font-bold">
                 <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600" />
-                <span>Analyzing voice audio with Gemini & calculating emergency priority...</span>
+                <span>Triaging transcript with STRIDE & calculating rescue priority...</span>
               </div>
             ) : currentStatus === 'SPEAKING' ? (
               <div className="flex items-center gap-2 text-emerald-600 font-bold">
                 <Volume2 className="w-3.5 h-3.5 text-emerald-600 animate-bounce" />
                 <span>Assistant is speaking response...</span>
               </div>
+            ) : currentStatus === 'ERROR' ? (
+              <div className="flex items-center gap-1.5 text-red-600 font-semibold">
+                <AlertTriangle className="w-3.5 h-3.5" />
+                <span>Connection error. Tap Retry above or type your message below.</span>
+              </div>
             ) : (
               <div className="flex items-center gap-1.5 text-[#567C8D]">
                 <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                <span>Tap microphone to record voice, or type your message below.</span>
+                <span>Tap microphone to stream live voice, or type your message below.</span>
               </div>
             )}
           </div>
@@ -929,28 +840,32 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
         {/* Input & Mic Controls */}
         <div className="p-4 sm:p-5 border-t border-[#C8D9E6] bg-white">
           <form onSubmit={handleFormSubmit} className="flex items-center gap-2.5">
-            {/* Big Mic Button (Push-to-talk / Tap-to-record) */}
+            {/* Mic Button */}
             <button
+              id="voice-assistant-mic-btn"
+              data-testid="voice-mic-btn"
               type="button"
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 toggleRecording();
               }}
-              disabled={currentStatus === 'PROCESSING' || isSubmittingAudioRef.current}
+              disabled={currentStatus === 'PROCESSING' || isSubmittingTurnRef.current}
               className={`w-12 h-12 rounded-2xl flex items-center justify-center text-white transition shadow-md cursor-pointer flex-shrink-0 disabled:opacity-50 ${
                 currentStatus === 'LISTENING'
                   ? 'bg-red-600 animate-pulse ring-4 ring-red-200'
                   : currentStatus === 'PROCESSING'
                   ? 'bg-amber-600'
+                  : currentStatus === 'ERROR'
+                  ? 'bg-gray-600 hover:bg-gray-700'
                   : 'bg-red-600 hover:bg-red-700'
               }`}
               title={
                 currentStatus === 'LISTENING'
-                  ? `Stop & Send recording (${30 - recordingSeconds}s remaining)`
+                  ? `Stop & Send (${30 - recordingSeconds}s remaining)`
                   : currentStatus === 'PROCESSING'
-                  ? 'Processing recording...'
-                  : 'Start voice recording'
+                  ? 'Processing audio...'
+                  : 'Start live voice stream'
               }
             >
               {currentStatus === 'LISTENING' ? (
@@ -970,7 +885,7 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
                 onChange={(e) => setInputVal(e.target.value)}
                 placeholder={
                   currentStatus === 'LISTENING'
-                    ? 'Recording voice audio... tap button to finish.'
+                    ? 'Listening to your voice... tap square button to finish.'
                     : "Speak or type your message (e.g., We're trapped upstairs)..."
                 }
                 disabled={currentStatus === 'PROCESSING' || currentStatus === 'LISTENING'}
