@@ -28,6 +28,7 @@ export interface ExtractedEmergencyInfo {
   emergencyType?: 'FLOOD' | 'MEDICAL' | 'TRAPPED' | 'STRUCTURAL_DANGER' | 'FIRE' | 'OTHER';
   conditions?: string[];
   spokenLocation?: string;
+  unableToMove?: boolean;
 }
 
 export interface VoiceAssistantOutput {
@@ -67,6 +68,7 @@ export interface ChatMessage {
 }
 
 const WORD_TO_NUM: Record<string, number> = {
+  zero: 0,
   one: 1,
   two: 2,
   three: 3,
@@ -77,12 +79,37 @@ const WORD_TO_NUM: Record<string, number> = {
   eight: 8,
   nine: 9,
   ten: 10,
+  eleven: 11,
+  twelve: 12,
+  thirteen: 13,
+  fourteen: 14,
+  fifteen: 15,
+  sixteen: 16,
+  seventeen: 17,
+  eighteen: 18,
+  nineteen: 19,
+  twenty: 20,
+  thirty: 30,
+  forty: 40,
+  fifty: 50,
+  sixty: 60,
+  seventy: 70,
+  eighty: 80,
+  ninety: 90,
+  hundred: 100,
 };
 
 export function parseCount(str: string): number | undefined {
-  const n = parseInt(str, 10);
+  if (!str) return undefined;
+  const cleaned = str.toLowerCase().trim().replace(/[-_]/g, ' ');
+  const n = parseInt(cleaned, 10);
   if (!isNaN(n)) return n;
-  return WORD_TO_NUM[str.toLowerCase().trim()];
+  if (WORD_TO_NUM[cleaned] !== undefined) return WORD_TO_NUM[cleaned];
+  const parts = cleaned.split(/\s+/);
+  if (parts.length === 2 && WORD_TO_NUM[parts[0]] !== undefined && WORD_TO_NUM[parts[1]] !== undefined) {
+    return WORD_TO_NUM[parts[0]] + WORD_TO_NUM[parts[1]];
+  }
+  return undefined;
 }
 
 /**
@@ -108,9 +135,21 @@ export function extractCurrentTurnFacts(
       message
     );
 
-  const NUM_WORDS = '(\\d+|one|two|three|four|five|six|seven|eight|nine|ten)';
+  const NUM_WORDS = '(\\d+|' + Object.keys(WORD_TO_NUM).join('|') + ')';
   const VULNERABILITY_WORDS =
     '(?:injured|hurt|bleeding|wounded|injuries|injury|sick|unwell|dead|casualt|children|child|kids|kid|infants|infant|babies|baby|toddlers|elderly|grandparents|seniors|disabled|wheelchair|unconscious)';
+
+  // 0. Immobility & Entrapment extraction
+  const unableToMoveRegex =
+    /\b(?:(?:we|i|none\s+of\s+us|they|all\s+of\s+us)\s+(?:can(?:'t|not)|cannot|can\s+not|are\s+unable\s+to|am\s+unable\s+to|is\s+unable\s+to)\s+move|none\s+of\s+us\s+can\s+move|unable\s+to\s+move|can't\s+move|cannot\s+move|cannot\s+get\s+out|can't\s+get\s+out|stuck\s+upstairs|trapped\s+upstairs|we\s+are\s+stuck|we're\s+stuck)\b/i;
+  const isUnableToMove = unableToMoveRegex.test(message);
+  if (isUnableToMove) {
+    extracted.unableToMove = true;
+    extracted.emergencyType = 'TRAPPED';
+    if (!conditions.includes('TRAPPED')) {
+      conditions.push('TRAPPED');
+    }
+  }
 
   // 1. People count
   // Pattern A: "X of the Y people" (e.g. "two of the four people are injured") -> Y is total count!
@@ -173,7 +212,7 @@ export function extractCurrentTurnFacts(
 
   // 2. Children / Infants
   const childMatch = message.match(
-    /\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s*(?:children|kids|infants|babies|toddlers|child)\b/i
+    new RegExp(`\\b${NUM_WORDS}\\s*(?:children|kids|infants|babies|toddlers|child)\\b`, 'i')
   );
 
   const mentionsChild =
@@ -194,8 +233,10 @@ export function extractCurrentTurnFacts(
       uncertain.push('Possible children present (unconfirmed)');
     } else {
       const c = childMatch ? parseCount(childMatch[1]) : 1;
-      if (c !== undefined && c > 0) {
+      if (c !== undefined && c >= 0) {
         extracted.childrenCount = c;
+      }
+      if (!conditions.includes('CHILDREN_INFANTS_PRESENT')) {
         conditions.push('CHILDREN_INFANTS_PRESENT');
       }
     }
@@ -203,7 +244,7 @@ export function extractCurrentTurnFacts(
 
   // 3. Elderly / Grandparents
   const elderlyMatch = message.match(
-    /\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s*(?:elderly|grandparents|seniors|grandmothers|grandfathers)\b/i
+    new RegExp(`\\b${NUM_WORDS}\\s*(?:elderly|grandparents|seniors|grandmothers|grandfathers)\\b`, 'i')
   );
   const mentionsElderly =
     lower.includes('elderly') ||
@@ -223,7 +264,7 @@ export function extractCurrentTurnFacts(
       uncertain.push('Possible elderly present (unconfirmed)');
     } else {
       const e = elderlyMatch ? parseCount(elderlyMatch[1]) : 1;
-      if (e !== undefined && e > 0) {
+      if (e !== undefined && e >= 0) {
         extracted.elderlyCount = e;
       }
     }
@@ -261,7 +302,7 @@ export function extractCurrentTurnFacts(
   // 1. "X of the Y people are injured" -> X is injured count
   const subsetOfTotalInjuredMatch = message.match(
     new RegExp(
-      `\\b${NUM_WORDS}\\s+(?:out\\s+of|of)\\s+(?:the\\s+)?(?:\\d+|one|two|three|four|five|six|seven|eight|nine|ten)?\\s*(?:people|individuals|members|persons|us)?\\s*(?:are|is|got|were|who\\s+are|have\\s+been)?\\s*(?:injured|hurt|bleeding|wounded|unwell)`,
+      `\\b${NUM_WORDS}\\s+(?:out\\s+of|of)\\s+(?:the\\s+)?(?:${NUM_WORDS})?\\s*(?:people|individuals|members|persons|us)?\\s*(?:are|is|got|were|who\\s+are|have\\s+been)?\\s*(?:injured|hurt|bleeding|wounded|unwell)`,
       'i'
     )
   );
@@ -313,9 +354,11 @@ export function extractCurrentTurnFacts(
     if (isSpeculative) {
       uncertain.push('Possible injuries present (unconfirmed)');
     } else {
-      const inj = injuredMatch ? parseCount(injuredMatch[1]) : 1;
-      if (inj !== undefined && inj > 0) {
+      const inj = injuredMatch ? parseCount(injuredMatch[1]) : undefined;
+      if (inj !== undefined && inj >= 0) {
         extracted.injuredCount = inj;
+      }
+      if (!conditions.includes('HEAVILY_INJURED')) {
         conditions.push('HEAVILY_INJURED');
       }
     }
@@ -367,10 +410,13 @@ export function extractCurrentTurnFacts(
     lower.includes('cannot get out') ||
     lower.includes("can't get out") ||
     lower.includes('stuck upstairs') ||
-    lower.includes('marooned')
+    lower.includes('marooned') ||
+    isUnableToMove
   ) {
     extracted.emergencyType = 'TRAPPED';
-    conditions.push('TRAPPED');
+    if (!conditions.includes('TRAPPED')) {
+      conditions.push('TRAPPED');
+    }
   } else if (lower.includes('fire') || lower.includes('smoke') || lower.includes('burning')) {
     extracted.emergencyType = 'FIRE';
     conditions.push('FIRE');
@@ -643,7 +689,33 @@ export function generateGroundedResponse(input: GroundedResponseInput): string {
   }
 
   // 7. Active SOS updates with confirmed facts
+  const isUnableToMoveFact =
+    currentExtracted.unableToMove ||
+    /\b(?:cannot|can't|unable\s+to|not\s+able\s+to)\s+move\b/i.test(lower) ||
+    lower.includes('stuck upstairs') ||
+    lower.includes('cannot move');
+  const isTrappedFact =
+    currentExtracted.emergencyType === 'TRAPPED' ||
+    (Array.isArray(currentExtracted.conditions) && currentExtracted.conditions.includes('TRAPPED')) ||
+    lower.includes('trapped');
+  const isRisingWaterFact =
+    currentExtracted.waterLevel === 'HIGH' ||
+    currentExtracted.waterLevel === 'EXTREME' ||
+    (Array.isArray(currentExtracted.conditions) && currentExtracted.conditions.includes('WATER_RISING')) ||
+    lower.includes('water is rising') ||
+    lower.includes('water rising');
+
   if (hasActiveSos && Object.keys(currentExtracted).length > 0) {
+    if ((isUnableToMoveFact || isTrappedFact) && isRisingWaterFact) {
+      return sanitizeAssistantResponse(
+        "I have updated your active emergency signal: you are trapped, water is rising, and you are unable to move. Emergency dispatch has been notified. Stay as safe as possible and follow any instructions from responders."
+      );
+    }
+    if (isUnableToMoveFact || isTrappedFact) {
+      return sanitizeAssistantResponse(
+        "I have updated your active emergency signal: you are trapped and unable to move. Emergency dispatch has been notified. Stay as safe as possible and follow any instructions from responders."
+      );
+    }
     if (currentExtracted.injuredCount !== undefined) {
       if (currentExtracted.injuredCount === 0) {
         if (currentExtracted.peopleCount !== undefined) {
@@ -1141,7 +1213,30 @@ export function limitedEmergencySignalExtractor(
     let assistantMsg: string;
     let target = 'safety_mobility';
 
-    if (extracted.injuredCount !== undefined) {
+    const isUnableToMoveFact =
+      extracted.unableToMove ||
+      /\b(?:cannot|can't|unable\s+to|not\s+able\s+to)\s+move\b/i.test(lower) ||
+      lower.includes('stuck upstairs') ||
+      lower.includes('cannot move');
+    const isTrappedFact =
+      extracted.emergencyType === 'TRAPPED' ||
+      (Array.isArray(extracted.conditions) && extracted.conditions.includes('TRAPPED')) ||
+      hasTrappedExplicit;
+    const isRisingWaterFact =
+      extracted.waterLevel === 'HIGH' ||
+      extracted.waterLevel === 'EXTREME' ||
+      (Array.isArray(extracted.conditions) && extracted.conditions.includes('WATER_RISING')) ||
+      hasRisingWater;
+
+    if ((isUnableToMoveFact || isTrappedFact) && isRisingWaterFact) {
+      assistantMsg =
+        "I have updated your active emergency signal: you are trapped, water is rising, and you are unable to move. Emergency dispatch has been notified. Stay as safe as possible and follow any instructions from responders.";
+      target = 'none';
+    } else if (isUnableToMoveFact || isTrappedFact) {
+      assistantMsg =
+        "I have updated your active emergency signal: you are trapped and unable to move. Emergency dispatch has been notified. Stay as safe as possible and follow any instructions from responders.";
+      target = 'none';
+    } else if (extracted.injuredCount !== undefined) {
       if (extracted.injuredCount === 0) {
         if (extracted.peopleCount !== undefined) {
           assistantMsg = `I have updated your active emergency signal to ${extracted.peopleCount} people and noted that no one is injured. Dispatch teams have been informed. Are you or anyone with you able to move safely? Yes or no.`;
@@ -1474,12 +1569,18 @@ CRITICAL CONVERSATION GROUNDING AND CONTEXT ISOLATION RULES:
        - set "injuredCount": 0
        - set "criticalMedicalNeed": true
        - include "SERIOUSLY_UNWELL" in conditions.
-10. PEOPLE COUNT VS. SUBSET COUNTS:
+10. NUMBER-AGNOSTIC SUBSET EXTRACTION & PRESERVATION:
    - "peopleCount" represents the TOTAL number of humans at the location.
    - Vulnerable subsets (e.g. "two of us injured", "three people are injured", "two kids", "one elder") must NEVER overwrite "peopleCount".
    - Only set or change "peopleCount" if the citizen explicitly states or updates the total count (e.g. "We are 4 people", "Actually there are 5 people with me", "There are five of us in total").
    - If the citizen says "two of us injured", set "injuredCount": 2, and DO NOT set "peopleCount".
-11. NO RAW IDENTIFIERS OR DATABASE IDS:
+   - If the citizen says "we are injured" or mentions injuries without stating a specific number, DO NOT invent a count or set "injuredCount": 1! Include "HEAVILY_INJURED" in conditions, and omit "injuredCount" so previously established counts in active SOS are preserved.
+11. IMMOBILITY AND NO REDUNDANT MOBILITY QUESTIONS:
+   - If the citizen states "we cannot move", "none of us can move", "we are unable to move", "i can't move", or are trapped upstairs / trapped in floodwater:
+     * Mark "unableToMove": true, "emergencyType": "TRAPPED", and include "TRAPPED" in conditions.
+     * NEVER ask "Are you able to move safely?" or "Are you trapped, injured, or able to move to safety?" if the user already stated they cannot move or are trapped!
+     * Acknowledge cleanly that their distress signal is updated, dispatch has been notified, and they should stay in place.
+12. NO RAW IDENTIFIERS OR DATABASE IDS:
    - NEVER include raw database IDs, UUIDs, hashes, or technical identifiers (e.g. #373b83dd..., #clx..., request IDs) in your spoken or text responses.
    - Refer to emergencies naturally as 'your emergency signal', 'your distress request', or 'your active rescue request'.
 
@@ -1561,17 +1662,34 @@ Return JSON:`;
     if (detFacts.extracted.peopleCount !== undefined) {
       combinedExtracted.peopleCount = detFacts.extracted.peopleCount;
     }
-    if (detFacts.extracted.childrenCount !== undefined && detFacts.extracted.childrenCount === 0) {
-      combinedExtracted.childrenCount = 0;
+    if (detFacts.extracted.childrenCount !== undefined) {
+      combinedExtracted.childrenCount = detFacts.extracted.childrenCount;
     }
-    if (detFacts.extracted.elderlyCount !== undefined && detFacts.extracted.elderlyCount === 0) {
-      combinedExtracted.elderlyCount = 0;
+    if (detFacts.extracted.elderlyCount !== undefined) {
+      combinedExtracted.elderlyCount = detFacts.extracted.elderlyCount;
     }
-    if (detFacts.extracted.disabledCount !== undefined && detFacts.extracted.disabledCount === 0) {
-      combinedExtracted.disabledCount = 0;
+    if (detFacts.extracted.disabledCount !== undefined) {
+      combinedExtracted.disabledCount = detFacts.extracted.disabledCount;
     }
     if (detFacts.extracted.criticalMedicalNeed !== undefined) {
       combinedExtracted.criticalMedicalNeed = detFacts.extracted.criticalMedicalNeed;
+    }
+    if (detFacts.extracted.unableToMove) {
+      combinedExtracted.unableToMove = true;
+      combinedExtracted.emergencyType = 'TRAPPED';
+      if (!combinedExtracted.conditions?.includes('TRAPPED')) {
+        combinedExtracted.conditions = [...(combinedExtracted.conditions || []), 'TRAPPED'];
+      }
+    }
+    if (detFacts.extracted.emergencyType) {
+      combinedExtracted.emergencyType = detFacts.extracted.emergencyType;
+    }
+    if (detFacts.extracted.waterLevel) {
+      combinedExtracted.waterLevel = detFacts.extracted.waterLevel;
+    }
+    if (detFacts.conditions.length > 0) {
+      const condSet = new Set([...(combinedExtracted.conditions || []), ...detFacts.conditions]);
+      combinedExtracted.conditions = Array.from(condSet);
     }
 
     if (combinedExtracted.injuredCount === 0 && Array.isArray(combinedExtracted.conditions)) {
@@ -1583,7 +1701,10 @@ Return JSON:`;
       combinedExtracted.peopleCount !== undefined ||
       combinedExtracted.childrenCount !== undefined ||
       combinedExtracted.elderlyCount !== undefined ||
-      combinedExtracted.disabledCount !== undefined
+      combinedExtracted.disabledCount !== undefined ||
+      combinedExtracted.unableToMove !== undefined ||
+      combinedExtracted.emergencyType !== undefined ||
+      combinedExtracted.waterLevel !== undefined
     ));
 
     const finalMode: VoiceEmergencyMode = hasActiveSosUpdate ? 'EMERGENCY' : mode;

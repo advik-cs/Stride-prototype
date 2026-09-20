@@ -358,6 +358,7 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
 
       if (res.activeRequest) {
         setActiveRequest(res.activeRequest);
+        activeRequestIdRef.current = res.activeRequest.id;
         localStorage.setItem('stride_active_sos_id', res.activeRequest.id);
         onSosUpdated?.(res.activeRequest);
       }
@@ -501,6 +502,7 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
 
       if (res.activeRequest) {
         setActiveRequest(res.activeRequest);
+        activeRequestIdRef.current = res.activeRequest.id;
         localStorage.setItem('stride_active_sos_id', res.activeRequest.id);
         onSosUpdated?.(res.activeRequest);
       }

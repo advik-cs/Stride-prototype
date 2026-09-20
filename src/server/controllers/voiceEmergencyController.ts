@@ -256,7 +256,17 @@ export async function applySosLifecycleAndTriage(
       const mergedChildren = extracted.childrenCount !== undefined ? extracted.childrenCount : prevFormatted.childrenCount;
       const mergedElderly = extracted.elderlyCount !== undefined ? extracted.elderlyCount : prevFormatted.elderlyCount;
       const mergedDisabled = extracted.disabledCount !== undefined ? extracted.disabledCount : prevFormatted.disabledCount;
-      const mergedInjured = extracted.injuredCount !== undefined ? extracted.injuredCount : prevFormatted.injuredCount;
+
+      let mergedInjured = prevFormatted.injuredCount || 0;
+      if (extracted.injuredCount !== undefined) {
+        mergedInjured = extracted.injuredCount;
+      } else if (
+        (Array.isArray(extracted.conditions) && extracted.conditions.includes('HEAVILY_INJURED')) ||
+        existingReq.conditions.some((c: any) => String(c.conditionType) === 'HEAVILY_INJURED')
+      ) {
+        mergedInjured = (prevFormatted.injuredCount && prevFormatted.injuredCount > 0) ? prevFormatted.injuredCount : 1;
+      }
+
       const mergedCritical = extracted.criticalMedicalNeed !== undefined ? extracted.criticalMedicalNeed : prevFormatted.criticalMedicalNeed;
       const mergedWaterLevel = extracted.waterLevel !== undefined ? extracted.waterLevel : prevFormatted.waterLevel;
       const mergedEmergencyType = extracted.emergencyType !== undefined ? extracted.emergencyType : prevFormatted.emergencyType;
@@ -299,7 +309,20 @@ export async function applySosLifecycleAndTriage(
         currentCondTypes.delete('HEAVILY_INJURED');
       }
 
+      const isTurnUnableToMove =
+        extracted.unableToMove ||
+        /\b(?:(?:we|i|none\s+of\s+us|they|all\s+of\s+us)\s+(?:can(?:'t|not)|cannot|can\s+not|are\s+unable\s+to|am\s+unable\s+to|is\s+unable\s+to)\s+move|none\s+of\s+us\s+can\s+move|unable\s+to\s+move|can't\s+move|cannot\s+move)\b/i.test(
+          messageText
+        );
+
       let resolvedEmergencyType = mergedEmergencyType;
+      if (isTurnUnableToMove || extracted.emergencyType === 'TRAPPED' || currentCondTypes.has('TRAPPED')) {
+        currentCondTypes.add('TRAPPED');
+        if (resolvedEmergencyType !== 'FIRE' && resolvedEmergencyType !== 'MEDICAL') {
+          resolvedEmergencyType = 'TRAPPED';
+        }
+      }
+
       if (
         resolvedEmergencyType === 'MEDICAL' &&
         mergedInjured === 0 &&
@@ -471,10 +494,18 @@ export async function applySosLifecycleAndTriage(
       const childrenCount = Math.max(0, extracted.childrenCount || 0);
       const elderlyCount = Math.max(0, extracted.elderlyCount || 0);
       const disabledCount = Math.max(0, extracted.disabledCount || 0);
-      const injuredCount = Math.max(0, extracted.injuredCount || 0);
+      const injuredCount = Math.max(
+        0,
+        extracted.injuredCount !== undefined
+          ? extracted.injuredCount
+          : (extracted.conditions?.includes('HEAVILY_INJURED') ? 1 : 0)
+      );
       const criticalMedicalNeed = !!extracted.criticalMedicalNeed;
       const waterLevel = extracted.waterLevel || 'HIGH';
-      const emergencyType = extracted.emergencyType || 'FLOOD';
+      let emergencyType = extracted.emergencyType || 'FLOOD';
+      if (extracted.unableToMove) {
+        emergencyType = 'TRAPPED';
+      }
       const spokenLoc = extracted.spokenLocation || undefined;
 
       const conditionList: string[] = ['NEED_RESCUE'];
@@ -485,6 +516,11 @@ export async function applySosLifecycleAndTriage(
       if (waterLevel === 'HIGH' || waterLevel === 'EXTREME') conditionList.push('WATER_RISING');
       if (emergencyType === 'TRAPPED') conditionList.push('TRAPPED');
       if (emergencyType === 'FIRE') conditionList.push('FIRE');
+      if (Array.isArray(extracted.conditions)) {
+        extracted.conditions.forEach((c) => {
+          if (!conditionList.includes(c)) conditionList.push(c);
+        });
+      }
 
       // Exact existing STRIDE priority formula (DO NOT MODIFY)
       const priorityResult = calculateStrideDeterministicPriority({
@@ -584,6 +620,68 @@ export async function applySosLifecycleAndTriage(
     sosUpdateSummary,
     sosAfterSummary,
   };
+}
+
+/**
+ * Authoritatively reconciles assistant response text with the persisted canonical SOS record.
+ * Guarantees that:
+ * 1. Conversational text never contradicts activeSosRecord (people count, injured count, trapped, water level).
+ * 2. Redundant questions about mobility or situation are eliminated if the user is already confirmed trapped or unable to move.
+ */
+export function reconcileAssistantResponseWithCanonicalSos(
+  originalResponse: string,
+  canonicalSos: any,
+  turnFacts: any,
+  messageText: string
+): string {
+  if (!canonicalSos) return sanitizeAssistantResponse(originalResponse);
+
+  const lower = (messageText || '').toLowerCase();
+  const isUnableToMove =
+    turnFacts?.unableToMove ||
+    /\b(?:(?:we|i|none\s+of\s+us|they|all\s+of\s+us)\s+(?:can(?:'t|not)|cannot|can\s+not|are\s+unable\s+to|am\s+unable\s+to|is\s+unable\s+to)\s+move|none\s+of\s+us\s+can\s+move|unable\s+to\s+move|can't\s+move|cannot\s+move)\b/i.test(
+      lower
+    );
+  const isTrapped =
+    canonicalSos.emergencyType === 'TRAPPED' ||
+    (Array.isArray(canonicalSos.conditions) &&
+      canonicalSos.conditions.some((c: any) => (c.conditionType || c) === 'TRAPPED')) ||
+    lower.includes('trapped');
+  const isRisingWater =
+    canonicalSos.waterLevel === 'HIGH' ||
+    canonicalSos.waterLevel === 'EXTREME' ||
+    (Array.isArray(canonicalSos.conditions) &&
+      canonicalSos.conditions.some((c: any) => (c.conditionType || c) === 'WATER_RISING')) ||
+    lower.includes('water is rising') ||
+    lower.includes('water rising');
+
+  // If user communicated they are trapped / unable to move and water is rising
+  if ((isUnableToMove || isTrapped) && isRisingWater) {
+    return sanitizeAssistantResponse(
+      "I have updated your active emergency signal: you are trapped, water is rising, and you are unable to move. Emergency dispatch has been notified. Stay as safe as possible and follow any instructions from responders."
+    );
+  }
+
+  // If user communicated they are trapped / unable to move (without rising water)
+  if (isUnableToMove || isTrapped) {
+    if (turnFacts?.unableToMove || /\b(?:cannot|can't|unable\s+to)\s+move\b/i.test(lower)) {
+      return sanitizeAssistantResponse(
+        "I have updated your active emergency signal: you are trapped and unable to move. Emergency dispatch has been notified. Stay as safe as possible and follow any instructions from responders."
+      );
+    }
+  }
+
+  // Strip redundant questions about mobility or situation when trapped/immobile
+  let cleaned = originalResponse;
+  if (isUnableToMove || isTrapped) {
+    cleaned = cleaned
+      .replace(/Are you or anyone with you able to move safely\?\s*(?:Yes or no\.?)?/gi, 'Emergency teams have been alerted.')
+      .replace(/Are you trapped, injured, or able to move to safety\?/gi, 'Emergency dispatch has been notified.')
+      .replace(/Could you describe the situation or danger you are facing\?\s*/gi, '')
+      .trim();
+  }
+
+  return sanitizeAssistantResponse(cleaned);
 }
 
 export async function handleVoiceEmergencyChat(
@@ -704,7 +802,15 @@ export async function handleVoiceEmergencyChat(
       intent: aiResult.intent,
       assistantResponse: aiResult.assistantResponse,
     });
-    console.log('FINAL UI MESSAGE:', aiResult.assistantResponse);
+
+    const finalAssistantResponse = reconcileAssistantResponseWithCanonicalSos(
+      aiResult.assistantResponse,
+      activeSosRecord,
+      aiResult.extractedInformation || {},
+      message
+    );
+
+    console.log('FINAL UI MESSAGE:', finalAssistantResponse);
     console.log('SOS BEFORE:', sosBeforeSummary ? JSON.stringify(sosBeforeSummary) : 'None');
     console.log('SOS UPDATE:', sosUpdateSummary ? JSON.stringify(sosUpdateSummary) : 'None');
     console.log('SOS AFTER:', sosAfterSummary ? JSON.stringify(sosAfterSummary) : 'None');
@@ -716,7 +822,7 @@ export async function handleVoiceEmergencyChat(
       clientRequestId: reqId,
       mode: aiResult.mode,
       intent: aiResult.intent,
-      assistantResponse: sanitizeAssistantResponse(aiResult.assistantResponse),
+      assistantResponse: finalAssistantResponse,
       extractedInformation: aiResult.extractedInformation || {},
       existingIncidentFacts,
       uncertainInformation: aiResult.uncertainInformation || [],
@@ -957,7 +1063,15 @@ export async function handleVoiceEmergencyAudio(
       intent: aiResult.intent,
       assistantResponse: aiResult.assistantResponse,
     });
-    console.log('FINAL UI MESSAGE:', aiResult.assistantResponse);
+
+    const finalAssistantResponse = reconcileAssistantResponseWithCanonicalSos(
+      aiResult.assistantResponse,
+      activeSosRecord,
+      aiResult.extractedInformation || {},
+      messageForTriage
+    );
+
+    console.log('FINAL UI MESSAGE:', finalAssistantResponse);
     console.log('SOS BEFORE:', sosBeforeSummary ? JSON.stringify(sosBeforeSummary) : 'None');
     console.log('SOS UPDATE:', sosUpdateSummary ? JSON.stringify(sosUpdateSummary) : 'None');
     console.log('SOS AFTER:', sosAfterSummary ? JSON.stringify(sosAfterSummary) : 'None');
@@ -971,7 +1085,7 @@ export async function handleVoiceEmergencyAudio(
       diagnosticReason: aiResult.diagnosticReason || null,
       mode: aiResult.mode,
       intent: aiResult.intent,
-      assistantResponse: sanitizeAssistantResponse(aiResult.assistantResponse),
+      assistantResponse: finalAssistantResponse,
       extractedInformation: aiResult.extractedInformation || {},
       existingIncidentFacts,
       uncertainInformation: aiResult.uncertainInformation || [],
