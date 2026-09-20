@@ -92,6 +92,9 @@ export async function getHousehold(req: AuthenticatedRequest, res: Response): Pr
 export async function getMyHousehold(req: AuthenticatedRequest, res: Response): Promise<void> {
   try {
     const userId = req.user!.userId;
+    const dbUser = await prisma.user.findUnique({ where: { id: userId } });
+    const authoritativeName = dbUser?.name || req.user?.name || 'Citizen User';
+
     let household = await prisma.household.findFirst({
       where: { userId },
       include: {
@@ -109,7 +112,7 @@ export async function getMyHousehold(req: AuthenticatedRequest, res: Response): 
       household = await prisma.household.create({
         data: {
           userId,
-          name: 'Building A-182, Flat 401',
+          name: `${authoritativeName}'s Residence`,
           address: '42 Central Riverfront Avenue, Ward 4',
           city: 'Coastal Metro',
           state: 'Southern Region',
@@ -117,10 +120,10 @@ export async function getMyHousehold(req: AuthenticatedRequest, res: Response): 
           longitude: 80.2707,
           members: {
             create: [
-              { name: req.user!.name, age: 34, relationship: 'Self', category: 'ADULT' },
-              { name: 'Priya Sharma', age: 32, relationship: 'Spouse', category: 'ADULT' },
-              { name: 'Aarav Sharma', age: 7, relationship: 'Child', category: 'CHILD' },
-              { name: 'Kavita Sharma', age: 68, relationship: 'Parent', category: 'ELDERLY' },
+              { name: authoritativeName, age: 34, relationship: 'Self', category: 'ADULT' },
+              { name: 'Spouse Member', age: 32, relationship: 'Spouse', category: 'ADULT' },
+              { name: 'Child Member', age: 7, relationship: 'Child', category: 'CHILD' },
+              { name: 'Parent Member', age: 68, relationship: 'Parent', category: 'ELDERLY' },
             ],
           },
         },
@@ -133,6 +136,18 @@ export async function getMyHousehold(req: AuthenticatedRequest, res: Response): 
           },
         },
       });
+    } else {
+      // Synchronize existing Self member with authoritative authenticated user name
+      const selfMember = household.members.find((m) =>
+        m.relationship.toLowerCase().includes('self')
+      );
+      if (selfMember && selfMember.name !== authoritativeName) {
+        await prisma.householdMember.update({
+          where: { id: selfMember.id },
+          data: { name: authoritativeName },
+        });
+        selfMember.name = authoritativeName;
+      }
     }
 
     const adults = household.members.filter((m) => m.category === 'ADULT').length;

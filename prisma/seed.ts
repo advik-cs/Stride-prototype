@@ -70,7 +70,7 @@ async function main() {
 
   // Citizens for the 16 buildings
   const citizenConfigs = [
-    { name: 'Citizen Priya Sharma', phone: '9800000011', idNum: '5432 8901 2345' },
+    { name: 'Ramesh Iyer', phone: '9800000011', idNum: '5432 8901 2345' },
     { name: 'Citizen Rajesh Kumar', phone: '9800000012', idNum: 'TEST-CIT-SEED-002' },
     { name: 'Citizen Meera Iyer', phone: '9800000013', idNum: 'TEST-CIT-SEED-003' },
     { name: 'Citizen Indira Naidu', phone: '9800000014', idNum: 'TEST-CIT-SEED-004' },
@@ -106,7 +106,7 @@ async function main() {
   const sheltersData = [
     {
       id: '00000000-0000-0000-0000-000000000101',
-      name: 'Koramangala Indoor Stadium (Demo Shelter)',
+      name: 'Koramangala Indoor Stadium',
       address: '80 Feet Road, Koramangala 4th Block, Bengaluru',
       latitude: 12.9340,
       longitude: 77.6220,
@@ -116,7 +116,7 @@ async function main() {
     },
     {
       id: '00000000-0000-0000-0000-000000000102',
-      name: 'Our Lady of Vailankanni Hall (Demo Unit A)',
+      name: 'Our Lady of Vailankanni Hall',
       address: 'Yelahanka New Town, Bengaluru',
       latitude: 13.1010,
       longitude: 77.5970,
@@ -126,7 +126,7 @@ async function main() {
     },
     {
       id: '00000000-0000-0000-0000-000000000103',
-      name: 'Mangaldhama Multi Utility Hall (Demo)',
+      name: 'Mangaldhama Multi Utility Hall',
       address: '12th Main Road, HAL 2nd Stage, Indiranagar, Bengaluru',
       latitude: 12.9710,
       longitude: 77.6430,
@@ -136,7 +136,7 @@ async function main() {
     },
     {
       id: '00000000-0000-0000-0000-000000000104',
-      name: 'M. Chinnaswamy Stadium (Demo Shelter)',
+      name: 'M. Chinnaswamy Stadium',
       address: 'MG Road, Cubbon Park, Bengaluru',
       latitude: 12.9788,
       longitude: 77.5996,
@@ -146,7 +146,7 @@ async function main() {
     },
     {
       id: '00000000-0000-0000-0000-000000000105',
-      name: 'Sree Kanteerava Stadium (Demo Shelter)',
+      name: 'Sree Kanteerava Stadium',
       address: 'Kasturba Road, Sampangi Rama Nagar, Bengaluru',
       latitude: 12.9698,
       longitude: 77.5926,
@@ -156,7 +156,7 @@ async function main() {
     },
     {
       id: '00000000-0000-0000-0000-000000000106',
-      name: 'Nadaprabhu Kempegowda Stadium (Demo)',
+      name: 'Nadaprabhu Kempegowda Stadium',
       address: 'Magadi Main Road, Vijayanagar, Bengaluru',
       latitude: 12.9830,
       longitude: 77.5250,
@@ -166,7 +166,7 @@ async function main() {
     },
     {
       id: '00000000-0000-0000-0000-000000000107',
-      name: 'Atal Bihari Vajpayee Stadium (Demo)',
+      name: 'Atal Bihari Vajpayee Stadium',
       address: '27th Main Road, HSR Layout Sector 1, Bengaluru',
       latitude: 12.9125,
       longitude: 77.6380,
@@ -176,7 +176,7 @@ async function main() {
     },
     {
       id: '00000000-0000-0000-0000-000000000108',
-      name: 'Dr. B. R. Ambedkar Community Hall (Demo)',
+      name: 'Dr. B. R. Ambedkar Community Hall',
       address: 'Old Airport Road, Domlur, Bengaluru',
       latitude: 12.9770,
       longitude: 77.6240,
@@ -186,7 +186,7 @@ async function main() {
     },
     {
       id: '00000000-0000-0000-0000-000000000109',
-      name: 'Sahakara Nagar Indoor Stadium (Demo)',
+      name: 'Sahakara Nagar Indoor Stadium',
       address: '60 Feet Road, Sahakara Nagar, Bengaluru',
       latitude: 13.0620,
       longitude: 77.5890,
@@ -196,7 +196,7 @@ async function main() {
     },
     {
       id: '00000000-0000-0000-0000-000000000110',
-      name: 'Verdant Convention Hall (Demo Shelter)',
+      name: 'Verdant Convention Hall',
       address: 'Neeladri Road, Electronic City Phase 1, Bengaluru',
       latitude: 12.8450,
       longitude: 77.6620,
@@ -206,7 +206,7 @@ async function main() {
     },
     {
       id: '00000000-0000-0000-0000-000000000111',
-      name: 'Kempapura Indoor Stadium (Demo Shelter)',
+      name: 'Kempapura Indoor Stadium',
       address: 'Coffee Board Layout, Kempapura, Hebbal, Bengaluru',
       latitude: 13.0480,
       longitude: 77.5980,
@@ -216,7 +216,7 @@ async function main() {
     },
     {
       id: '00000000-0000-0000-0000-000000000112',
-      name: 'ECC Centre Community Hall (Demo Shelter)',
+      name: 'ECC Centre Community Hall',
       address: 'Whitefield Main Road, Inner Circle, Bengaluru',
       latitude: 12.9690,
       longitude: 77.7490,
@@ -226,7 +226,7 @@ async function main() {
     },
     {
       id: '00000000-0000-0000-0000-000000000113',
-      name: "St. John's Community Centre (Demo)",
+      name: "St. John's Community Centre",
       address: 'Benson Cross Road, Benson Town, Bengaluru',
       latitude: 12.9980,
       longitude: 77.6140,
@@ -236,7 +236,7 @@ async function main() {
     },
     {
       id: '00000000-0000-0000-0000-000000000114',
-      name: 'Ideal Homes Community Hall (Demo)',
+      name: 'Ideal Homes Community Hall',
       address: 'Rajarajeshwari Nagar, Bengaluru',
       latitude: 12.9260,
       longitude: 77.5180,
@@ -882,11 +882,11 @@ async function main() {
     // Generate members
     if (cfg.name === 'Palm Meadows Villa 101') {
       const pmMembers = [
-        { name: 'Priya Sharma', age: 38, rel: 'Self', cat: 'ADULT' },
-        { name: 'Ramesh Sharma', age: 42, rel: 'Spouse', cat: 'ADULT' },
-        { name: 'Aarav Sharma', age: 10, rel: 'Child', cat: 'CHILD' },
-        { name: 'Ananya Sharma', age: 7, rel: 'Child', cat: 'CHILD' },
-        { name: 'Savitri Sharma', age: 68, rel: 'Parent', cat: 'ELDERLY' },
+        { name: 'Ramesh Iyer', age: 38, rel: 'Self', cat: 'ADULT' },
+        { name: 'Sita Iyer', age: 36, rel: 'Spouse', cat: 'ADULT' },
+        { name: 'Aarav Iyer', age: 10, rel: 'Child', cat: 'CHILD' },
+        { name: 'Ananya Iyer', age: 7, rel: 'Child', cat: 'CHILD' },
+        { name: 'Savitri Iyer', age: 68, rel: 'Parent', cat: 'ELDERLY' },
       ];
       for (const m of pmMembers) {
         const mem = await prisma.householdMember.create({
@@ -1175,18 +1175,18 @@ async function main() {
   }
 
   // 10. Sample Notifications
-  const priyaUser = citizenUserMap.get('9800000011')!;
+  const defaultCitizenUser = citizenUserMap.get('9800000011')!;
   await prisma.notification.createMany({
     data: [
       {
-        userId: priyaUser.id,
+        userId: defaultCitizenUser.id,
         disasterId: primaryDisaster.id,
         type: 'DISASTER_ALERT',
         message: 'ORANGE ALERT: Severe Flash Flood Warning issued for Koramangala & HSR Basin.',
         status: 'UNREAD',
       },
       {
-        userId: priyaUser.id,
+        userId: defaultCitizenUser.id,
         disasterId: primaryDisaster.id,
         type: 'EXPECTED_LOCATION_REQUEST',
         message: 'Please submit your household expected location and evacuation plan immediately.',

@@ -2,6 +2,13 @@ import { Response } from 'express';
 import prisma from '../config/database.ts';
 import { AuthenticatedRequest } from '../middleware/auth.ts';
 
+export function cleanShelterName(name: string): string {
+  return (name || '')
+    .replace(/\s*\((?:demo\s*[^)]*|demo)\)/gi, '')
+    .replace(/\s*-\s*demo/gi, '')
+    .trim();
+}
+
 export async function createShelter(req: AuthenticatedRequest, res: Response): Promise<void> {
   try {
     const { name, address, latitude, longitude, capacity, contactNumber, status } = req.body;
@@ -13,7 +20,7 @@ export async function createShelter(req: AuthenticatedRequest, res: Response): P
 
     const shelter = await prisma.shelter.create({
       data: {
-        name: String(name).trim(),
+        name: cleanShelterName(String(name)),
         address: String(address).trim(),
         latitude: parseFloat(latitude),
         longitude: parseFloat(longitude),
@@ -34,7 +41,7 @@ export async function getShelters(req: AuthenticatedRequest, res: Response): Pro
     const shelters = await prisma.shelter.findMany({
       orderBy: { name: 'asc' },
     });
-    res.json(shelters);
+    res.json(shelters.map((s) => ({ ...s, name: cleanShelterName(s.name) })));
   } catch (error: any) {
     res.status(500).json({ error: error.message || 'Failed to fetch shelters.' });
   }
@@ -52,7 +59,7 @@ export async function getShelterById(req: AuthenticatedRequest, res: Response): 
       return;
     }
 
-    res.json(shelter);
+    res.json({ ...shelter, name: cleanShelterName(shelter.name) });
   } catch (error: any) {
     res.status(500).json({ error: error.message || 'Failed to fetch shelter.' });
   }
@@ -159,7 +166,7 @@ export async function getShelterOccupancy(req: AuthenticatedRequest, res: Respon
 
       return {
         id: s.id,
-        name: s.name,
+        name: cleanShelterName(s.name),
         address: s.address,
         latitude: s.latitude,
         longitude: s.longitude,

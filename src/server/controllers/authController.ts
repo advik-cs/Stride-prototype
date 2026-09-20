@@ -209,6 +209,29 @@ export async function login(req: AuthenticatedRequest, res: Response): Promise<v
       });
     }
 
+    // Ensure the user's household 'Self' member name is synchronized with the authenticated user's name
+    if (user.role === 'CITIZEN' || currentRole === 'CITIZEN') {
+      try {
+        const userHousehold = await prisma.household.findFirst({
+          where: { userId: user.id },
+          include: { members: true },
+        });
+        if (userHousehold) {
+          const selfMember = userHousehold.members.find((m) =>
+            m.relationship.toLowerCase().includes('self')
+          );
+          if (selfMember && selfMember.name !== user.name) {
+            await prisma.householdMember.update({
+              where: { id: selfMember.id },
+              data: { name: user.name },
+            });
+          }
+        }
+      } catch (hhSyncErr) {
+        console.warn('Household self member sync warning:', hhSyncErr);
+      }
+    }
+
     const token = generateToken({
       userId: user.id,
       role: currentRole,

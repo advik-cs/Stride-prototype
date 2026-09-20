@@ -101,6 +101,9 @@ export const authApi = {
       const beforeRes = await beforeApi.login({
         mobileNumber: cred.beforeMobile,
         password: cred.beforePassword,
+        name: cred.name,
+        testIdentityNumber: cred.identityBadge,
+        role: cred.role,
       });
       beforeToken = beforeRes.token;
       if (!userId) userId = beforeRes.user.id;
@@ -176,7 +179,13 @@ export const authApi = {
     try {
       const mobileNumber = !isEmail && cleanId.length >= 8 ? cleanId : '9800000011';
       try {
-        const beforeRes = await beforeApi.login({ mobileNumber, password });
+        const beforeRes = await beforeApi.login({
+          mobileNumber,
+          password,
+          name: userName,
+          testIdentityNumber: cleanId,
+          role,
+        });
         beforeToken = beforeRes.token;
         if (!userId) userId = beforeRes.user.id;
       } catch (err: any) {

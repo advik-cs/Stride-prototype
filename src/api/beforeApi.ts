@@ -177,12 +177,21 @@ export const beforeApi = {
     });
   },
 
-  async login(data: { mobileNumber: string; password?: string }) {
+  async login(data: {
+    mobileNumber: string;
+    password?: string;
+    name?: string;
+    testIdentityNumber?: string;
+    role?: string;
+  }) {
     return beforeRequest<{ token: string; user: BeforeUser }>('/auth/login', {
       method: 'POST',
       body: JSON.stringify({
         mobileNumber: data.mobileNumber,
         password: data.password || 'StrongPassword123!',
+        name: data.name,
+        testIdentityNumber: data.testIdentityNumber,
+        role: data.role,
       }),
     });
   },

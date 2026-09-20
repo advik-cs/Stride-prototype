@@ -242,81 +242,83 @@ export const DuringDashboardView: React.FC<DuringDashboardViewProps> = ({
         <LiveWeatherCard />
       )}
 
-      {/* RESCUE OPERATIONS PIPELINE */}
-      <div className="bg-white rounded-3xl p-6 sm:p-8 border border-[#C8D9E6] shadow-sm">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 border-b border-[#F5EFEB]">
-          <div>
-            <h3 className="text-lg font-bold font-['Space_Grotesk',sans-serif] text-[#2F4156]">
-              Live Rescue Operation Pipeline
-            </h3>
-            <p className="text-xs text-[#567C8D]">
-              Real-time assignment stages for active distress calls.
-            </p>
+      {/* RESCUE OPERATIONS PIPELINE (Authority & Rescuer only) */}
+      {user.role !== 'CITIZEN' && (
+        <div className="bg-white rounded-3xl p-6 sm:p-8 border border-[#C8D9E6] shadow-sm">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 border-b border-[#F5EFEB]">
+            <div>
+              <h3 className="text-lg font-bold font-['Space_Grotesk',sans-serif] text-[#2F4156]">
+                Live Rescue Operation Pipeline
+              </h3>
+              <p className="text-xs text-[#567C8D]">
+                Real-time assignment stages for active distress calls.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => onNavigateTab('rescue')}
+              className="text-xs font-bold text-[#2F4156] hover:underline flex items-center gap-1 self-start sm:self-auto"
+            >
+              <span>Open Rescue Dashboard</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={() => onNavigateTab('rescue')}
-            className="text-xs font-bold text-[#2F4156] hover:underline flex items-center gap-1 self-start sm:self-auto"
-          >
-            <span>Open Rescue Dashboard</span>
-            <ArrowRight className="w-3.5 h-3.5" />
-          </button>
+
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
+            {/* Pending */}
+            <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200">
+              <span className="text-[10px] uppercase font-extrabold text-amber-800 tracking-wider">
+                Pending Queue
+              </span>
+              <p className="text-2xl font-bold font-['Space_Grotesk',sans-serif] text-amber-900 mt-1">
+                {status?.emergencyRequests?.pending || 0}
+              </p>
+              <span className="text-[11px] text-amber-700 mt-1 block">
+                Awaiting team assignment
+              </span>
+            </div>
+
+            {/* Team Assigned */}
+            <div className="p-4 rounded-2xl bg-blue-50 border border-blue-200">
+              <span className="text-[10px] uppercase font-extrabold text-blue-800 tracking-wider">
+                Team Assigned
+              </span>
+              <p className="text-2xl font-bold font-['Space_Grotesk',sans-serif] text-blue-900 mt-1">
+                {status?.emergencyRequests?.teamAssigned || 0}
+              </p>
+              <span className="text-[11px] text-blue-700 mt-1 block">
+                En route / on the way
+              </span>
+            </div>
+
+            {/* Safely Rescued */}
+            <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200">
+              <span className="text-[10px] uppercase font-extrabold text-emerald-800 tracking-wider">
+                Safely Rescued
+              </span>
+              <p className="text-2xl font-bold font-['Space_Grotesk',sans-serif] text-emerald-900 mt-1">
+                {status?.emergencyRequests?.safelyRescued || 0}
+              </p>
+              <span className="text-[11px] text-emerald-700 mt-1 block">
+                Successfully extracted
+              </span>
+            </div>
+
+            {/* Not Found */}
+            <div className="p-4 rounded-2xl bg-red-50 border border-red-200">
+              <span className="text-[10px] uppercase font-extrabold text-red-800 tracking-wider">
+                Not Found
+              </span>
+              <p className="text-2xl font-bold font-['Space_Grotesk',sans-serif] text-red-900 mt-1">
+                {status?.emergencyRequests?.notFound || 0}
+              </p>
+              <span className="text-[11px] text-red-700 mt-1 block">
+                Requires secondary sweep
+              </span>
+            </div>
+          </div>
         </div>
-
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
-          {/* Pending */}
-          <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200">
-            <span className="text-[10px] uppercase font-extrabold text-amber-800 tracking-wider">
-              Pending Queue
-            </span>
-            <p className="text-2xl font-bold font-['Space_Grotesk',sans-serif] text-amber-900 mt-1">
-              {status?.emergencyRequests?.pending || 0}
-            </p>
-            <span className="text-[11px] text-amber-700 mt-1 block">
-              Awaiting team assignment
-            </span>
-          </div>
-
-          {/* Team Assigned */}
-          <div className="p-4 rounded-2xl bg-blue-50 border border-blue-200">
-            <span className="text-[10px] uppercase font-extrabold text-blue-800 tracking-wider">
-              Team Assigned
-            </span>
-            <p className="text-2xl font-bold font-['Space_Grotesk',sans-serif] text-blue-900 mt-1">
-              {status?.emergencyRequests?.teamAssigned || 0}
-            </p>
-            <span className="text-[11px] text-blue-700 mt-1 block">
-              En route / on the way
-            </span>
-          </div>
-
-          {/* Safely Rescued */}
-          <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200">
-            <span className="text-[10px] uppercase font-extrabold text-emerald-800 tracking-wider">
-              Safely Rescued
-            </span>
-            <p className="text-2xl font-bold font-['Space_Grotesk',sans-serif] text-emerald-900 mt-1">
-              {status?.emergencyRequests?.safelyRescued || 0}
-            </p>
-            <span className="text-[11px] text-emerald-700 mt-1 block">
-              Successfully extracted
-            </span>
-          </div>
-
-          {/* Not Found */}
-          <div className="p-4 rounded-2xl bg-red-50 border border-red-200">
-            <span className="text-[10px] uppercase font-extrabold text-red-800 tracking-wider">
-              Not Found
-            </span>
-            <p className="text-2xl font-bold font-['Space_Grotesk',sans-serif] text-red-900 mt-1">
-              {status?.emergencyRequests?.notFound || 0}
-            </p>
-            <span className="text-[11px] text-red-700 mt-1 block">
-              Requires secondary sweep
-            </span>
-          </div>
-        </div>
-      </div>
+      )}
 
       {/* Quick Navigation Panels */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

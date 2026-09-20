@@ -293,6 +293,27 @@ async function login(req, res) {
         data: { role }
       });
     }
+    if (user.role === "CITIZEN" || currentRole === "CITIZEN") {
+      try {
+        const userHousehold = await database_default.household.findFirst({
+          where: { userId: user.id },
+          include: { members: true }
+        });
+        if (userHousehold) {
+          const selfMember = userHousehold.members.find(
+            (m) => m.relationship.toLowerCase().includes("self")
+          );
+          if (selfMember && selfMember.name !== user.name) {
+            await database_default.householdMember.update({
+              where: { id: selfMember.id },
+              data: { name: user.name }
+            });
+          }
+        }
+      } catch (hhSyncErr) {
+        console.warn("Household self member sync warning:", hhSyncErr);
+      }
+    }
     const token = generateToken({
       userId: user.id,
       role: currentRole,
@@ -437,6 +458,8 @@ async function getHousehold(req, res) {
 async function getMyHousehold(req, res) {
   try {
     const userId = req.user.userId;
+    const dbUser = await database_default.user.findUnique({ where: { id: userId } });
+    const authoritativeName = dbUser?.name || req.user?.name || "Citizen User";
     let household = await database_default.household.findFirst({
       where: { userId },
       include: {
@@ -452,7 +475,7 @@ async function getMyHousehold(req, res) {
       household = await database_default.household.create({
         data: {
           userId,
-          name: "Building A-182, Flat 401",
+          name: `${authoritativeName}'s Residence`,
           address: "42 Central Riverfront Avenue, Ward 4",
           city: "Coastal Metro",
           state: "Southern Region",
@@ -460,10 +483,10 @@ async function getMyHousehold(req, res) {
           longitude: 80.2707,
           members: {
             create: [
-              { name: req.user.name, age: 34, relationship: "Self", category: "ADULT" },
-              { name: "Priya Sharma", age: 32, relationship: "Spouse", category: "ADULT" },
-              { name: "Aarav Sharma", age: 7, relationship: "Child", category: "CHILD" },
-              { name: "Kavita Sharma", age: 68, relationship: "Parent", category: "ELDERLY" }
+              { name: authoritativeName, age: 34, relationship: "Self", category: "ADULT" },
+              { name: "Spouse Member", age: 32, relationship: "Spouse", category: "ADULT" },
+              { name: "Child Member", age: 7, relationship: "Child", category: "CHILD" },
+              { name: "Parent Member", age: 68, relationship: "Parent", category: "ELDERLY" }
             ]
           }
         },
@@ -476,6 +499,17 @@ async function getMyHousehold(req, res) {
           }
         }
       });
+    } else {
+      const selfMember = household.members.find(
+        (m) => m.relationship.toLowerCase().includes("self")
+      );
+      if (selfMember && selfMember.name !== authoritativeName) {
+        await database_default.householdMember.update({
+          where: { id: selfMember.id },
+          data: { name: authoritativeName }
+        });
+        selfMember.name = authoritativeName;
+      }
     }
     const adults = household.members.filter((m) => m.category === "ADULT").length;
     const children = household.members.filter((m) => m.category === "CHILD").length;
@@ -1481,6 +1515,9 @@ async function getReconfirmationStatus(req, res) {
 }
 
 // src/server/controllers/shelterController.ts
+function cleanShelterName(name) {
+  return (name || "").replace(/\s*\((?:demo\s*[^)]*|demo)\)/gi, "").replace(/\s*-\s*demo/gi, "").trim();
+}
 async function createShelter(req, res) {
   try {
     const { name, address, latitude, longitude, capacity, contactNumber, status } = req.body;
@@ -1490,7 +1527,7 @@ async function createShelter(req, res) {
     }
     const shelter = await database_default.shelter.create({
       data: {
-        name: String(name).trim(),
+        name: cleanShelterName(String(name)),
         address: String(address).trim(),
         latitude: parseFloat(latitude),
         longitude: parseFloat(longitude),
@@ -1509,7 +1546,7 @@ async function getShelters(req, res) {
     const shelters = await database_default.shelter.findMany({
       orderBy: { name: "asc" }
     });
-    res.json(shelters);
+    res.json(shelters.map((s) => ({ ...s, name: cleanShelterName(s.name) })));
   } catch (error) {
     res.status(500).json({ error: error.message || "Failed to fetch shelters." });
   }
@@ -1524,7 +1561,7 @@ async function getShelterById(req, res) {
       res.status(404).json({ error: "Shelter not found." });
       return;
     }
-    res.json(shelter);
+    res.json({ ...shelter, name: cleanShelterName(shelter.name) });
   } catch (error) {
     res.status(500).json({ error: error.message || "Failed to fetch shelter." });
   }
@@ -1626,7 +1663,7 @@ async function getShelterOccupancy(req, res) {
       }
       return {
         id: s.id,
-        name: s.name,
+        name: cleanShelterName(s.name),
         address: s.address,
         latitude: s.latitude,
         longitude: s.longitude,

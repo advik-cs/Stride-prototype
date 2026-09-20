@@ -23,6 +23,13 @@ interface ShelterSelectionViewProps {
   activeDisaster: DisasterEvent | null;
 }
 
+export function cleanShelterName(name: string): string {
+  return (name || '')
+    .replace(/\s*\((?:demo\s*[^)]*|demo)\)/gi, '')
+    .replace(/\s*-\s*demo/gi, '')
+    .trim();
+}
+
 export const ShelterSelectionView: React.FC<ShelterSelectionViewProps> = ({
   user,
   activeDisaster,
@@ -260,7 +267,7 @@ export const ShelterSelectionView: React.FC<ShelterSelectionViewProps> = ({
                   </div>
 
                   <h3 className="text-base font-bold text-[#2F4156] mt-4 leading-tight">
-                    {shelter.name}
+                    {cleanShelterName(shelter.name)}
                   </h3>
                   <p className="text-xs text-[#567C8D] mt-1 flex items-center gap-1.5">
                     <MapPin className="w-3.5 h-3.5 flex-shrink-0 text-[#567C8D]" />

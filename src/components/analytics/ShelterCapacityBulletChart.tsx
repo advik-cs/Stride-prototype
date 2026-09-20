@@ -31,6 +31,13 @@ export interface ShelterOccupancy {
   status: 'AVAILABLE' | 'NEAR_CAPACITY' | 'FULL' | 'OVER_CAPACITY';
 }
 
+function cleanShelterName(name: string): string {
+  return (name || '')
+    .replace(/\s*\((?:demo\s*[^)]*|demo)\)/gi, '')
+    .replace(/\s*-\s*demo/gi, '')
+    .trim();
+}
+
 interface ShelterCapacityBulletChartProps {
   activeDisasterId?: string | null;
   /** Custom polling interval in milliseconds. Default is 5000ms (5s) */
@@ -419,7 +426,7 @@ export const ShelterCapacityBulletChart: React.FC<ShelterCapacityBulletChartProp
                   <div className="min-w-[200px] flex-1">
                     <div className="flex items-center gap-2">
                       <h4 className="text-sm font-bold text-[#2F4156] group-hover:text-indigo-700 transition-colors">
-                        {shelter.name}
+                        {cleanShelterName(shelter.name)}
                       </h4>
                       {isOver && (
                         <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-200">

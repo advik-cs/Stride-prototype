@@ -72,6 +72,31 @@ export const HouseholdMembersView: React.FC<HouseholdMembersViewProps> = ({
       const effectiveDisaster = activeDisaster || (dList.length > 0 ? dList[0] : null);
 
       if (hh) {
+        // Authoritatively bind the Self household member to the authenticated citizen's name
+        const authName = user?.name?.trim();
+        if (authName && Array.isArray(hh.members)) {
+          let selfFound = false;
+          hh.members = hh.members.map((m) => {
+            if (m.relationship?.toLowerCase().includes('self')) {
+              selfFound = true;
+              return { ...m, name: authName };
+            }
+            return m;
+          });
+          if (!selfFound && hh.members.length === 0) {
+            hh.members = [
+              {
+                id: `self-${Date.now()}`,
+                householdId: hh.id,
+                name: authName,
+                age: 34,
+                relationship: 'Self',
+                category: 'ADULT',
+              },
+            ];
+          }
+        }
+
         setHousehold(hh);
         setEditAddressValue(hh.address || '');
         setEditNameValue(hh.name || '');
