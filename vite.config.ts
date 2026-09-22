@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react';
 import fs from 'fs';
 import path from 'path';
 import {defineConfig, Plugin} from 'vite';
+import { VitePWA } from 'vite-plugin-pwa';
 
 // LINT.IfChange(aistudio_media_plugin)
 function aistudioMediaPlugin(): Plugin {
@@ -66,7 +67,86 @@ function aistudioMediaPlugin(): Plugin {
 
 export default defineConfig(() => {
   return {
-    plugins: [react(), tailwindcss(), aistudioMediaPlugin()],
+    plugins: [
+      react(),
+      tailwindcss(),
+      aistudioMediaPlugin(),
+      VitePWA({
+        registerType: 'autoUpdate',
+        includeAssets: ['stride-logo.svg'],
+        manifest: {
+          name: 'STRIDE - Disaster Intelligence & Response',
+          short_name: 'STRIDE',
+          description: 'Sensor Trend Intelligence for Detection & Evaluation: A comprehensive disaster intelligence, preparedness, and rescue management platform.',
+          start_url: '/',
+          scope: '/',
+          display: 'standalone',
+          orientation: 'portrait-primary',
+          background_color: '#F5EFEB',
+          theme_color: '#2F4156',
+          icons: [
+            {
+              src: '/stride-logo.svg',
+              sizes: 'any',
+              type: 'image/svg+xml',
+              purpose: 'any'
+            },
+            {
+              src: '/stride-logo.svg',
+              sizes: '500x500',
+              type: 'image/svg+xml',
+              purpose: 'maskable'
+            }
+          ]
+        },
+        workbox: {
+          globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'],
+          navigateFallback: '/index.html',
+          navigateFallbackDenylist: [
+            /^\/api\/.*/,
+            /^\/auth\/.*/,
+            /^\/during\/voice-emergency\/.*/,
+            /^\/health$/,
+          ],
+          runtimeCaching: [
+            {
+              urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
+              handler: 'StaleWhileRevalidate',
+              options: {
+                cacheName: 'google-fonts-stylesheets',
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
+              },
+            },
+            {
+              urlPattern: /^https:\/\/fonts\.gstatic\.com\/.*/i,
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'google-fonts-webfonts',
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
+                expiration: {
+                  maxEntries: 30,
+                  maxAgeSeconds: 60 * 60 * 24 * 365, // 1 year
+                },
+              },
+            },
+            {
+              urlPattern: /^https:\/\/unpkg\.com\/leaflet@.*\/dist\/leaflet\.css$/i,
+              handler: 'StaleWhileRevalidate',
+              options: {
+                cacheName: 'leaflet-assets',
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
+              },
+            },
+          ],
+        },
+      }),
+    ],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),

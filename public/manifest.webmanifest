@@ -1,0 +1,30 @@
+{
+  "name": "STRIDE - Disaster Intelligence & Response",
+  "short_name": "STRIDE",
+  "description": "Sensor Trend Intelligence for Detection & Evaluation: A comprehensive disaster intelligence, preparedness, and rescue management platform.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#F5EFEB",
+  "theme_color": "#2F4156",
+  "categories": [
+    "productivity",
+    "utilities",
+    "government"
+  ],
+  "icons": [
+    {
+      "src": "/stride-logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/stride-logo.svg",
+      "sizes": "500x500",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}
