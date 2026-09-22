@@ -49,11 +49,98 @@ export const householdService = {
     return this.getMyHousehold();
   },
 
-  async getOnboardingStatus(): Promise<{ completed: boolean }> {
-    return beforeApi.getHouseholdOnboardingStatus();
+  /**
+   * Check if household-member setup/update has already been handled for this authenticated session.
+   * Scoped to the specific authenticated user ID to guarantee strict multi-user isolation.
+   */
+  isHouseholdSetupHandled(userId?: string | null): boolean {
+    if (!userId || typeof userId !== 'string') return false;
+    try {
+      return localStorage.getItem(`stride_household_handled_${userId}`) === 'true';
+    } catch {
+      return false;
+    }
   },
 
-  async completeOnboarding(): Promise<{ success: boolean; completed: boolean }> {
+  /**
+   * Mark household-member setup/update as handled (or unhandled) for this authenticated session.
+   */
+  setHouseholdSetupHandled(userId?: string | null, handled: boolean = true): void {
+    if (!userId || typeof userId !== 'string') return;
+    try {
+      if (handled) {
+        localStorage.setItem(`stride_household_handled_${userId}`, 'true');
+      } else {
+        localStorage.removeItem(`stride_household_handled_${userId}`);
+      }
+    } catch {
+      // Ignore quota or access errors
+    }
+  },
+
+  /**
+   * Clear household-member setup handled state for the specified user or all users (e.g. on logout).
+   */
+  clearHouseholdSetupHandled(userId?: string | null): void {
+    try {
+      if (userId && typeof userId === 'string') {
+        localStorage.removeItem(`stride_household_handled_${userId}`);
+      } else {
+        const keysToRemove: string[] = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k && k.startsWith('stride_household_handled_')) {
+            keysToRemove.push(k);
+          }
+        }
+        keysToRemove.forEach((k) => localStorage.removeItem(k));
+      }
+    } catch {
+      // Ignore storage access errors
+    }
+  },
+
+  async getOnboardingStatus(userId?: string): Promise<{ completed: boolean }> {
+    const targetUserId = userId || authApi.getStoredUser()?.id;
+    if (targetUserId && this.isHouseholdSetupHandled(targetUserId)) {
+      return { completed: true };
+    }
+
+    try {
+      const res = await beforeApi.getHouseholdOnboardingStatus();
+      if (res && res.completed && targetUserId) {
+        this.setHouseholdSetupHandled(targetUserId, true);
+      }
+      return res;
+    } catch {
+      // If network fails (offline), check if we have local cached household data with onboardingCompleted or members
+      if (targetUserId) {
+        try {
+          const cached = await offlineCacheService.getHouseholdWithFallback(targetUserId);
+          if (cached.ok && cached.data.data) {
+            const cachedData = cached.data.data as any;
+            const isCompleted = Boolean(
+              cachedData.onboardingCompleted ||
+              (cachedData.members && cachedData.members.length > 0)
+            );
+            if (isCompleted) {
+              this.setHouseholdSetupHandled(targetUserId, true);
+              return { completed: true };
+            }
+          }
+        } catch {
+          // Ignore cache read error
+        }
+      }
+      return { completed: false };
+    }
+  },
+
+  async completeOnboarding(userId?: string): Promise<{ success: boolean; completed: boolean }> {
+    const targetUserId = userId || authApi.getStoredUser()?.id;
+    if (targetUserId) {
+      this.setHouseholdSetupHandled(targetUserId, true);
+    }
     return beforeApi.completeHouseholdOnboarding();
   },
 

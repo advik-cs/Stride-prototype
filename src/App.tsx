@@ -33,8 +33,16 @@ import { Loader2 } from 'lucide-react';
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [authChecking, setAuthChecking] = useState(true);
-  const [onboardingCompleted, setOnboardingCompleted] = useState<boolean>(false);
-  const [onboardingChecking, setOnboardingChecking] = useState<boolean>(false);
+  const [onboardingCompleted, setOnboardingCompleted] = useState<boolean>(() => {
+    const user = authService.getStoredUser();
+    if (!user || user.role !== 'CITIZEN') return true;
+    return householdService.isHouseholdSetupHandled(user.id);
+  });
+  const [onboardingChecking, setOnboardingChecking] = useState<boolean>(() => {
+    const user = authService.getStoredUser();
+    if (!user || user.role !== 'CITIZEN') return false;
+    return !householdService.isHouseholdSetupHandled(user.id);
+  });
 
   // Disaster Mode & Tabs (synchronized with URL)
   const [mode, setMode] = useState<DisasterMode>(() => {
@@ -110,7 +118,11 @@ export default function App() {
     if (user) {
       setCurrentUser(user);
       if (user.role === 'CITIZEN') {
-        setOnboardingChecking(true);
+        const isHandled = householdService.isHouseholdSetupHandled(user.id);
+        setOnboardingChecking(!isHandled);
+        if (isHandled) {
+          setOnboardingCompleted(true);
+        }
         const currentPath = window.location.pathname.toLowerCase();
         if (currentPath === '/floodx' || window.location.hash === '#floodx') {
           setMode('BEFORE');
@@ -180,18 +192,44 @@ export default function App() {
 
   useEffect(() => {
     if (currentUser?.role === 'CITIZEN') {
-      checkOnboarding();
+      if (householdService.isHouseholdSetupHandled(currentUser.id)) {
+        setOnboardingCompleted(true);
+        setOnboardingChecking(false);
+        // Non-blocking background refresh of household cache if online
+        if (typeof navigator !== 'undefined' && navigator.onLine) {
+          householdService.getMyHousehold().catch(() => {});
+        }
+      } else {
+        checkOnboarding(currentUser);
+      }
     } else {
       setOnboardingCompleted(true);
       setOnboardingChecking(false);
     }
   }, [currentUser?.id, currentUser?.role]);
 
-  const checkOnboarding = async () => {
+  const checkOnboarding = async (targetUser?: User | null) => {
+    const userToCheck = targetUser || currentUser;
+    if (!userToCheck || userToCheck.role !== 'CITIZEN') {
+      setOnboardingCompleted(true);
+      setOnboardingChecking(false);
+      return;
+    }
+
+    if (householdService.isHouseholdSetupHandled(userToCheck.id)) {
+      setOnboardingCompleted(true);
+      setOnboardingChecking(false);
+      return;
+    }
+
     setOnboardingChecking(true);
     try {
-      const res = await householdService.getOnboardingStatus();
-      setOnboardingCompleted(Boolean(res.completed));
+      const res = await householdService.getOnboardingStatus(userToCheck.id);
+      const isDone = Boolean(res.completed);
+      setOnboardingCompleted(isDone);
+      if (isDone) {
+        householdService.setHouseholdSetupHandled(userToCheck.id, true);
+      }
     } catch {
       setOnboardingCompleted(false);
     } finally {
@@ -200,6 +238,9 @@ export default function App() {
   };
 
   const handleOnboardingComplete = () => {
+    if (currentUser?.id) {
+      householdService.setHouseholdSetupHandled(currentUser.id, true);
+    }
     setOnboardingCompleted(true);
     setMode('BEFORE');
     setBeforeTab('dashboard');
@@ -229,7 +270,7 @@ export default function App() {
           window.history.replaceState(null, '', '/before');
         }
       }
-      checkOnboarding();
+      checkOnboarding(user);
     } else {
       setOnboardingCompleted(true);
       setOnboardingChecking(false);
@@ -238,6 +279,9 @@ export default function App() {
   };
 
   const handleLogout = () => {
+    if (currentUser?.id) {
+      householdService.clearHouseholdSetupHandled(currentUser.id);
+    }
     authService.logout();
     setCurrentUser(null);
     setOnboardingCompleted(false);

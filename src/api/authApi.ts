@@ -65,12 +65,31 @@ export const authApi = {
   },
 
   logout(): void {
+    const user = this.getStoredUser();
+    if (user?.id) {
+      try {
+        localStorage.removeItem(`stride_household_handled_${user.id}`);
+      } catch {}
+    }
+    try {
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith('stride_household_handled_')) {
+          keysToRemove.push(k);
+        }
+      }
+      keysToRemove.forEach((k) => localStorage.removeItem(k));
+    } catch {}
+
     localStorage.removeItem('stride_token');
     localStorage.removeItem('stride_before_token');
     localStorage.removeItem('stride_during_token');
     localStorage.removeItem('stride_user');
     localStorage.removeItem('stride_active_sos_id');
-    window.dispatchEvent(new Event('stride_auth_changed'));
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('stride_auth_changed'));
+    }
   },
 
   /**
