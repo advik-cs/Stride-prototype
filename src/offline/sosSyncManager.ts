@@ -13,11 +13,64 @@ let isInitialized = false;
 
 export const sosSyncManager = {
   /**
+   * Recovers stale SYNCING or IN_FLIGHT mutations that were interrupted by a browser crash,
+   * tab closure, or network freeze. Resets their status to PENDING while strictly preserving
+   * the exact same clientOperationId.
+   */
+  async recoverStaleSyncingItems(forceAll = false, timeoutMs = 15000): Promise<number> {
+    let recoveredCount = 0;
+    try {
+      const syncingItems = await offlineStorageService.getOutboxItemsByStatus('SYNCING');
+      const inFlightItems = await offlineStorageService.getOutboxItemsByStatus('IN_FLIGHT');
+
+      const candidateItems = [
+        ...(syncingItems.ok && syncingItems.data ? syncingItems.data : []),
+        ...(inFlightItems.ok && inFlightItems.data ? inFlightItems.data : []),
+      ];
+
+      if (candidateItems.length === 0) return 0;
+
+      const now = Date.now();
+
+      for (const item of candidateItems) {
+        // On startup (forceAll = true), any SYNCING item is orphaned from a prior browser session.
+        // In periodic recovery, verify item has been stuck longer than timeoutMs.
+        const itemTimestamp = new Date(item.clientTimestamp).getTime();
+        const isStale = forceAll || (now - itemTimestamp > timeoutMs);
+
+        if (isStale) {
+          console.warn(`[sosSyncManager] Recovering orphaned outbox mutation #${item.id.slice(0, 8)} to PENDING`);
+          // Preserve EXACT same clientOperationId (item.id)
+          item.syncStatus = 'PENDING';
+          item.lastError = 'Previous transmission attempt was interrupted. Queued for retry.';
+          await offlineStorageService.putOutboxItem(item);
+
+          const localSos = await offlineStorageService.getActiveSos(item.id);
+          if (localSos.ok && localSos.data) {
+            const sos = localSos.data;
+            sos.syncStatus = 'PENDING';
+            await offlineStorageService.putActiveSos(sos);
+          }
+          recoveredCount++;
+        }
+      }
+    } catch (err) {
+      console.warn('[sosSyncManager] Error recovering stale syncing items:', err);
+    }
+    return recoveredCount;
+  },
+
+  /**
    * Initializes network connectivity listeners for automatic background synchronization.
    */
   init(): void {
     if (isInitialized || typeof window === 'undefined') return;
     isInitialized = true;
+
+    // Immediately recover any orphaned SYNCING or IN_FLIGHT records from a prior crashed session
+    this.recoverStaleSyncingItems(true).catch((err) => {
+      console.warn('[sosSyncManager] Startup recovery error:', err);
+    });
 
     window.addEventListener('online', () => {
       console.log('[sosSyncManager] Network online detected — triggering SOS outbox synchronization');
@@ -57,6 +110,9 @@ export const sosSyncManager = {
     const errors: string[] = [];
 
     try {
+      // 0. Recover any stale SYNCING/IN_FLIGHT items before collecting pending items
+      await this.recoverStaleSyncingItems(false);
+
       // 1. Retrieve all pending outbox mutations
       const outboxRes = await offlineStorageService.getOutboxItemsByStatus('PENDING');
       if (!outboxRes.ok || !outboxRes.data || outboxRes.data.length === 0) {

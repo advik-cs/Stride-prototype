@@ -358,7 +358,7 @@ export const AreYouSafeView: React.FC<AreYouSafeViewProps> = ({
               <div>
                 <span className="text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded bg-amber-200 text-amber-900">
                   {(submittedRequest as any).syncStatus === 'SYNCING'
-                    ? 'TRANSMITTING TO DISPATCH (SYNCING...)'
+                    ? 'TRANSMITTING TO SERVER (SYNCING...)'
                     : (submittedRequest as any).syncStatus === 'FAILED'
                     ? 'TRANSMISSION FAILED (RETRYING ON RECONNECT)'
                     : 'STATUS: PENDING SYNC (QUEUED OFFLINE)'}
@@ -375,10 +375,10 @@ export const AreYouSafeView: React.FC<AreYouSafeViewProps> = ({
             <div className="text-right">
               <span className="text-[10px] font-bold uppercase text-amber-700">Triage Status</span>
               <p className="text-sm font-bold text-amber-900 mt-1">
-                Pending Server Assessment
+                Pending Server Evaluation
               </p>
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-200 text-amber-900 mt-1 inline-block">
-                {(submittedRequest as any).syncStatus === 'SYNCING' ? 'Syncing...' : 'Queued in Outbox'}
+                {(submittedRequest as any).syncStatus === 'SYNCING' ? 'Transmitting...' : 'Queued in Outbox'}
               </span>
             </div>
           </div>
@@ -388,7 +388,7 @@ export const AreYouSafeView: React.FC<AreYouSafeViewProps> = ({
               <span>⚠️ Not Yet Reached Authorities:</span>
             </p>
             <p className="leading-relaxed">
-              Your emergency request is saved locally on your device. It has not yet reached emergency responders. It will be transmitted automatically with full details as soon as internet connectivity or server availability returns.
+              Your emergency request is saved locally on this device and has not yet reached emergency response authorities. As soon as an internet connection is available, STRIDE will automatically transmit your SOS to the emergency response system for server-side evaluation.
             </p>
           </div>
 
@@ -418,7 +418,7 @@ export const AreYouSafeView: React.FC<AreYouSafeViewProps> = ({
                 if (navigator.onLine) {
                   sosSyncManager.syncPendingOutbox();
                 } else {
-                  alert('Device is currently offline. Transmission will begin automatically when internet returns.');
+                  alert('Device is currently offline. Transmission will begin automatically when an internet connection is available.');
                 }
               }}
               className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-md cursor-pointer"

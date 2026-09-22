@@ -67,8 +67,10 @@ async function runOfflineSosOutboxSuite() {
   assert(fs.existsSync(sosSyncManagerPath), 'src/offline/sosSyncManager.ts exists');
   const syncManagerContent = fs.readFileSync(sosSyncManagerPath, 'utf-8');
   assert(
-    syncManagerContent.includes('syncPendingOutbox') && syncManagerContent.includes('init'),
-    'sosSyncManager implements syncPendingOutbox and event initialization'
+    syncManagerContent.includes('syncPendingOutbox') &&
+      syncManagerContent.includes('recoverStaleSyncingItems') &&
+      syncManagerContent.includes('init'),
+    'sosSyncManager implements syncPendingOutbox, recoverStaleSyncingItems, and event initialization'
   );
 
   const storageServicePath = path.resolve(process.cwd(), 'src/offline/offlineStorageService.ts');
@@ -90,8 +92,10 @@ async function runOfflineSosOutboxSuite() {
   const areYouSafeContent = fs.readFileSync(areYouSafePath, 'utf-8');
   assert(
     areYouSafeContent.includes('STATUS: PENDING SYNC (QUEUED OFFLINE)') &&
-      areYouSafeContent.includes('Not Yet Reached Authorities'),
-    'AreYouSafeView renders distinct PENDING SYNC offline banner without fabricating priority'
+      areYouSafeContent.includes('Not Yet Reached Authorities') &&
+      areYouSafeContent.includes('As soon as an internet connection is available, STRIDE will automatically transmit your SOS to the emergency response system for server-side evaluation.') &&
+      !areYouSafeContent.includes('dispatch your SOS with priority'),
+    'AreYouSafeView renders distinct PENDING SYNC offline banner without fabricating priority or implying automatic higher priority'
   );
 
   // --- SUITE 2: BACKEND SERVER IDEMPOTENCY & CONCURRENCY TESTS ---
@@ -410,6 +414,81 @@ async function runOfflineSosOutboxSuite() {
         } catch (e) {
           results.push({ name: 'Unexpected exception in online_create_verify', passed: false, error: e.message });
         }
+      } else if (step === 'interrupted_syncing_recovery') {
+        try {
+          const testOpId = 'op-interrupted-crash-recovery-' + Date.now();
+          // Simulate a mutation left in SYNCING state due to a browser crash / interruption
+          const simulatedStaleOutbox = {
+            id: testOpId,
+            userId: '${citizen.id}',
+            actionType: 'CREATE_SOS',
+            endpoint: '/api/during/rescue-requests',
+            payload: {
+              address: 'Interrupted Crash Address',
+              description: 'Distress that was syncing when app crashed',
+              peopleCount: 3,
+            },
+            clientTimestamp: new Date(Date.now() - 30000).toISOString(),
+            syncStatus: 'SYNCING',
+            retryCount: 1,
+          };
+          await offlineStorageService.putOutboxItem(simulatedStaleOutbox);
+
+          const simulatedActiveSos = {
+            id: testOpId,
+            clientOperationId: testOpId,
+            userId: '${citizen.id}',
+            address: 'Interrupted Crash Address',
+            description: 'Distress that was syncing when app crashed',
+            peopleCount: 3,
+            childrenCount: 0,
+            elderlyCount: 0,
+            disabledCount: 0,
+            injuredCount: 0,
+            criticalMedicalNeed: false,
+            waterLevel: 'KNEE_DEEP',
+            emergencyType: 'FLOOD',
+            conditions: [],
+            priorityScore: 0,
+            priorityLevel: 'LOW',
+            status: 'PENDING',
+            syncStatus: 'SYNCING',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+          await offlineStorageService.putActiveSos(simulatedActiveSos);
+
+          // Verify both are in SYNCING
+          const beforeOutbox = await offlineStorageService.getOutboxItem(testOpId);
+          const beforeSos = await offlineStorageService.getActiveSos(testOpId);
+          check(beforeOutbox.data?.syncStatus === 'SYNCING', 'Outbox record is initially in SYNCING state');
+          check(beforeSos.data?.syncStatus === 'SYNCING', 'ActiveSos record is initially in SYNCING state');
+
+          // Trigger startup recovery (simulating app boot after crash)
+          const recovered = await sosSyncManager.recoverStaleSyncingItems(true);
+          check(recovered >= 1, 'sosSyncManager.recoverStaleSyncingItems recovered interrupted mutation');
+
+          // Verify transitioned to PENDING while preserving EXACT SAME clientOperationId
+          const recoveredOutbox = await offlineStorageService.getOutboxItem(testOpId);
+          const recoveredSos = await offlineStorageService.getActiveSos(testOpId);
+          check(recoveredOutbox.data?.syncStatus === 'PENDING', 'Stale outbox record safely transitioned back to PENDING');
+          check(recoveredSos.data?.syncStatus === 'PENDING', 'Stale activeSos record safely transitioned back to PENDING');
+          check(recoveredOutbox.data?.id === testOpId, 'Exact same clientOperationId is preserved (never regenerated)');
+          check(recoveredSos.data?.clientOperationId === testOpId, 'ActiveSos clientOperationId is preserved (never regenerated)');
+
+          // Now execute sync and verify server idempotency handles the recovered item cleanly
+          const syncOutcome = await sosSyncManager.syncPendingOutbox();
+          check(syncOutcome.syncedCount >= 1, 'syncPendingOutbox successfully transmitted recovered mutation to server');
+
+          const finalOutbox = await offlineStorageService.getOutboxItem(testOpId);
+          const finalSos = await offlineStorageService.getActiveSos(testOpId);
+          check(finalOutbox.data?.syncStatus === 'SYNCED', 'Recovered outbox mutation is now SYNCED');
+          check(finalSos.data?.syncStatus === 'SYNCED', 'Recovered activeSos is now SYNCED');
+          check(Boolean(finalSos.data?.serverId), 'Recovered activeSos received authoritative server ID');
+          check(finalSos.data?.priorityScore > 0, 'Recovered activeSos received authoritative server priority score');
+        } catch (e) {
+          results.push({ name: 'Unexpected exception in interrupted_syncing_recovery', passed: false, error: e.message });
+        }
       }
 
       return results;
@@ -535,6 +614,14 @@ async function runOfflineSosOutboxSuite() {
       return (window as any).runBrowserSosSuite('online_create_verify');
     });
     for (const r of onlineResults) {
+      assert(r.passed, r.name, r.error);
+    }
+
+    // STEP F: Interrupted SYNCING State Recovery (Browser crash / reload during transmission)
+    const recoveryResults: any[] = await page.evaluate(async () => {
+      return (window as any).runBrowserSosSuite('interrupted_syncing_recovery');
+    });
+    for (const r of recoveryResults) {
       assert(r.passed, r.name, r.error);
     }
 
