@@ -1,6 +1,7 @@
 import { offlineStorageService } from './offlineStorageService';
 import { duringApi, RescueRequest, WaterLevel, EmergencyType, PriorityLevel } from '../api/duringApi';
 import { authApi } from '../api/authApi';
+import { connectivityService } from './connectivityService';
 import { ActiveSosRecord, SosOutboxRecord } from './types';
 
 export interface CreateSosInput {
@@ -176,6 +177,9 @@ export const offlineSosService = {
       localStorage.setItem('stride_active_sos_id', clientOperationId);
     }
 
+    // Refresh connectivity state (ONLINE_PENDING_SYNC)
+    connectivityService.refreshPendingStatus().catch(() => {});
+
     return { localSos, isOffline: true };
   },
 
@@ -184,9 +188,15 @@ export const offlineSosService = {
    * Enforces strict user isolation: returns null if the cached SOS belongs to another user.
    */
   async getActiveSos(userId?: string): Promise<ActiveSosRecord | null> {
-    if (!userId) return null;
-    const res = await offlineStorageService.getActiveSosByUserId(userId);
-    return res.ok ? res.data : null;
+    const targetUserId = userId || authApi.getStoredUser()?.id;
+    if (!targetUserId) return null;
+    const res = await offlineStorageService.getActiveSosByUserId(targetUserId);
+    if (!res.ok || !res.data) return null;
+    // Strict user isolation guarantee
+    if (res.data.userId && res.data.userId !== targetUserId) {
+      return null;
+    }
+    return res.data;
   },
 
   /**
@@ -204,5 +214,6 @@ export const offlineSosService = {
         }
       }
     }
+    connectivityService.refreshPendingStatus().catch(() => {});
   },
 };

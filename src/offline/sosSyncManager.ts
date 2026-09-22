@@ -1,11 +1,28 @@
 import { offlineStorageService } from './offlineStorageService';
 import { duringApi, RescueRequest } from '../api/duringApi';
 import { authApi } from '../api/authApi';
+import { connectivityService } from './connectivityService';
 import { SosOutboxRecord, ActiveSosRecord } from './types';
 
 export interface SyncReport {
   syncedCount: number;
   errors: string[];
+}
+
+/**
+ * Explicit bounded exponential backoff schedule:
+ * attempt 1 = 2s (2,000ms)
+ * attempt 2 = 5s (5,000ms)
+ * attempt 3 = 15s (15,000ms)
+ * attempt 4 = 30s (30,000ms)
+ * attempt 5+ = 60s maximum (60,000ms)
+ */
+export function getBackoffDelayMs(retryCount: number): number {
+  if (retryCount <= 1) return 2000;
+  if (retryCount === 2) return 5000;
+  if (retryCount === 3) return 15000;
+  if (retryCount === 4) return 30000;
+  return 60000;
 }
 
 let isSyncing = false;
@@ -106,6 +123,7 @@ export const sosSyncManager = {
     }
 
     isSyncing = true;
+    connectivityService.setSyncing(true);
     let syncedCount = 0;
     const errors: string[] = [];
 
@@ -131,8 +149,14 @@ export const sosSyncManager = {
           continue;
         }
 
-        // Only process CREATE_SOS mutations in Phase 2 Step 4
+        // Only process CREATE_SOS mutations in Phase 2 Step 4 & 5
         if (item.actionType !== 'CREATE_SOS') {
+          continue;
+        }
+
+        // Bounded exponential backoff check: Skip if still in cooldown
+        if (item.nextRetryAt && Date.now() < item.nextRetryAt) {
+          console.log(`[sosSyncManager] Skipping mutation #${item.id.slice(0, 8)}: backoff delay active until ${new Date(item.nextRetryAt).toLocaleTimeString()}`);
           continue;
         }
 
@@ -169,8 +193,10 @@ export const sosSyncManager = {
             );
           }
 
+          connectivityService.recordApiSuccess();
           syncedCount++;
         } catch (err: any) {
+          connectivityService.recordApiFailure(err);
           const statusCode = err?.status || err?.statusCode;
           const errMsg = err?.message || 'Failed to transmit SOS to server.';
           errors.push(errMsg);
@@ -198,9 +224,10 @@ export const sosSyncManager = {
               await offlineStorageService.putActiveSos(sos);
             }
           } else {
-            // Transient network failure / 5xx / timeout — increment retry count and reset to PENDING
+            // Transient network failure / 5xx / timeout — increment retry count, schedule backoff, and reset to PENDING
             item.retryCount = (item.retryCount || 0) + 1;
             item.syncStatus = 'PENDING';
+            item.nextRetryAt = Date.now() + getBackoffDelayMs(item.retryCount);
             item.lastError = errMsg;
             await offlineStorageService.putOutboxItem(item);
 
@@ -214,6 +241,8 @@ export const sosSyncManager = {
       }
     } finally {
       isSyncing = false;
+      connectivityService.setSyncing(false);
+      await connectivityService.refreshPendingStatus().catch(() => {});
     }
 
     return { syncedCount, errors };

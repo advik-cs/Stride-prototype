@@ -259,6 +259,7 @@ export interface SosOutboxRecord {
   clientTimestamp: string;
   syncStatus: MutationSyncStatus;
   retryCount: number;
+  nextRetryAt?: number;
   lastError?: string;
 }
 
@@ -273,6 +274,25 @@ export interface SyncMetadataRecord {
   lastSyncTime: string;
   recordCount: number;
   syncState: SyncState;
+}
+
+// ============================================================================
+// Application Connectivity & Syncing State
+// ============================================================================
+
+export type ConnectivityState =
+  | 'ONLINE'
+  | 'OFFLINE'
+  | 'SYNCING'
+  | 'ONLINE_PENDING_SYNC';
+
+export interface ConnectivityStatus {
+  state: ConnectivityState;
+  isOnline: boolean;
+  isOffline: boolean;
+  isSyncing: boolean;
+  hasPendingSync: boolean;
+  serverReachable: boolean;
 }
 
 // ============================================================================

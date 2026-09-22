@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { StrideLogo } from '../common/StrideLogo.tsx';
+import { GlobalOfflineBanner } from '../common/GlobalOfflineBanner';
 import { User } from '../../services/authService.ts';
 import { notificationService, NotificationItem } from '../../services/notificationService.ts';
 import { DisasterEvent, disasterService } from '../../services/disasterService.ts';
@@ -620,6 +621,9 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
             </button>
           </div>
         </header>
+
+        {/* Global Offline / Connectivity State Indicator */}
+        <GlobalOfflineBanner />
 
         {/* View Body */}
         <main
