@@ -1945,6 +1945,13 @@ async function getEmergencyRequestById(req, res) {
       res.status(404).json({ error: "Emergency request not found." });
       return;
     }
+    const userRole = req.user?.role;
+    const userId = req.user?.userId;
+    const ownerUserId = request.householdMember?.household?.userId;
+    if (userRole === "CITIZEN" && ownerUserId && ownerUserId !== userId) {
+      res.status(403).json({ error: "Access denied: You can only view your own emergency requests." });
+      return;
+    }
     res.json(request);
   } catch (error) {
     res.status(500).json({ error: error.message || "Failed to fetch emergency request." });
@@ -3181,6 +3188,13 @@ async function getRescueRequestByIdUnified(req, res) {
       res.status(404).json({ error: "Rescue request not found." });
       return;
     }
+    const userRole = req.user?.role;
+    const userId = req.user?.userId;
+    const ownerUserId = record.householdMember?.household?.userId;
+    if (userRole === "CITIZEN" && ownerUserId && ownerUserId !== userId) {
+      res.status(403).json({ error: "Access denied: You can only view your own emergency requests." });
+      return;
+    }
     res.json(formatRescueRequest(record));
   } catch (error) {
     res.status(500).json({ error: error.message || "Failed to fetch rescue request." });
@@ -3191,10 +3205,21 @@ async function cancelRescueRequest(req, res) {
     const { id } = req.params;
     const record = await database_default.emergencyRequest.findUnique({
       where: { id },
-      include: { householdMember: true }
+      include: {
+        householdMember: {
+          include: { household: true }
+        }
+      }
     });
     if (!record) {
       res.status(404).json({ error: "Rescue request not found." });
+      return;
+    }
+    const userRole = req.user?.role;
+    const userId = req.user?.userId;
+    const ownerUserId = record.householdMember?.household?.userId;
+    if (userRole === "CITIZEN" && ownerUserId && ownerUserId !== userId) {
+      res.status(403).json({ error: "Access denied: You can only cancel your own emergency requests." });
       return;
     }
     const updated = await database_default.emergencyRequest.update({

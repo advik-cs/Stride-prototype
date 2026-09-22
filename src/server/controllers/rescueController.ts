@@ -744,6 +744,15 @@ export async function getRescueRequestByIdUnified(req: AuthenticatedRequest, res
       return;
     }
 
+    // Role-based authorization: CITIZEN can only view their own emergency requests
+    const userRole = req.user?.role;
+    const userId = req.user?.userId;
+    const ownerUserId = record.householdMember?.household?.userId;
+    if (userRole === 'CITIZEN' && ownerUserId && ownerUserId !== userId) {
+      res.status(403).json({ error: 'Access denied: You can only view your own emergency requests.' });
+      return;
+    }
+
     res.json(formatRescueRequest(record));
   } catch (error: any) {
     res.status(500).json({ error: error.message || 'Failed to fetch rescue request.' });
@@ -755,11 +764,24 @@ export async function cancelRescueRequest(req: AuthenticatedRequest, res: Respon
     const { id } = req.params;
     const record = await prisma.emergencyRequest.findUnique({
       where: { id },
-      include: { householdMember: true },
+      include: {
+        householdMember: {
+          include: { household: true },
+        },
+      },
     });
 
     if (!record) {
       res.status(404).json({ error: 'Rescue request not found.' });
+      return;
+    }
+
+    // Role-based authorization: CITIZEN can only cancel their own emergency requests
+    const userRole = req.user?.role;
+    const userId = req.user?.userId;
+    const ownerUserId = record.householdMember?.household?.userId;
+    if (userRole === 'CITIZEN' && ownerUserId && ownerUserId !== userId) {
+      res.status(403).json({ error: 'Access denied: You can only cancel your own emergency requests.' });
       return;
     }
 

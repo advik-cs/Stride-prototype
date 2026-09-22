@@ -143,6 +143,12 @@ export const sosSyncManager = {
       );
 
       for (const item of items) {
+        // Validation check: Skip corrupted records without a valid string ID
+        if (!item || !item.id || typeof item.id !== 'string') {
+          console.warn('[sosSyncManager] Skipping corrupted outbox mutation with invalid ID:', item);
+          continue;
+        }
+
         // USER ISOLATION CHECK: Never synchronize another citizen's outbox item
         if (!item.userId || item.userId !== currentUser.id) {
           console.warn(`[sosSyncManager] Skipping mutation for user ${item.userId} (current user: ${currentUser.id})`);
@@ -151,6 +157,16 @@ export const sosSyncManager = {
 
         // Only process CREATE_SOS mutations in Phase 2 Step 4 & 5
         if (item.actionType !== 'CREATE_SOS') {
+          continue;
+        }
+
+        // Malformed payload check: ensure address and description exist before attempting transmission
+        const payload = item.payload;
+        if (!payload || typeof payload !== 'object' || !payload.address || !payload.description) {
+          console.warn(`[sosSyncManager] Quarantining malformed outbox mutation #${item.id.slice(0, 8)}`);
+          item.syncStatus = 'FAILED';
+          item.lastError = 'Malformed distress payload: address and description are required.';
+          await offlineStorageService.putOutboxItem(item);
           continue;
         }
 

@@ -276,6 +276,15 @@ export async function getEmergencyRequestById(req: AuthenticatedRequest, res: Re
       return;
     }
 
+    // Role-based authorization: CITIZEN can only view their own emergency requests
+    const userRole = req.user?.role;
+    const userId = req.user?.userId;
+    const ownerUserId = request.householdMember?.household?.userId;
+    if (userRole === 'CITIZEN' && ownerUserId && ownerUserId !== userId) {
+      res.status(403).json({ error: 'Access denied: You can only view your own emergency requests.' });
+      return;
+    }
+
     res.json(request);
   } catch (error: any) {
     res.status(500).json({ error: error.message || 'Failed to fetch emergency request.' });

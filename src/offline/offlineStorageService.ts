@@ -411,6 +411,24 @@ export const offlineStorageService = {
     });
   },
 
+  async cancelActiveSosAndOutbox(
+    operationOrServerId: string
+  ): Promise<StorageResult<void>> {
+    return this.runTransaction(['activeSos', 'sosOutbox'], 'readwrite', async (tx) => {
+      const activeStore = tx.objectStore('activeSos');
+      const outboxStore = tx.objectStore('sosOutbox');
+      const allSos = await activeStore.getAll();
+      for (const item of allSos) {
+        if (item.id === operationOrServerId || item.serverId === operationOrServerId) {
+          item.status = 'CANCELLED';
+          item.syncStatus = 'SYNCED';
+          await activeStore.put(item);
+          await outboxStore.delete(item.id);
+        }
+      }
+    });
+  },
+
   // ==========================================================================
   // Store 10: sosOutbox
   // ==========================================================================

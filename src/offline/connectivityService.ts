@@ -142,7 +142,7 @@ class ConnectivityService {
   getStatus(): ConnectivityStatus {
     return {
       state: this.currentState,
-      isOnline: this.currentState === 'ONLINE' || this.currentState === 'ONLINE_PENDING_SYNC',
+      isOnline: this.currentState !== 'OFFLINE',
       isOffline: this.currentState === 'OFFLINE',
       isSyncing: this.isSyncing,
       hasPendingSync: this.hasPending,
