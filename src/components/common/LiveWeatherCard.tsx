@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useLanguage } from '../../i18n/LanguageContext';
+import { offlineCacheService } from '../../offline/cacheService';
 import {
   Sun,
   Cloud,
@@ -122,6 +123,9 @@ export const LiveWeatherCard: React.FC<LiveWeatherCardProps> = ({
   const [weatherLoading, setWeatherLoading] = useState(true);
   const [weatherError, setWeatherError] = useState<string | null>(null);
   const [weatherData, setWeatherData] = useState<LiveWeatherData | null>(null);
+  const [isOfflineData, setIsOfflineData] = useState(false);
+  const [isDataStale, setIsDataStale] = useState(false);
+  const [cachedTimestamp, setCachedTimestamp] = useState<string | null>(null);
 
   useEffect(() => {
     detectLocationAndFetchWeather();
@@ -167,44 +171,15 @@ export const LiveWeatherCard: React.FC<LiveWeatherCardProps> = ({
     setWeatherLoading(true);
     setWeatherError(null);
     try {
-      const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m,wind_direction_10m&hourly=temperature_2m,precipitation_probability,weather_code&forecast_hours=6&timezone=auto`;
-      const res = await fetch(url);
-      if (!res.ok) {
-        throw new Error(`Weather service returned HTTP ${res.status}`);
+      const res = await offlineCacheService.getHazardSnapshotWithFallback(lat, lon);
+      if (res.ok && res.data.data) {
+        setWeatherData(res.data.data);
+        setIsOfflineData(res.data.source === 'cache');
+        setIsDataStale(res.data.isStale ?? false);
+        setCachedTimestamp(res.data.lastSyncedAt || null);
+        return;
       }
-      const data = await res.json();
-
-      const current = data.current || {};
-      const hourly = data.hourly || {};
-
-      const nextHours: HourlyForecast[] = [];
-      const times = hourly.time || [];
-      const temps = hourly.temperature_2m || [];
-      const pops = hourly.precipitation_probability || [];
-      const codes = hourly.weather_code || [];
-
-      for (let i = 0; i < Math.min(6, times.length); i++) {
-        nextHours.push({
-          time: times[i],
-          temp: temps[i] ?? current.temperature_2m ?? 0,
-          precipProb: pops[i] ?? 0,
-          weatherCode: codes[i] ?? current.weather_code ?? 0,
-        });
-      }
-
-      const windDeg = current.wind_direction_10m ?? 0;
-      setWeatherData({
-        temperature: current.temperature_2m ?? 0,
-        apparentTemperature: current.apparent_temperature ?? current.temperature_2m ?? 0,
-        windSpeed: current.wind_speed_10m ?? 0,
-        windDirection: windDeg,
-        windDirectionCardinal: getWindCompass(windDeg),
-        precipitation: current.precipitation ?? 0,
-        relativeHumidity: current.relative_humidity_2m ?? 0,
-        weatherCode: current.weather_code ?? 0,
-        time: current.time || new Date().toISOString(),
-        hourly: nextHours,
-      });
+      throw new Error('Unable to retrieve meteorological data.');
     } catch (err: any) {
       console.error('Failed to load weather data:', err);
       setWeatherError(err.message || 'Unable to retrieve live meteorological data.');
@@ -246,6 +221,13 @@ export const LiveWeatherCard: React.FC<LiveWeatherCardProps> = ({
                   <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800 flex items-center gap-1.5">
                     <span className="w-2 h-2 rounded-full bg-amber-600 inline-block" />
                     Bengaluru (Default): 12.9716° N, 77.5946° E
+                  </span>
+                )}
+                {isOfflineData && (
+                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-300 flex items-center gap-1.5">
+                    <Clock className="w-3 h-3 text-amber-600" />
+                    {isDataStale ? 'Offline Snapshot (Stale)' : 'Offline Snapshot (Cached)'}
+                    {cachedTimestamp ? ` • ${new Date(cachedTimestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}
                   </span>
                 )}
               </div>

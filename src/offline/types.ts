@@ -30,8 +30,19 @@ export class StorageError extends Error {
 }
 
 export type StorageResult<T> =
-  | { ok: true; data: T }
-  | { ok: false; error: StorageError };
+  | { ok: true; data: T; error?: undefined }
+  | { ok: false; error: StorageError; data?: undefined };
+
+export type DataSource = 'server' | 'cache' | 'none';
+
+export interface CachedDataResult<T> {
+  data: T;
+  source: DataSource;
+  lastSyncedAt?: string;
+  isStale?: boolean;
+}
+
+export type FallbackResult<T> = StorageResult<CachedDataResult<T>>;
 
 export function storageOk<T>(data: T): StorageResult<T> {
   return { ok: true, data };

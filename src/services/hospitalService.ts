@@ -1,4 +1,5 @@
 import { request } from './apiClient.ts';
+import { offlineCacheService } from '../offline/cacheService';
 
 export const DEMO_DATA_DISCLAIMER =
   '⚠️ DEMO DATA: Bed and doctor availability is simulated for the STRIDE prototype and does not represent live hospital capacity.';
@@ -47,6 +48,10 @@ export const hospitalService = {
     radiusKm?: number;
     scope?: 'local' | 'all';
   }): Promise<HospitalListResponse> {
+    const res = await offlineCacheService.getHospitalsWithFallback(options);
+    if (res.ok) {
+      return res.data.data;
+    }
     const params = new URLSearchParams();
     if (options?.lat !== undefined) params.set('lat', String(options.lat));
     if (options?.lng !== undefined) params.set('lng', String(options.lng));

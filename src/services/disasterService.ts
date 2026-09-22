@@ -1,4 +1,5 @@
 import { beforeApi, DisasterEvent, BuildingIntelligence } from '../api/beforeApi';
+import { offlineCacheService } from '../offline/cacheService';
 
 export type { DisasterEvent, BuildingIntelligence };
 
@@ -29,6 +30,10 @@ export const disasterService = {
   },
 
   async getAffectedZones(disasterId: string): Promise<AffectedZone[]> {
+    const cachedRes = await offlineCacheService.getMapDataWithFallback(disasterId);
+    if (cachedRes.ok && cachedRes.data.data.length > 0) {
+      return cachedRes.data.data;
+    }
     const list = await beforeApi.getZones(disasterId);
     return (list || []).map((z: any) => ({
       id: z.id,
