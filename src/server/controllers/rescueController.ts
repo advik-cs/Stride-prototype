@@ -397,6 +397,9 @@ function formatRescueRequest(reqRecord: any, citizenUser?: any, customBreakdown?
 export { formatRescueRequest };
 
 export async function createRescueRequest(req: AuthenticatedRequest, res: Response): Promise<void> {
+  const clientOperationId =
+    (req.headers['x-stride-operation-id'] as string) || req.body?.clientOperationId;
+
   try {
     const userId = req.user!.userId;
     const {
@@ -417,6 +420,131 @@ export async function createRescueRequest(req: AuthenticatedRequest, res: Respon
     if (!address || !description) {
       res.status(400).json({ error: 'Address and description are required.' });
       return;
+    }
+
+    // SERVER-SIDE IDEMPOTENCY HANDLING
+    if (clientOperationId) {
+      const existingKey = await prisma.idempotencyKey.findUnique({
+        where: { operationId: clientOperationId },
+      });
+
+      if (existingKey) {
+        // Enforce user isolation: operation belongs strictly to originating user
+        if (existingKey.userId !== userId) {
+          res.status(403).json({ error: 'Operation ID is associated with a different user.' });
+          return;
+        }
+
+        // If COMPLETED: return reconciled server result immediately
+        if (existingKey.status === 'COMPLETED' && existingKey.responsePayload) {
+          res.status(200).json(JSON.parse(existingKey.responsePayload));
+          return;
+        }
+
+        if (existingKey.status === 'COMPLETED' && existingKey.serverRequestId) {
+          const rec = await prisma.emergencyRequest.findUnique({
+            where: { id: existingKey.serverRequestId },
+            include: {
+              conditions: true,
+              rescueAssignments: true,
+              householdMember: { include: { household: { include: { user: true } } } },
+            },
+          });
+          if (rec) {
+            res.status(200).json(formatRescueRequest(rec));
+            return;
+          }
+        }
+
+        // If PROCESSING: handle concurrency & crash recovery (Refinements 2 & 3)
+        if (existingKey.status === 'PROCESSING') {
+          const isStale = Date.now() - new Date(existingKey.updatedAt).getTime() > 10000;
+          if (isStale) {
+            if (existingKey.serverRequestId) {
+              const rec = await prisma.emergencyRequest.findUnique({
+                where: { id: existingKey.serverRequestId },
+                include: {
+                  conditions: true,
+                  rescueAssignments: true,
+                  householdMember: { include: { household: { include: { user: true } } } },
+                },
+              });
+              if (rec) {
+                const responseData = formatRescueRequest(rec);
+                await prisma.idempotencyKey.update({
+                  where: { operationId: clientOperationId },
+                  data: {
+                    status: 'COMPLETED',
+                    responsePayload: JSON.stringify(responseData),
+                  },
+                });
+                res.status(200).json(responseData);
+                return;
+              }
+            }
+
+            // Stale with no server record: recover and permit re-processing
+            await prisma.idempotencyKey.update({
+              where: { operationId: clientOperationId },
+              data: {
+                status: 'PROCESSING',
+                updatedAt: new Date(),
+              },
+            });
+          } else {
+            // Concurrent request in flight: poll briefly to allow winner to finish
+            for (let i = 0; i < 6; i++) {
+              await new Promise((r) => setTimeout(r, 250));
+              const pollKey = await prisma.idempotencyKey.findUnique({
+                where: { operationId: clientOperationId },
+              });
+              if (pollKey && pollKey.status === 'COMPLETED' && pollKey.responsePayload) {
+                res.status(200).json(JSON.parse(pollKey.responsePayload));
+                return;
+              }
+            }
+            res.status(409).json({ error: 'Operation is currently being processed. Please retry shortly.' });
+            return;
+          }
+        }
+      } else {
+        // No key exists yet: atomic insert
+        try {
+          await prisma.idempotencyKey.create({
+            data: {
+              operationId: clientOperationId,
+              userId,
+              operationType: 'CREATE_SOS',
+              status: 'PROCESSING',
+            },
+          });
+        } catch (insertErr: any) {
+          // Collision caught by unique constraint (P2002)
+          const raceKey = await prisma.idempotencyKey.findUnique({
+            where: { operationId: clientOperationId },
+          });
+          if (raceKey && raceKey.userId !== userId) {
+            res.status(403).json({ error: 'Operation ID is associated with a different user.' });
+            return;
+          }
+          if (raceKey && raceKey.status === 'COMPLETED' && raceKey.responsePayload) {
+            res.status(200).json(JSON.parse(raceKey.responsePayload));
+            return;
+          }
+          for (let i = 0; i < 6; i++) {
+            await new Promise((r) => setTimeout(r, 250));
+            const pollKey = await prisma.idempotencyKey.findUnique({
+              where: { operationId: clientOperationId },
+            });
+            if (pollKey && pollKey.status === 'COMPLETED' && pollKey.responsePayload) {
+              res.status(200).json(JSON.parse(pollKey.responsePayload));
+              return;
+            }
+          }
+          res.status(409).json({ error: 'Operation is currently being processed. Please retry shortly.' });
+          return;
+        }
+      }
     }
 
     const user = await prisma.user.findUnique({
@@ -545,8 +673,28 @@ export async function createRescueRequest(req: AuthenticatedRequest, res: Respon
     });
 
     const responseData = formatRescueRequest(requestRecord, user, breakdown);
+
+    if (clientOperationId) {
+      await prisma.idempotencyKey.update({
+        where: { operationId: clientOperationId },
+        data: {
+          status: 'COMPLETED',
+          serverRequestId: requestRecord.id,
+          responsePayload: JSON.stringify(responseData),
+        },
+      }).catch((err) => {
+        console.warn('[rescueController] Failed to update IdempotencyKey to COMPLETED:', err);
+      });
+    }
+
     res.status(201).json(responseData);
   } catch (error: any) {
+    if (clientOperationId) {
+      await prisma.idempotencyKey.update({
+        where: { operationId: clientOperationId },
+        data: { status: 'FAILED' },
+      }).catch(() => {});
+    }
     res.status(500).json({ error: error.message || 'Failed to create rescue request.' });
   }
 }

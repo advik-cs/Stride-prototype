@@ -26,8 +26,11 @@ import {
   Info,
   Mic,
   Sparkles,
+  RefreshCw,
 } from 'lucide-react';
 import { VoiceEmergencyAssistant } from '../voice/VoiceEmergencyAssistant.tsx';
+import { offlineSosService } from '../../offline/sosService';
+import { sosSyncManager } from '../../offline/sosSyncManager';
 
 interface AreYouSafeViewProps {
   user: User;
@@ -66,11 +69,66 @@ export const AreYouSafeView: React.FC<AreYouSafeViewProps> = ({
 
   useEffect(() => {
     loadMyRequests();
-  }, []);
+
+    const handleSynced = () => {
+      loadMyRequests();
+    };
+    window.addEventListener('stride_sos_synced', handleSynced);
+    return () => {
+      window.removeEventListener('stride_sos_synced', handleSynced);
+    };
+  }, [user?.id]);
 
   const loadMyRequests = async () => {
     setLoading(true);
     try {
+      // 1. Check local offline SOS in IndexedDB first
+      const localSos = await offlineSosService.getActiveSos(user?.id);
+      if (localSos && localSos.status !== 'CANCELLED' && localSos.status !== 'RESCUED') {
+        const displayReq: RescueRequest = {
+          id: localSos.serverId || localSos.id,
+          latitude: localSos.latitude,
+          longitude: localSos.longitude,
+          address: localSos.address,
+          description: localSos.description,
+          peopleCount: localSos.peopleCount,
+          childrenCount: localSos.childrenCount,
+          elderlyCount: localSos.elderlyCount,
+          disabledCount: localSos.disabledCount,
+          injuredCount: localSos.injuredCount,
+          criticalMedicalNeed: localSos.criticalMedicalNeed,
+          waterLevel: localSos.waterLevel,
+          emergencyType: localSos.emergencyType,
+          priorityScore: localSos.priorityScore,
+          priorityLevel: localSos.priorityLevel,
+          status: (localSos.status as any) || 'PENDING',
+          priorityBreakdown: localSos.priorityBreakdown as any,
+          createdAt: localSos.createdAt,
+          syncStatus: localSos.syncStatus as any,
+          clientOperationId: localSos.clientOperationId,
+        } as any;
+
+        if (localSos.syncStatus === 'SYNCED' && localSos.serverId && navigator.onLine) {
+          try {
+            const serverReq = await duringApi.getRequestById(localSos.serverId);
+            if (serverReq && serverReq.status !== 'CANCELLED' && serverReq.status !== 'RESCUED') {
+              setSubmittedRequest(serverReq);
+              setMyRequests([serverReq]);
+              setCurrentStatus('IN_DISTRESS');
+              return;
+            }
+          } catch {
+            // fallback to local displayReq
+          }
+        }
+
+        setSubmittedRequest(displayReq);
+        setMyRequests([displayReq]);
+        setCurrentStatus('IN_DISTRESS');
+        return;
+      }
+
+      // 2. Fallback to server requests
       const activeSosId = localStorage.getItem('stride_active_sos_id');
       if (activeSosId) {
         try {
@@ -147,7 +205,7 @@ export const AreYouSafeView: React.FC<AreYouSafeViewProps> = ({
 
     setActionLoading(true);
     try {
-      const res = await duringApi.submitRescueRequest({
+      const outcome = await offlineSosService.createSos({
         latitude,
         longitude,
         address: address.trim(),
@@ -162,9 +220,30 @@ export const AreYouSafeView: React.FC<AreYouSafeViewProps> = ({
         emergencyType,
       });
 
-      localStorage.setItem('stride_active_sos_id', res.id);
-      setSubmittedRequest(res);
-      setMyRequests([res]);
+      const displayReq: RescueRequest = outcome.serverSos || ({
+        id: outcome.localSos.id,
+        latitude: outcome.localSos.latitude,
+        longitude: outcome.localSos.longitude,
+        address: outcome.localSos.address,
+        description: outcome.localSos.description,
+        peopleCount: outcome.localSos.peopleCount,
+        childrenCount: outcome.localSos.childrenCount,
+        elderlyCount: outcome.localSos.elderlyCount,
+        disabledCount: outcome.localSos.disabledCount,
+        injuredCount: outcome.localSos.injuredCount,
+        criticalMedicalNeed: outcome.localSos.criticalMedicalNeed,
+        waterLevel: outcome.localSos.waterLevel,
+        emergencyType: outcome.localSos.emergencyType,
+        priorityScore: 0,
+        priorityLevel: 'LOW',
+        status: 'PENDING',
+        createdAt: outcome.localSos.createdAt,
+        syncStatus: outcome.localSos.syncStatus,
+        clientOperationId: outcome.localSos.clientOperationId,
+      } as any);
+
+      setSubmittedRequest(displayReq);
+      setMyRequests([displayReq]);
       setCurrentStatus('IN_DISTRESS');
       setShowDistressForm(false);
     } catch (err: any) {
@@ -177,7 +256,10 @@ export const AreYouSafeView: React.FC<AreYouSafeViewProps> = ({
   const handleCancelRequest = async (id: string) => {
     if (!confirm('Are you sure you want to cancel this emergency request?')) return;
     try {
-      await duringApi.cancelRequest(id);
+      await offlineSosService.cancelSos(id);
+      try {
+        await duringApi.cancelRequest(id);
+      } catch {}
       localStorage.removeItem('stride_active_sos_id');
       setSubmittedRequest(null);
       setMyRequests([]);
@@ -256,8 +338,97 @@ export const AreYouSafeView: React.FC<AreYouSafeViewProps> = ({
         </div>
       )}
 
-      {/* Live Active SOS Banner if request submitted */}
-      {submittedRequest && submittedRequest.status !== 'CANCELLED' && submittedRequest.status !== 'RESCUED' && (
+      {/* Offline Pending / Syncing SOS Banner */}
+      {submittedRequest &&
+      submittedRequest.status !== 'CANCELLED' &&
+      submittedRequest.status !== 'RESCUED' &&
+      ((submittedRequest as any).syncStatus === 'PENDING' ||
+        (submittedRequest as any).syncStatus === 'SYNCING' ||
+        (submittedRequest as any).syncStatus === 'FAILED') ? (
+        <div className="p-6 rounded-3xl bg-amber-50 border border-amber-300 space-y-4 shadow-sm">
+          <div className="flex items-start justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-amber-500 text-white flex items-center justify-center flex-shrink-0 shadow-sm">
+                {(submittedRequest as any).syncStatus === 'SYNCING' ? (
+                  <RefreshCw className="w-6 h-6 animate-spin" />
+                ) : (
+                  <Clock className="w-6 h-6" />
+                )}
+              </div>
+              <div>
+                <span className="text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded bg-amber-200 text-amber-900">
+                  {(submittedRequest as any).syncStatus === 'SYNCING'
+                    ? 'TRANSMITTING TO DISPATCH (SYNCING...)'
+                    : (submittedRequest as any).syncStatus === 'FAILED'
+                    ? 'TRANSMISSION FAILED (RETRYING ON RECONNECT)'
+                    : 'STATUS: PENDING SYNC (QUEUED OFFLINE)'}
+                </span>
+                <h3 className="text-lg font-bold text-amber-950 mt-0.5">
+                  Emergency Distress Stored Locally
+                </h3>
+                <span className="text-[11px] text-amber-800 font-mono">
+                  Client ID: #{(submittedRequest as any).clientOperationId?.slice(0, 8) || submittedRequest.id.slice(0, 8)}
+                </span>
+              </div>
+            </div>
+
+            <div className="text-right">
+              <span className="text-[10px] font-bold uppercase text-amber-700">Triage Status</span>
+              <p className="text-sm font-bold text-amber-900 mt-1">
+                Pending Server Assessment
+              </p>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-200 text-amber-900 mt-1 inline-block">
+                {(submittedRequest as any).syncStatus === 'SYNCING' ? 'Syncing...' : 'Queued in Outbox'}
+              </span>
+            </div>
+          </div>
+
+          <div className="p-3.5 bg-amber-100/70 border border-amber-300 rounded-2xl text-xs text-amber-900 space-y-1">
+            <p className="font-bold flex items-center gap-1.5 text-amber-950">
+              <span>⚠️ Not Yet Reached Authorities:</span>
+            </p>
+            <p className="leading-relaxed">
+              Your emergency request is saved locally on your device. It has not yet reached emergency responders. It will be transmitted automatically with full details as soon as internet connectivity or server availability returns.
+            </p>
+          </div>
+
+          <div className="p-3 bg-white/90 rounded-2xl border border-amber-200 text-xs space-y-1.5">
+            <span className="font-bold text-amber-950 block">Locally Recorded Distress Details:</span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] text-[#2F4156]">
+              <div><strong>Location:</strong> {submittedRequest.address || 'Reported Location'}</div>
+              <div><strong>People:</strong> {submittedRequest.peopleCount} (Injured: {submittedRequest.injuredCount}, Children: {submittedRequest.childrenCount})</div>
+              <div><strong>Type / Water Level:</strong> {submittedRequest.emergencyType} • {submittedRequest.waterLevel}</div>
+              <div><strong>Description:</strong> {submittedRequest.description}</div>
+            </div>
+          </div>
+
+          <div className="pt-2 flex flex-wrap items-center justify-between gap-3">
+            <button
+              type="button"
+              onClick={() => handleCancelRequest(submittedRequest.id)}
+              className="px-3.5 py-2 rounded-xl border border-amber-400 text-amber-800 hover:bg-amber-100 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+            >
+              <Ban className="w-3.5 h-3.5" />
+              <span>Cancel Queued Request</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                if (navigator.onLine) {
+                  sosSyncManager.syncPendingOutbox();
+                } else {
+                  alert('Device is currently offline. Transmission will begin automatically when internet returns.');
+                }
+              }}
+              className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-md cursor-pointer"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>Transmit Now</span>
+            </button>
+          </div>
+        </div>
+      ) : submittedRequest && submittedRequest.status !== 'CANCELLED' && submittedRequest.status !== 'RESCUED' ? (
         <div className="p-6 rounded-3xl bg-red-50 border border-red-200 space-y-4 shadow-sm">
           <div className="flex items-start justify-between">
             <div className="flex items-center gap-3">
@@ -338,7 +509,7 @@ export const AreYouSafeView: React.FC<AreYouSafeViewProps> = ({
             </button>
           </div>
         </div>
-      )}
+      ) : null}
 
       {/* TWO LARGE ACTION BUTTONS (SAFE vs NEED HELP) */}
       {!showDistressForm && (

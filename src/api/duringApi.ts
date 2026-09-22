@@ -224,9 +224,15 @@ export const duringApi = {
     criticalMedicalNeed?: boolean;
     waterLevel?: WaterLevel;
     emergencyType?: EmergencyType;
+    clientOperationId?: string;
   }): Promise<RescueRequest> {
+    const headers: Record<string, string> = {};
+    if (data.clientOperationId) {
+      headers['x-stride-operation-id'] = data.clientOperationId;
+    }
     return duringRequest<RescueRequest>('/rescue-requests', {
       method: 'POST',
+      headers,
       body: JSON.stringify({
         latitude: Number(data.latitude),
         longitude: Number(data.longitude),
@@ -240,6 +246,7 @@ export const duringApi = {
         criticalMedicalNeed: !!data.criticalMedicalNeed,
         waterLevel: data.waterLevel || 'MEDIUM',
         emergencyType: data.emergencyType || 'FLOOD',
+        clientOperationId: data.clientOperationId,
       }),
     });
   },

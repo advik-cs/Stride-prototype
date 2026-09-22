@@ -27,6 +27,9 @@ export const BEFORE_API_BASE_URL =
     : '/api');
 
 export function getDuringApiBaseUrl(): string {
+  if (typeof window !== 'undefined' && (window as any).__STRIDE_DURING_API_URL__) {
+    return (window as any).__STRIDE_DURING_API_URL__;
+  }
   const currentEnv = (import.meta as any).env || (typeof process !== 'undefined' ? process.env : {}) || {};
   return (
     currentEnv.VITE_DURING_API_URL ||

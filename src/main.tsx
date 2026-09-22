@@ -5,6 +5,7 @@ import { LanguageProvider } from './i18n/LanguageContext.tsx';
 import { Analytics } from '@vercel/analytics/react';
 import { registerSW } from 'virtual:pwa-register';
 import { initStrideDB } from './offline/db';
+import { sosSyncManager } from './offline/sosSyncManager';
 import './index.css';
 
 registerSW({ immediate: true });
@@ -13,6 +14,9 @@ registerSW({ immediate: true });
 initStrideDB().catch((err) => {
   console.warn('[STRIDE] IndexedDB non-blocking startup initialization:', err);
 });
+
+// Initialize offline SOS outbox reconnect synchronization
+sosSyncManager.init();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

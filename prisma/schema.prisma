@@ -230,3 +230,18 @@ model Road {
   status          String   @default("OPEN") // "OPEN" | "FLOODED" | "BLOCKED" | "RESTRICTED"
   coordinatesJson String   // JSON array of [lat, lng] points along the road
 }
+
+model IdempotencyKey {
+  id              String   @id @default(uuid())
+  operationId     String   @unique
+  userId          String
+  operationType   String   // "CREATE_SOS"
+  status          String   // "PROCESSING" | "COMPLETED" | "FAILED"
+  serverRequestId String?
+  responsePayload String?  // Serialized JSON of server response
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([userId])
+  @@index([operationId])
+}

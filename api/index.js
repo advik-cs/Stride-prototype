@@ -2872,6 +2872,7 @@ function formatRescueRequest(reqRecord, citizenUser, customBreakdown) {
   };
 }
 async function createRescueRequest(req, res) {
+  const clientOperationId = req.headers["x-stride-operation-id"] || req.body?.clientOperationId;
   try {
     const userId = req.user.userId;
     const {
@@ -2891,6 +2892,117 @@ async function createRescueRequest(req, res) {
     if (!address || !description) {
       res.status(400).json({ error: "Address and description are required." });
       return;
+    }
+    if (clientOperationId) {
+      const existingKey = await database_default.idempotencyKey.findUnique({
+        where: { operationId: clientOperationId }
+      });
+      if (existingKey) {
+        if (existingKey.userId !== userId) {
+          res.status(403).json({ error: "Operation ID is associated with a different user." });
+          return;
+        }
+        if (existingKey.status === "COMPLETED" && existingKey.responsePayload) {
+          res.status(200).json(JSON.parse(existingKey.responsePayload));
+          return;
+        }
+        if (existingKey.status === "COMPLETED" && existingKey.serverRequestId) {
+          const rec = await database_default.emergencyRequest.findUnique({
+            where: { id: existingKey.serverRequestId },
+            include: {
+              conditions: true,
+              rescueAssignments: true,
+              householdMember: { include: { household: { include: { user: true } } } }
+            }
+          });
+          if (rec) {
+            res.status(200).json(formatRescueRequest(rec));
+            return;
+          }
+        }
+        if (existingKey.status === "PROCESSING") {
+          const isStale = Date.now() - new Date(existingKey.updatedAt).getTime() > 1e4;
+          if (isStale) {
+            if (existingKey.serverRequestId) {
+              const rec = await database_default.emergencyRequest.findUnique({
+                where: { id: existingKey.serverRequestId },
+                include: {
+                  conditions: true,
+                  rescueAssignments: true,
+                  householdMember: { include: { household: { include: { user: true } } } }
+                }
+              });
+              if (rec) {
+                const responseData2 = formatRescueRequest(rec);
+                await database_default.idempotencyKey.update({
+                  where: { operationId: clientOperationId },
+                  data: {
+                    status: "COMPLETED",
+                    responsePayload: JSON.stringify(responseData2)
+                  }
+                });
+                res.status(200).json(responseData2);
+                return;
+              }
+            }
+            await database_default.idempotencyKey.update({
+              where: { operationId: clientOperationId },
+              data: {
+                status: "PROCESSING",
+                updatedAt: /* @__PURE__ */ new Date()
+              }
+            });
+          } else {
+            for (let i = 0; i < 6; i++) {
+              await new Promise((r) => setTimeout(r, 250));
+              const pollKey = await database_default.idempotencyKey.findUnique({
+                where: { operationId: clientOperationId }
+              });
+              if (pollKey && pollKey.status === "COMPLETED" && pollKey.responsePayload) {
+                res.status(200).json(JSON.parse(pollKey.responsePayload));
+                return;
+              }
+            }
+            res.status(409).json({ error: "Operation is currently being processed. Please retry shortly." });
+            return;
+          }
+        }
+      } else {
+        try {
+          await database_default.idempotencyKey.create({
+            data: {
+              operationId: clientOperationId,
+              userId,
+              operationType: "CREATE_SOS",
+              status: "PROCESSING"
+            }
+          });
+        } catch (insertErr) {
+          const raceKey = await database_default.idempotencyKey.findUnique({
+            where: { operationId: clientOperationId }
+          });
+          if (raceKey && raceKey.userId !== userId) {
+            res.status(403).json({ error: "Operation ID is associated with a different user." });
+            return;
+          }
+          if (raceKey && raceKey.status === "COMPLETED" && raceKey.responsePayload) {
+            res.status(200).json(JSON.parse(raceKey.responsePayload));
+            return;
+          }
+          for (let i = 0; i < 6; i++) {
+            await new Promise((r) => setTimeout(r, 250));
+            const pollKey = await database_default.idempotencyKey.findUnique({
+              where: { operationId: clientOperationId }
+            });
+            if (pollKey && pollKey.status === "COMPLETED" && pollKey.responsePayload) {
+              res.status(200).json(JSON.parse(pollKey.responsePayload));
+              return;
+            }
+          }
+          res.status(409).json({ error: "Operation is currently being processed. Please retry shortly." });
+          return;
+        }
+      }
     }
     const user = await database_default.user.findUnique({
       where: { id: userId },
@@ -3004,8 +3116,27 @@ async function createRescueRequest(req, res) {
       }
     });
     const responseData = formatRescueRequest(requestRecord, user, breakdown);
+    if (clientOperationId) {
+      await database_default.idempotencyKey.update({
+        where: { operationId: clientOperationId },
+        data: {
+          status: "COMPLETED",
+          serverRequestId: requestRecord.id,
+          responsePayload: JSON.stringify(responseData)
+        }
+      }).catch((err) => {
+        console.warn("[rescueController] Failed to update IdempotencyKey to COMPLETED:", err);
+      });
+    }
     res.status(201).json(responseData);
   } catch (error) {
+    if (clientOperationId) {
+      await database_default.idempotencyKey.update({
+        where: { operationId: clientOperationId },
+        data: { status: "FAILED" }
+      }).catch(() => {
+      });
+    }
     res.status(500).json({ error: error.message || "Failed to create rescue request." });
   }
 }

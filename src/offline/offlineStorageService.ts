@@ -349,6 +349,14 @@ export const offlineStorageService = {
     });
   },
 
+  async getActiveSosByUserId(userId: string): Promise<StorageResult<ActiveSosRecord | null>> {
+    return withDB(async (db) => {
+      const all = await db.getAll('activeSos');
+      const userRecord = all.find((r) => r.userId === userId && r.status !== 'CANCELLED');
+      return userRecord ?? null;
+    });
+  },
+
   async putActiveSos(sos: ActiveSosRecord): Promise<StorageResult<string>> {
     return withDB(async (db) => {
       await db.put('activeSos', sos);
@@ -359,6 +367,47 @@ export const offlineStorageService = {
   async deleteActiveSos(id: string): Promise<StorageResult<void>> {
     return withDB(async (db) => {
       await db.delete('activeSos', id);
+    });
+  },
+
+  async putActiveSosAndOutbox(
+    sos: ActiveSosRecord,
+    outbox: SosOutboxRecord
+  ): Promise<StorageResult<void>> {
+    return this.runTransaction(['activeSos', 'sosOutbox'], 'readwrite', async (tx) => {
+      await tx.objectStore('activeSos').put(sos);
+      await tx.objectStore('sosOutbox').put(outbox);
+    });
+  },
+
+  async reconcileSyncedSos(
+    localSosId: string,
+    outboxId: string,
+    serverSos: any
+  ): Promise<StorageResult<void>> {
+    return this.runTransaction(['activeSos', 'sosOutbox'], 'readwrite', async (tx) => {
+      const activeStore = tx.objectStore('activeSos');
+      const existing = (await activeStore.get(localSosId)) as ActiveSosRecord | undefined;
+      const updated: ActiveSosRecord = {
+        ...(existing || {}),
+        id: localSosId,
+        serverId: serverSos.id,
+        syncStatus: 'SYNCED',
+        priorityScore: serverSos.priorityScore,
+        priorityLevel: serverSos.priorityLevel,
+        priorityBreakdown: serverSos.priorityBreakdown,
+        status: serverSos.status,
+        lastSyncedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      } as ActiveSosRecord;
+      await activeStore.put(updated);
+
+      const outboxStore = tx.objectStore('sosOutbox');
+      const outboxItem = (await outboxStore.get(outboxId)) as SosOutboxRecord | undefined;
+      if (outboxItem) {
+        outboxItem.syncStatus = 'SYNCED';
+        await outboxStore.put(outboxItem);
+      }
     });
   },
 

@@ -212,6 +212,8 @@ export interface SosPriorityBreakdown {
   trappedOrStructural?: number;
 }
 
+export type MutationSyncStatus = 'PENDING' | 'SYNCING' | 'SYNCED' | 'FAILED' | 'ERROR' | 'IN_FLIGHT';
+
 export interface ActiveSosRecord {
   id: string;
   localId?: string;
@@ -236,7 +238,7 @@ export interface ActiveSosRecord {
   latitude: number;
   longitude: number;
   status: RescueStatus;
-  syncStatus: 'SYNCED' | 'PENDING' | 'ERROR';
+  syncStatus: MutationSyncStatus;
   clientOperationId?: string;
   createdAt: string;
   updatedAt: string;
@@ -253,9 +255,9 @@ export interface SosOutboxRecord {
   userId?: string;
   actionType: 'CREATE_SOS' | 'UPDATE_SOS' | 'CANCEL_SOS';
   endpoint: string;
-  payload: unknown;
+  payload: any;
   clientTimestamp: string;
-  syncStatus: 'PENDING' | 'IN_FLIGHT' | 'FAILED';
+  syncStatus: MutationSyncStatus;
   retryCount: number;
   lastError?: string;
 }
