@@ -31,15 +31,26 @@ class ConnectivityService {
     window.addEventListener('offline', this.handleOffline);
 
     // Sync notification event
-    window.addEventListener('stride_sos_synced', () => {
-      this.refreshPendingStatus().catch((err) => {
-        console.warn('[connectivityService] Failed to refresh pending status on sync event:', err);
-      });
-    });
+    window.addEventListener('stride_sos_synced', this.handleSyncEvent);
+
+    // Auth change event (login / logout)
+    window.addEventListener('stride_auth_changed', this.handleAuthChanged);
 
     // Initial evaluation
     await this.refreshPendingStatus().catch(() => {});
   }
+
+  private handleSyncEvent = (): void => {
+    this.refreshPendingStatus().catch((err) => {
+      console.warn('[connectivityService] Failed to refresh pending status on sync event:', err);
+    });
+  };
+
+  private handleAuthChanged = (): void => {
+    this.refreshPendingStatus().catch((err) => {
+      console.warn('[connectivityService] Failed to refresh pending status on auth change:', err);
+    });
+  };
 
   /**
    * Destroys event listeners (for test cleanup).
@@ -48,6 +59,8 @@ class ConnectivityService {
     if (typeof window === 'undefined') return;
     window.removeEventListener('online', this.handleOnline);
     window.removeEventListener('offline', this.handleOffline);
+    window.removeEventListener('stride_sos_synced', this.handleSyncEvent);
+    window.removeEventListener('stride_auth_changed', this.handleAuthChanged);
     this.listeners.clear();
     this.initialized = false;
   }
@@ -72,11 +85,13 @@ class ConnectivityService {
       if (outboxRes.ok && outboxRes.data) {
         const currentUser = authApi.getStoredUser();
         if (currentUser?.id) {
+          // Strictly match current user's mutations (multi-user isolation)
           this.hasPending = outboxRes.data.some(
-            (item) => !item.userId || item.userId === currentUser.id
+            (item) => item.userId === currentUser.id
           );
         } else {
-          this.hasPending = outboxRes.data.length > 0;
+          // Unauthenticated or logged-out users never have pending distress sync
+          this.hasPending = false;
         }
       } else {
         this.hasPending = false;

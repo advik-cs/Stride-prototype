@@ -234,9 +234,15 @@ export const ShelterSelectionView: React.FC<ShelterSelectionViewProps> = ({
       ) : filteredShelters.length === 0 ? (
         <div className="text-center py-16 bg-white rounded-3xl border border-[#C8D9E6] p-8">
           <Tent className="w-12 h-12 text-[#567C8D] mx-auto mb-3 opacity-40" />
-          <h3 className="text-lg font-bold text-[#2F4156]">No shelters found</h3>
+          <h3 className="text-lg font-bold text-[#2F4156]">
+            {typeof navigator !== 'undefined' && !navigator.onLine
+              ? 'No Cached Shelters Available'
+              : 'No shelters found'}
+          </h3>
           <p className="text-xs text-[#567C8D] mt-1">
-            {statusFilter === 'ALL'
+            {typeof navigator !== 'undefined' && !navigator.onLine
+              ? 'Connect to the internet to load and cache designated emergency shelters.'
+              : statusFilter === 'ALL'
               ? 'No registered shelters in this region.'
               : `No shelters currently marked as ${statusFilter.replace('_', ' ')}.`}
           </p>

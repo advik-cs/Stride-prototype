@@ -122,9 +122,15 @@ export const HospitalList: React.FC<HospitalListProps> = ({
         {filteredHospitals.length === 0 ? (
           <div className="bg-white rounded-3xl p-8 text-center border border-[#C8D9E6]/60">
             <Building2 className="w-10 h-10 text-[#567C8D] mx-auto mb-2 opacity-50" />
-            <h4 className="text-sm font-bold text-[#2F4156]">No hospitals found</h4>
+            <h4 className="text-sm font-bold text-[#2F4156]">
+              {typeof navigator !== 'undefined' && !navigator.onLine
+                ? 'No Cached Hospitals Available'
+                : 'No hospitals found'}
+            </h4>
             <p className="text-xs text-[#567C8D] mt-1">
-              Try adjusting your search keywords or filter criteria.
+              {typeof navigator !== 'undefined' && !navigator.onLine
+                ? 'Connect to the internet to load registered hospital facilities.'
+                : 'Try adjusting your search keywords or filter criteria.'}
             </p>
           </div>
         ) : (

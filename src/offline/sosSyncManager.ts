@@ -144,7 +144,7 @@ export const sosSyncManager = {
 
       for (const item of items) {
         // USER ISOLATION CHECK: Never synchronize another citizen's outbox item
-        if (item.userId && item.userId !== currentUser.id) {
+        if (!item.userId || item.userId !== currentUser.id) {
           console.warn(`[sosSyncManager] Skipping mutation for user ${item.userId} (current user: ${currentUser.id})`);
           continue;
         }

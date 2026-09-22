@@ -69,6 +69,7 @@ export const authApi = {
     localStorage.removeItem('stride_before_token');
     localStorage.removeItem('stride_during_token');
     localStorage.removeItem('stride_user');
+    localStorage.removeItem('stride_active_sos_id');
     window.dispatchEvent(new Event('stride_auth_changed'));
   },
 

@@ -133,7 +133,8 @@ export const AreYouSafeView: React.FC<AreYouSafeViewProps> = ({
       if (activeSosId) {
         try {
           const single = await duringApi.getRequestById(activeSosId);
-          if (single && single.status !== 'CANCELLED' && single.status !== 'RESCUED') {
+          const isOwner = !single?.citizenId || !user?.id || single.citizenId === user.id || single.citizen?.id === user.id;
+          if (single && single.status !== 'CANCELLED' && single.status !== 'RESCUED' && isOwner) {
             setSubmittedRequest(single);
             setMyRequests([single]);
             setCurrentStatus('IN_DISTRESS');

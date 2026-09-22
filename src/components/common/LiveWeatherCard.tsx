@@ -201,7 +201,7 @@ export const LiveWeatherCard: React.FC<LiveWeatherCardProps> = ({
           </div>
           <div>
             <h2 className="text-lg font-bold font-['Space_Grotesk',sans-serif] text-[#2F4156]">
-              {title || t('essentials.weatherTitle') || 'Live Meteorological Telemetry'}
+              {title || (isOfflineData ? 'Saved Meteorological Telemetry' : t('essentials.weatherTitle') || 'Live Meteorological Telemetry')}
             </h2>
             <div className="flex items-center gap-2 mt-1">
               <MapPin className="w-3.5 h-3.5 text-[#567C8D]" />
@@ -285,6 +285,32 @@ export const LiveWeatherCard: React.FC<LiveWeatherCardProps> = ({
           </div>
         ) : weatherData ? (
           <div className="space-y-6">
+            {/* SAVED TELEMETRY / STALE INDICATOR */}
+            {isOfflineData && (
+              <div
+                className={`p-3 rounded-2xl border flex items-center justify-between gap-3 text-xs ${
+                  isDataStale
+                    ? 'bg-amber-500/10 border-amber-500/30 text-amber-950'
+                    : 'bg-slate-500/10 border-slate-500/20 text-slate-900'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-amber-700 flex-shrink-0" />
+                  <span>
+                    <strong>{isDataStale ? 'Saved Telemetry — stale:' : 'Saved Telemetry — cached:'}</strong>{' '}
+                    {isDataStale
+                      ? 'Cached observation has expired. Connect to internet for live updates.'
+                      : 'Showing saved atmospheric observation.'}
+                  </span>
+                </div>
+                {cachedTimestamp && (
+                  <span className="text-[11px] opacity-75 hidden sm:inline flex-shrink-0">
+                    Recorded: {new Date(cachedTimestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                )}
+              </div>
+            )}
+
             {/* FLOOD RISK ASSESSMENT BADGE */}
             {(() => {
               const floodRisk = getFloodRiskAssessment(weatherData.precipitation, weatherData.weatherCode);
