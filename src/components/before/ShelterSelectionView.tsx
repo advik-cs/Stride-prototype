@@ -19,10 +19,12 @@ import {
   Clock,
 } from 'lucide-react';
 import { formatLastUpdated } from '../../offline/offlineDateUtils.ts';
+import { useConnectivityStatus } from '../../offline/useConnectivityStatus.ts';
 
 interface ShelterSelectionViewProps {
   user: User;
   activeDisaster: DisasterEvent | null;
+  isOffline?: boolean;
 }
 
 export function cleanShelterName(name: string): string {
@@ -35,10 +37,16 @@ export function cleanShelterName(name: string): string {
 export const ShelterSelectionView: React.FC<ShelterSelectionViewProps> = ({
   user,
   activeDisaster,
+  isOffline: propOffline,
 }) => {
   const { t } = useLanguage();
+  const { isOffline: hookOffline } = useConnectivityStatus();
   const [shelters, setShelters] = useState<ShelterOccupancy[]>([]);
   const [shelterMeta, setShelterMeta] = useState<{ source?: 'server' | 'cache' | 'none'; lastSyncedAt?: string; isStale?: boolean }>({});
+
+  const isOffline = propOffline !== undefined
+    ? propOffline
+    : (hookOffline || (typeof navigator !== 'undefined' && !navigator.onLine) || shelterMeta.source === 'cache');
   const [household, setHousehold] = useState<Household | null>(null);
   const [loading, setLoading] = useState(true);
   const [assigningShelterId, setAssigningShelterId] = useState<string | null>(null);
@@ -360,6 +368,17 @@ export const ShelterSelectionView: React.FC<ShelterSelectionViewProps> = ({
                       </span>
                     </div>
                   </div>
+
+                  {/* Offline Shelter Capacity Warning */}
+                  {isOffline && (
+                    <div
+                      data-testid="offline-shelter-capacity-warning"
+                      className="mt-3 px-3 py-2 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-950 flex items-center justify-center gap-2 text-xs font-semibold shadow-sm"
+                    >
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-700 flex-shrink-0" />
+                      <span>Offline! Unable to display Shelter Capacity</span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="mt-6 pt-4 border-t border-[#F5EFEB]">
