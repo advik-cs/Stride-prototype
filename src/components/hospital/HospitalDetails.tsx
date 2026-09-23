@@ -61,10 +61,10 @@ export const HospitalDetails: React.FC<HospitalDetailsProps> = ({
         aria-modal="true"
       >
         {/* Modal Header */}
-        <div className="p-6 border-b border-[#F5EFEB] flex items-start justify-between gap-4 sticky top-0 bg-white/95 backdrop-blur z-10">
-          <div className="flex items-start gap-3.5">
-            <div className="w-12 h-12 rounded-2xl bg-red-50 text-red-600 flex items-center justify-center flex-shrink-0 border border-red-100 shadow-sm">
-              <Building2 className="w-6 h-6" />
+        <div className="p-4 sm:p-6 border-b border-[#F5EFEB] flex items-start justify-between gap-3 sm:gap-4 sticky top-0 bg-white/95 backdrop-blur z-10">
+          <div className="flex items-start gap-3 sm:gap-3.5">
+            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-red-50 text-red-600 flex items-center justify-center flex-shrink-0 border border-red-100 shadow-sm mt-0.5">
+              <Building2 className="w-5 h-5 sm:w-6 sm:h-6" />
             </div>
             <div>
               <div className="flex flex-wrap items-center gap-2">
@@ -78,7 +78,7 @@ export const HospitalDetails: React.FC<HospitalDetailsProps> = ({
                   </span>
                 )}
               </div>
-              <h2 className="text-xl font-bold font-['Space_Grotesk',sans-serif] text-[#2F4156] mt-1">
+              <h2 className="text-lg sm:text-xl font-bold font-['Space_Grotesk',sans-serif] text-[#2F4156] mt-1">
                 {hospital.name}
               </h2>
               <p className="text-xs text-[#567C8D] flex items-center gap-1.5 mt-0.5">
@@ -90,7 +90,7 @@ export const HospitalDetails: React.FC<HospitalDetailsProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="p-2 rounded-xl text-[#567C8D] hover:text-[#2F4156] hover:bg-[#F5EFEB] transition"
+            className="p-2 rounded-xl text-[#567C8D] hover:text-[#2F4156] hover:bg-[#F5EFEB] transition min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer"
             aria-label="Close modal"
           >
             <X className="w-5 h-5" />
@@ -98,7 +98,7 @@ export const HospitalDetails: React.FC<HospitalDetailsProps> = ({
         </div>
 
         {/* Modal Content */}
-        <div className="p-6 space-y-6">
+        <div className="p-4 sm:p-6 space-y-5 sm:space-y-6">
           {/* Emergency Department Availability Indicator */}
           <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
@@ -224,20 +224,20 @@ export const HospitalDetails: React.FC<HospitalDetailsProps> = ({
           </div>
 
           {/* Contact & Dispatch Bar */}
-          <div className="pt-4 border-t border-[#F5EFEB] flex flex-wrap items-center justify-between gap-3">
+          <div className="pt-4 border-t border-[#F5EFEB] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <a
               href={`tel:${hospital.contactNumber}`}
-              className="px-4 py-2.5 rounded-2xl bg-[#2F4156] hover:bg-[#243445] text-white text-xs font-bold flex items-center gap-2 transition shadow-sm"
+              className="w-full sm:w-auto px-4 py-3 min-h-[48px] rounded-2xl bg-[#2F4156] hover:bg-[#243445] text-white text-xs font-bold flex items-center justify-center gap-2 transition shadow-sm cursor-pointer"
             >
               <Phone className="w-4 h-4" />
               <span>Call Hospital: {hospital.contactNumber}</span>
             </a>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 w-full sm:w-auto">
               <button
                 type="button"
                 onClick={handleCopyCoordinates}
-                className="px-3 py-2 rounded-2xl bg-white border border-[#C8D9E6] hover:bg-[#F5EFEB] text-xs font-semibold text-[#2F4156] flex items-center gap-1.5 transition"
+                className="flex-1 sm:flex-initial px-3.5 py-2.5 min-h-[44px] rounded-2xl bg-white border border-[#C8D9E6] hover:bg-[#F5EFEB] text-xs font-semibold text-[#2F4156] flex items-center justify-center gap-1.5 transition cursor-pointer"
               >
                 {copiedCoords ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Share2 className="w-3.5 h-3.5 text-[#567C8D]" />}
                 <span>{copiedCoords ? 'Coordinates Copied' : 'Copy GPS'}</span>
@@ -248,10 +248,10 @@ export const HospitalDetails: React.FC<HospitalDetailsProps> = ({
                 <button
                   type="button"
                   onClick={() => onSelectAsDestination(hospital)}
-                  className="px-4 py-2.5 rounded-2xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-md shadow-red-600/20 transition cursor-pointer"
+                  className="flex-1 sm:flex-initial px-4 py-2.5 min-h-[44px] rounded-2xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-md shadow-red-600/20 transition cursor-pointer"
                 >
                   <Navigation className="w-4 h-4" />
-                  <span>Set as Rescue Destination</span>
+                  <span>Set Destination</span>
                 </button>
               )}
             </div>

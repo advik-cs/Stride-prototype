@@ -62,21 +62,21 @@ export const BeforeDashboardView: React.FC<BeforeDashboardViewProps> = ({
     <div className="space-y-8 max-w-7xl mx-auto">
       {/* Page Header */}
       <div>
-        <h1 className="text-2xl sm:text-3xl font-bold font-['Space_Grotesk',sans-serif] text-[#2F4156] tracking-tight">
+        <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold font-['Space_Grotesk',sans-serif] text-[#2F4156] tracking-tight">
           Before Disaster
         </h1>
-        <p className="text-sm font-medium text-[#567C8D] mt-1">
+        <p className="text-xs sm:text-sm font-medium text-[#567C8D] mt-1">
           Prepare, plan and stay informed.
         </p>
       </div>
 
       {/* Active Threat Alert Banner */}
       {activeDisaster && (
-        <div className="bg-white rounded-3xl p-6 border border-[#C8D9E6] shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative overflow-hidden">
+        <div className="bg-white rounded-3xl p-4 sm:p-6 border border-[#C8D9E6] shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4 sm:gap-6 relative overflow-hidden">
           <div className="absolute top-0 left-0 w-2 h-full bg-red-600" />
-          <div className="flex items-start gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-red-50 flex items-center justify-center flex-shrink-0 text-red-600">
-              <AlertTriangle className="w-6 h-6" />
+          <div className="flex items-start gap-3.5 sm:gap-4">
+            <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-red-50 flex items-center justify-center flex-shrink-0 text-red-600">
+              <AlertTriangle className="w-5 h-5 sm:w-6 sm:h-6" />
             </div>
             <div>
               <div className="flex items-center gap-2">
@@ -87,7 +87,7 @@ export const BeforeDashboardView: React.FC<BeforeDashboardViewProps> = ({
                   {activeDisaster.type} EVENT
                 </span>
               </div>
-              <h2 className="text-lg font-bold text-[#2F4156] mt-1">
+              <h2 className="text-base sm:text-lg font-bold text-[#2F4156] mt-1">
                 {activeDisaster.title}
               </h2>
               <p className="text-xs text-[#567C8D] mt-1 max-w-2xl leading-relaxed">
@@ -96,11 +96,11 @@ export const BeforeDashboardView: React.FC<BeforeDashboardViewProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-3 self-end md:self-center">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 sm:gap-3 w-full sm:w-auto self-stretch md:self-center mt-2 md:mt-0">
             <button
               type="button"
               onClick={() => onNavigateTab('threats')}
-              className="px-4 py-2 rounded-xl bg-[#F5EFEB] hover:bg-[#C8D9E6]/30 text-xs font-bold text-[#2F4156] transition flex items-center gap-1.5"
+              className="w-full sm:w-auto px-4 py-2.5 sm:py-2 min-h-[44px] sm:min-h-0 rounded-xl bg-[#F5EFEB] hover:bg-[#C8D9E6]/30 text-xs font-bold text-[#2F4156] transition flex items-center justify-center gap-1.5 cursor-pointer"
             >
               <span>Threat Intel</span>
               <ArrowRight className="w-3.5 h-3.5" />
@@ -109,7 +109,7 @@ export const BeforeDashboardView: React.FC<BeforeDashboardViewProps> = ({
               <button
                 type="button"
                 onClick={() => onNavigateTab('reconfirmation')}
-                className="px-4 py-2 rounded-xl bg-[#2F4156] hover:bg-[#1F2D3D] text-white text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
+                className="w-full sm:w-auto px-4 py-2.5 sm:py-2 min-h-[44px] sm:min-h-0 rounded-xl bg-[#2F4156] hover:bg-[#1F2D3D] text-white text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
               >
                 <span>Reconfirm Plan</span>
                 <CheckCircle2 className="w-3.5 h-3.5 text-[#C8D9E6]" />
@@ -120,10 +120,10 @@ export const BeforeDashboardView: React.FC<BeforeDashboardViewProps> = ({
       )}
 
       {/* Summary Cards Grid */}
-      <div className={`grid grid-cols-1 sm:grid-cols-2 ${isAuthority ? 'lg:grid-cols-4' : 'lg:grid-cols-3 xl:grid-cols-5'} gap-6`}>
+      <div className={`grid grid-cols-1 sm:grid-cols-2 ${isAuthority ? 'lg:grid-cols-4' : 'lg:grid-cols-3 xl:grid-cols-5'} gap-4 sm:gap-6`}>
         {/* Card 1: Registered Household (NON-AUTHORITY ONLY) */}
         {!isAuthority && (
-          <div className="bg-white rounded-3xl p-6 border border-[#C8D9E6]/60 shadow-sm hover:shadow-md transition">
+          <div className="bg-white rounded-3xl p-5 sm:p-6 border border-[#C8D9E6]/60 shadow-sm hover:shadow-md transition">
             <div className="flex items-center justify-between mb-4">
               <div className="w-10 h-10 rounded-xl bg-[#C8D9E6]/30 flex items-center justify-center text-[#2F4156]">
                 <Users className="w-5 h-5" />
@@ -150,7 +150,7 @@ export const BeforeDashboardView: React.FC<BeforeDashboardViewProps> = ({
         )}
 
         {/* Card 2: 5km Radius Readiness */}
-        <div className="bg-white rounded-3xl p-6 border border-[#C8D9E6]/60 shadow-sm hover:shadow-md transition">
+        <div className="bg-white rounded-3xl p-5 sm:p-6 border border-[#C8D9E6]/60 shadow-sm hover:shadow-md transition">
           <div className="flex items-center justify-between mb-4">
             <div className="w-10 h-10 rounded-xl bg-[#567C8D]/15 flex items-center justify-center text-[#567C8D]">
               <MapPin className="w-5 h-5" />
@@ -158,7 +158,7 @@ export const BeforeDashboardView: React.FC<BeforeDashboardViewProps> = ({
             <button
               type="button"
               onClick={() => onNavigateTab('map')}
-              className="text-[11px] font-bold text-[#567C8D] hover:text-[#2F4156] flex items-center gap-1"
+              className="text-[11px] font-bold text-[#567C8D] hover:text-[#2F4156] flex items-center gap-1 min-h-[36px] py-1 -mr-1 px-1.5 rounded-lg hover:bg-[#F5EFEB] transition cursor-pointer"
             >
               Open Map <ArrowRight className="w-3 h-3" />
             </button>
@@ -179,7 +179,7 @@ export const BeforeDashboardView: React.FC<BeforeDashboardViewProps> = ({
         </div>
 
         {/* Card 3: Shelters Status */}
-        <div className="bg-white rounded-3xl p-6 border border-[#C8D9E6]/60 shadow-sm hover:shadow-md transition">
+        <div className="bg-white rounded-3xl p-5 sm:p-6 border border-[#C8D9E6]/60 shadow-sm hover:shadow-md transition">
           <div className="flex items-center justify-between mb-4">
             <div className="w-10 h-10 rounded-xl bg-[#F5EFEB] flex items-center justify-center text-[#2F4156]">
               <Tent className="w-5 h-5" />
@@ -187,7 +187,7 @@ export const BeforeDashboardView: React.FC<BeforeDashboardViewProps> = ({
             <button
               type="button"
               onClick={() => onNavigateTab('shelters')}
-              className="text-[11px] font-bold text-[#567C8D] hover:text-[#2F4156] flex items-center gap-1"
+              className="text-[11px] font-bold text-[#567C8D] hover:text-[#2F4156] flex items-center gap-1 min-h-[36px] py-1 -mr-1 px-1.5 rounded-lg hover:bg-[#F5EFEB] transition cursor-pointer"
             >
               View All <ArrowRight className="w-3 h-3" />
             </button>
@@ -210,7 +210,7 @@ export const BeforeDashboardView: React.FC<BeforeDashboardViewProps> = ({
         </div>
 
         {/* Card: Hospital Information (ALL ROLES) */}
-        <div className="bg-white rounded-3xl p-6 border border-[#C8D9E6]/60 shadow-sm hover:shadow-md transition">
+        <div className="bg-white rounded-3xl p-5 sm:p-6 border border-[#C8D9E6]/60 shadow-sm hover:shadow-md transition">
           <div className="flex items-center justify-between mb-4">
             <div className="w-10 h-10 rounded-xl bg-red-50 flex items-center justify-center text-red-600">
               <Activity className="w-5 h-5" />
@@ -218,7 +218,7 @@ export const BeforeDashboardView: React.FC<BeforeDashboardViewProps> = ({
             <button
               type="button"
               onClick={() => onNavigateTab('hospitals')}
-              className="text-[11px] font-bold text-[#567C8D] hover:text-[#2F4156] flex items-center gap-1"
+              className="text-[11px] font-bold text-[#567C8D] hover:text-[#2F4156] flex items-center gap-1 min-h-[36px] py-1 -mr-1 px-1.5 rounded-lg hover:bg-[#F5EFEB] transition cursor-pointer"
             >
               View All <ArrowRight className="w-3 h-3" />
             </button>
@@ -242,7 +242,7 @@ export const BeforeDashboardView: React.FC<BeforeDashboardViewProps> = ({
 
         {/* Card 4: Reconfirmation Window (CITIZEN ONLY) */}
         {!isAuthority && (
-          <div className="bg-white rounded-3xl p-6 border border-[#C8D9E6]/60 shadow-sm hover:shadow-md transition">
+          <div className="bg-white rounded-3xl p-5 sm:p-6 border border-[#C8D9E6]/60 shadow-sm hover:shadow-md transition">
             <div className="flex items-center justify-between mb-4">
               <div className="w-10 h-10 rounded-xl bg-[#C8D9E6]/40 flex items-center justify-center text-[#2F4156]">
                 <Clock className="w-5 h-5" />
@@ -250,7 +250,7 @@ export const BeforeDashboardView: React.FC<BeforeDashboardViewProps> = ({
               <button
                 type="button"
                 onClick={() => onNavigateTab('reconfirmation')}
-                className="text-[11px] font-bold text-[#567C8D] hover:text-[#2F4156] flex items-center gap-1"
+                className="text-[11px] font-bold text-[#567C8D] hover:text-[#2F4156] flex items-center gap-1 min-h-[36px] py-1 -mr-1 px-1.5 rounded-lg hover:bg-[#F5EFEB] transition cursor-pointer"
               >
                 Verify <ArrowRight className="w-3 h-3" />
               </button>
@@ -275,7 +275,7 @@ export const BeforeDashboardView: React.FC<BeforeDashboardViewProps> = ({
 
         {/* Card 4 (Authority Alternative): Monitored Buildings */}
         {isAuthority && (
-          <div className="bg-white rounded-3xl p-6 border border-[#C8D9E6]/60 shadow-sm hover:shadow-md transition">
+          <div className="bg-white rounded-3xl p-5 sm:p-6 border border-[#C8D9E6]/60 shadow-sm hover:shadow-md transition">
             <div className="flex items-center justify-between mb-4">
               <div className="w-10 h-10 rounded-xl bg-[#C8D9E6]/40 flex items-center justify-center text-[#2F4156]">
                 <Building2 className="w-5 h-5" />
@@ -283,7 +283,7 @@ export const BeforeDashboardView: React.FC<BeforeDashboardViewProps> = ({
               <button
                 type="button"
                 onClick={() => onNavigateTab('occupancy')}
-                className="text-[11px] font-bold text-[#567C8D] hover:text-[#2F4156] flex items-center gap-1"
+                className="text-[11px] font-bold text-[#567C8D] hover:text-[#2F4156] flex items-center gap-1 min-h-[36px] py-1 -mr-1 px-1.5 rounded-lg hover:bg-[#F5EFEB] transition cursor-pointer"
               >
                 View <ArrowRight className="w-3 h-3" />
               </button>
@@ -306,13 +306,13 @@ export const BeforeDashboardView: React.FC<BeforeDashboardViewProps> = ({
       </div>
 
       {/* Quick Action Navigation Panels */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
         {/* Panel 1: Preparedness Action Roadmap */}
-        <div className="bg-white rounded-3xl p-6 sm:p-8 border border-[#C8D9E6]/60 shadow-sm">
-          <h3 className="text-lg font-bold font-['Space_Grotesk',sans-serif] text-[#2F4156] mb-1">
+        <div className="bg-white rounded-3xl p-5 sm:p-6 lg:p-8 border border-[#C8D9E6]/60 shadow-sm">
+          <h3 className="text-base sm:text-lg font-bold font-['Space_Grotesk',sans-serif] text-[#2F4156] mb-1">
             {isAuthority ? 'Authority Preparedness Actions' : 'Household Preparedness Checklist'}
           </h3>
-          <p className="text-xs text-[#567C8D] mb-6">
+          <p className="text-xs text-[#567C8D] mb-5 sm:mb-6">
             {isAuthority
               ? 'Review safe shelter information and monitor building occupancy.'
               : "Ensure your family's evacuation plan is updated before the disaster onset."}
@@ -321,10 +321,10 @@ export const BeforeDashboardView: React.FC<BeforeDashboardViewProps> = ({
           <div className="space-y-3">
             {!isAuthority && (
               <div
-                className="p-4 rounded-2xl bg-emerald-50/50 border border-emerald-200/70 flex items-center justify-between transition"
+                className="p-3.5 sm:p-4 rounded-2xl bg-emerald-50/50 border border-emerald-200/70 flex items-center justify-between transition min-h-[52px]"
               >
                 <div className="flex items-center gap-3.5">
-                  <div className="w-9 h-9 rounded-xl bg-white flex items-center justify-center text-emerald-600 shadow-sm border border-emerald-100">
+                  <div className="w-9 h-9 rounded-xl bg-white flex items-center justify-center text-emerald-600 shadow-sm border border-emerald-100 flex-shrink-0">
                     <CheckCircle2 className="w-4 h-4" />
                   </div>
                   <div>
@@ -336,7 +336,7 @@ export const BeforeDashboardView: React.FC<BeforeDashboardViewProps> = ({
                     </p>
                   </div>
                 </div>
-                <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-800 bg-white px-2 py-0.5 rounded-full border border-emerald-200">
+                <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-800 bg-white px-2 py-0.5 rounded-full border border-emerald-200 flex-shrink-0">
                   Completed
                 </span>
               </div>
@@ -344,10 +344,10 @@ export const BeforeDashboardView: React.FC<BeforeDashboardViewProps> = ({
 
             <div
               onClick={() => onNavigateTab('shelters')}
-              className="p-4 rounded-2xl bg-[#F5EFEB]/60 hover:bg-[#F5EFEB] border border-[#C8D9E6]/40 flex items-center justify-between cursor-pointer transition"
+              className="p-3.5 sm:p-4 rounded-2xl bg-[#F5EFEB]/60 hover:bg-[#F5EFEB] border border-[#C8D9E6]/40 flex items-center justify-between cursor-pointer transition min-h-[52px]"
             >
               <div className="flex items-center gap-3.5">
-                <div className="w-9 h-9 rounded-xl bg-white flex items-center justify-center text-[#2F4156] shadow-sm">
+                <div className="w-9 h-9 rounded-xl bg-white flex items-center justify-center text-[#2F4156] shadow-sm flex-shrink-0">
                   <Tent className="w-4 h-4" />
                 </div>
                 <div>
@@ -361,15 +361,15 @@ export const BeforeDashboardView: React.FC<BeforeDashboardViewProps> = ({
                   </p>
                 </div>
               </div>
-              <ChevronRight className="w-4 h-4 text-[#567C8D]" />
+              <ChevronRight className="w-4 h-4 text-[#567C8D] flex-shrink-0" />
             </div>
 
             <div
               onClick={() => onNavigateTab('hospitals')}
-              className="p-4 rounded-2xl bg-[#F5EFEB]/60 hover:bg-[#F5EFEB] border border-[#C8D9E6]/40 flex items-center justify-between cursor-pointer transition"
+              className="p-3.5 sm:p-4 rounded-2xl bg-[#F5EFEB]/60 hover:bg-[#F5EFEB] border border-[#C8D9E6]/40 flex items-center justify-between cursor-pointer transition min-h-[52px]"
             >
               <div className="flex items-center gap-3.5">
-                <div className="w-9 h-9 rounded-xl bg-white flex items-center justify-center text-red-600 shadow-sm">
+                <div className="w-9 h-9 rounded-xl bg-white flex items-center justify-center text-red-600 shadow-sm flex-shrink-0">
                   <Activity className="w-4 h-4" />
                 </div>
                 <div>
@@ -383,16 +383,16 @@ export const BeforeDashboardView: React.FC<BeforeDashboardViewProps> = ({
                   </p>
                 </div>
               </div>
-              <ChevronRight className="w-4 h-4 text-[#567C8D]" />
+              <ChevronRight className="w-4 h-4 text-[#567C8D] flex-shrink-0" />
             </div>
 
             {!isAuthority ? (
               <div
                 onClick={() => onNavigateTab('reconfirmation')}
-                className="p-4 rounded-2xl bg-[#F5EFEB]/60 hover:bg-[#F5EFEB] border border-[#C8D9E6]/40 flex items-center justify-between cursor-pointer transition"
+                className="p-3.5 sm:p-4 rounded-2xl bg-[#F5EFEB]/60 hover:bg-[#F5EFEB] border border-[#C8D9E6]/40 flex items-center justify-between cursor-pointer transition min-h-[52px]"
               >
                 <div className="flex items-center gap-3.5">
-                  <div className="w-9 h-9 rounded-xl bg-white flex items-center justify-center text-[#2F4156] shadow-sm">
+                  <div className="w-9 h-9 rounded-xl bg-white flex items-center justify-center text-[#2F4156] shadow-sm flex-shrink-0">
                     <CheckCircle2 className="w-4 h-4" />
                   </div>
                   <div>
@@ -404,15 +404,15 @@ export const BeforeDashboardView: React.FC<BeforeDashboardViewProps> = ({
                     </p>
                   </div>
                 </div>
-                <ChevronRight className="w-4 h-4 text-[#567C8D]" />
+                <ChevronRight className="w-4 h-4 text-[#567C8D] flex-shrink-0" />
               </div>
             ) : (
               <div
                 onClick={() => onNavigateTab('occupancy')}
-                className="p-4 rounded-2xl bg-[#F5EFEB]/60 hover:bg-[#F5EFEB] border border-[#C8D9E6]/40 flex items-center justify-between cursor-pointer transition"
+                className="p-3.5 sm:p-4 rounded-2xl bg-[#F5EFEB]/60 hover:bg-[#F5EFEB] border border-[#C8D9E6]/40 flex items-center justify-between cursor-pointer transition min-h-[52px]"
               >
                 <div className="flex items-center gap-3.5">
-                  <div className="w-9 h-9 rounded-xl bg-white flex items-center justify-center text-[#2F4156] shadow-sm">
+                  <div className="w-9 h-9 rounded-xl bg-white flex items-center justify-center text-[#2F4156] shadow-sm flex-shrink-0">
                     <Building2 className="w-4 h-4" />
                   </div>
                   <div>
@@ -424,17 +424,17 @@ export const BeforeDashboardView: React.FC<BeforeDashboardViewProps> = ({
                     </p>
                   </div>
                 </div>
-                <ChevronRight className="w-4 h-4 text-[#567C8D]" />
+                <ChevronRight className="w-4 h-4 text-[#567C8D] flex-shrink-0" />
               </div>
             )}
           </div>
         </div>
 
         {/* Panel 2: Live Sensor & Zone Intelligence */}
-        <div className="bg-white rounded-3xl p-6 sm:p-8 border border-[#C8D9E6]/60 shadow-sm flex flex-col justify-between">
+        <div className="bg-white rounded-3xl p-5 sm:p-6 lg:p-8 border border-[#C8D9E6]/60 shadow-sm flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-1">
-              <h3 className="text-lg font-bold font-['Space_Grotesk',sans-serif] text-[#2F4156]">
+              <h3 className="text-base sm:text-lg font-bold font-['Space_Grotesk',sans-serif] text-[#2F4156]">
                 Zone Sensor Intelligence
               </h3>
               <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#567C8D]/10 text-[#567C8D]">
@@ -481,14 +481,14 @@ export const BeforeDashboardView: React.FC<BeforeDashboardViewProps> = ({
             </div>
           </div>
 
-          <div className="mt-8 pt-4 border-t border-[#F5EFEB] flex items-center justify-between">
+          <div className="mt-8 pt-4 border-t border-[#F5EFEB] flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <span className="text-xs text-[#567C8D]">
               STRIDE telemetry model calibrated for coastal flood patterns
             </span>
             <button
               type="button"
               onClick={() => onNavigateTab('occupancy')}
-              className="text-xs font-bold text-[#2F4156] hover:underline flex items-center gap-1"
+              className="text-xs font-bold text-[#2F4156] hover:underline flex items-center gap-1 self-start sm:self-auto min-h-[36px] cursor-pointer"
             >
               Building Occupancy <ArrowRight className="w-3.5 h-3.5" />
             </button>

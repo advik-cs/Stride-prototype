@@ -233,24 +233,24 @@ export const HospitalMap: React.FC<HospitalMapProps> = ({
   }, [hospitals, selectedHospital, userLocation, isCitizen]);
 
   return (
-    <div className="relative w-full h-[550px] rounded-3xl overflow-hidden border border-[#C8D9E6]/60 shadow-xs bg-[#F5EFEB]">
+    <div className="relative w-full h-[380px] sm:h-[450px] lg:h-[550px] rounded-3xl overflow-hidden border border-[#C8D9E6]/60 shadow-xs bg-[#F5EFEB]">
       <div ref={mapContainerRef} className="w-full h-full" />
 
       {/* Map Legend & Role Scope Overlay */}
-      <div className="absolute top-3 right-3 z-[1000] bg-white/95 backdrop-blur p-3 rounded-2xl shadow-md border border-[#C8D9E6]/60 text-xs text-[#2F4156] space-y-1.5 pointer-events-auto">
+      <div className="absolute top-3 right-3 z-[1000] bg-white/95 backdrop-blur p-2.5 sm:p-3 rounded-2xl shadow-md border border-[#C8D9E6]/60 text-[11px] sm:text-xs text-[#2F4156] space-y-1 sm:space-y-1.5 pointer-events-auto max-w-[190px] sm:max-w-none">
         <p className="font-bold text-[10px] uppercase tracking-wider text-[#567C8D]">
           {isCitizen ? 'Local Neighborhood Scope (5 km)' : 'Operational Jurisdiction View'}
         </p>
         <div className="flex items-center gap-2">
-          <span className="w-3 h-3 rounded-full bg-emerald-500 flex-shrink-0" />
+          <span className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-emerald-500 flex-shrink-0" />
           <span>Ample Beds (&ge;25)</span>
         </div>
         <div className="flex items-center gap-2">
-          <span className="w-3 h-3 rounded-full bg-amber-500 flex-shrink-0" />
+          <span className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-amber-500 flex-shrink-0" />
           <span>Limited Beds (10–24)</span>
         </div>
         <div className="flex items-center gap-2">
-          <span className="w-3 h-3 rounded-full bg-red-500 flex-shrink-0" />
+          <span className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-red-500 flex-shrink-0" />
           <span>Critical / Low Beds (&lt;10)</span>
         </div>
       </div>

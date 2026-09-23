@@ -86,7 +86,7 @@ export const HospitalInformationView: React.FC<HospitalInformationViewProps> = (
               {isCitizen ? 'Citizen Neighborhood Scope' : isAuthority ? 'Authority Command Overview' : 'Rescuer Triage Directory'}
             </span>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-bold font-['Space_Grotesk',sans-serif] text-[#2F4156] tracking-tight mt-1.5">
+          <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold font-['Space_Grotesk',sans-serif] text-[#2F4156] tracking-tight mt-1.5">
             Hospital Information & Medical Readiness
           </h1>
           <p className="text-xs sm:text-sm text-[#567C8D] mt-1">
@@ -104,12 +104,12 @@ export const HospitalInformationView: React.FC<HospitalInformationViewProps> = (
         </div>
 
         {/* Layout Mode Toggles & Refresh */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 self-start sm:self-auto">
           <div className="p-1 rounded-2xl bg-white border border-[#C8D9E6]/60 shadow-xs flex items-center gap-1">
             <button
               type="button"
               onClick={() => setActiveLayout('SPLIT')}
-              className={`p-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
+              className={`p-2 sm:px-3 sm:py-2 min-h-[40px] rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
                 activeLayout === 'SPLIT' ? 'bg-[#2F4156] text-white shadow-xs' : 'text-[#567C8D] hover:text-[#2F4156]'
               }`}
               title="Split Map & List View"
@@ -120,7 +120,7 @@ export const HospitalInformationView: React.FC<HospitalInformationViewProps> = (
             <button
               type="button"
               onClick={() => setActiveLayout('LIST')}
-              className={`p-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
+              className={`p-2 sm:px-3 sm:py-2 min-h-[40px] rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
                 activeLayout === 'LIST' ? 'bg-[#2F4156] text-white shadow-xs' : 'text-[#567C8D] hover:text-[#2F4156]'
               }`}
               title="List Directory View"
@@ -131,7 +131,7 @@ export const HospitalInformationView: React.FC<HospitalInformationViewProps> = (
             <button
               type="button"
               onClick={() => setActiveLayout('MAP')}
-              className={`p-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
+              className={`p-2 sm:px-3 sm:py-2 min-h-[40px] rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
                 activeLayout === 'MAP' ? 'bg-[#2F4156] text-white shadow-xs' : 'text-[#567C8D] hover:text-[#2F4156]'
               }`}
               title="Full Map View"
@@ -144,7 +144,7 @@ export const HospitalInformationView: React.FC<HospitalInformationViewProps> = (
           <button
             type="button"
             onClick={loadHospitals}
-            className="p-2.5 rounded-2xl bg-white border border-[#C8D9E6]/60 text-[#567C8D] hover:text-[#2F4156] shadow-xs transition"
+            className="p-2.5 min-h-[40px] min-w-[40px] rounded-2xl bg-white border border-[#C8D9E6]/60 text-[#567C8D] hover:text-[#2F4156] shadow-xs transition flex items-center justify-center cursor-pointer"
             title="Refresh Hospital Registry"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -153,13 +153,13 @@ export const HospitalInformationView: React.FC<HospitalInformationViewProps> = (
       </div>
 
       {/* Telemetry Overview Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         {/* Total Hospitals */}
-        <div className="p-5 rounded-3xl bg-white border border-[#C8D9E6]/60 shadow-xs">
+        <div className="p-4 sm:p-5 rounded-3xl bg-white border border-[#C8D9E6]/60 shadow-xs">
           <span className="text-[10px] font-bold uppercase tracking-wider text-[#567C8D] block">
             {isCitizen ? 'Nearby Hospitals' : 'Total Hospitals'}
           </span>
-          <p className="text-2xl font-bold font-['Space_Grotesk'] text-[#2F4156] mt-1">
+          <p className="text-xl sm:text-2xl font-bold font-['Space_Grotesk'] text-[#2F4156] mt-1">
             {hospitals.length}
           </p>
           <span className="text-[11px] text-[#567C8D] mt-0.5 block">
@@ -168,11 +168,11 @@ export const HospitalInformationView: React.FC<HospitalInformationViewProps> = (
         </div>
 
         {/* Available Beds */}
-        <div className="p-5 rounded-3xl bg-white border border-[#C8D9E6]/60 shadow-xs">
+        <div className="p-4 sm:p-5 rounded-3xl bg-white border border-[#C8D9E6]/60 shadow-xs">
           <span className="text-[10px] font-bold uppercase tracking-wider text-[#567C8D] block">
             Available Beds
           </span>
-          <p className="text-2xl font-bold font-['Space_Grotesk'] text-emerald-700 mt-1">
+          <p className="text-xl sm:text-2xl font-bold font-['Space_Grotesk'] text-emerald-700 mt-1">
             {totalAvailableBeds}
             <span className="text-xs font-normal text-[#567C8D] ml-1.5">/ {totalTotalBeds} Total</span>
           </p>
@@ -182,11 +182,11 @@ export const HospitalInformationView: React.FC<HospitalInformationViewProps> = (
         </div>
 
         {/* ICU Beds */}
-        <div className="p-5 rounded-3xl bg-white border border-[#C8D9E6]/60 shadow-xs">
+        <div className="p-4 sm:p-5 rounded-3xl bg-white border border-[#C8D9E6]/60 shadow-xs">
           <span className="text-[10px] font-bold uppercase tracking-wider text-[#567C8D] block">
             ICU Beds
           </span>
-          <p className="text-2xl font-bold font-['Space_Grotesk'] text-blue-700 mt-1">
+          <p className="text-xl sm:text-2xl font-bold font-['Space_Grotesk'] text-blue-700 mt-1">
             {totalIcuBeds}
           </p>
           <span className="text-[11px] text-[#567C8D] mt-0.5 block">
@@ -195,11 +195,11 @@ export const HospitalInformationView: React.FC<HospitalInformationViewProps> = (
         </div>
 
         {/* Emergency Services Status */}
-        <div className="p-5 rounded-3xl bg-white border border-[#C8D9E6]/60 shadow-xs">
+        <div className="p-4 sm:p-5 rounded-3xl bg-white border border-[#C8D9E6]/60 shadow-xs">
           <span className="text-[10px] font-bold uppercase tracking-wider text-[#567C8D] block">
             Emergency Casualty
           </span>
-          <p className="text-2xl font-bold font-['Space_Grotesk'] text-emerald-600 mt-1 flex items-center gap-1.5">
+          <p className="text-xl sm:text-2xl font-bold font-['Space_Grotesk'] text-emerald-600 mt-1 flex items-center gap-1.5">
             <span>24/7 Active</span>
           </p>
           <span className="text-[11px] text-[#567C8D] mt-0.5 block">

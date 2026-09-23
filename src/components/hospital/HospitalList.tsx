@@ -64,16 +64,16 @@ export const HospitalList: React.FC<HospitalListProps> = ({
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search hospitals by name, area, or medical specialty..."
-            className="w-full pl-10 pr-4 py-2.5 rounded-2xl bg-[#F5EFEB]/50 border border-[#C8D9E6]/60 text-xs font-medium text-[#2F4156] placeholder-[#567C8D] focus:outline-none focus:ring-2 focus:ring-[#567C8D]/20 focus:border-[#567C8D]"
+            className="w-full pl-10 pr-4 py-2.5 min-h-[44px] rounded-2xl bg-[#F5EFEB]/50 border border-[#C8D9E6]/60 text-xs font-medium text-[#2F4156] placeholder-[#567C8D] focus:outline-none focus:ring-2 focus:ring-[#567C8D]/20 focus:border-[#567C8D]"
           />
         </div>
 
         {/* Filter Chips */}
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
           <button
             type="button"
             onClick={() => setFilterType('ALL')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
+            className={`px-3 py-2 sm:py-1.5 min-h-[38px] rounded-xl text-xs font-bold transition cursor-pointer ${
               filterType === 'ALL'
                 ? 'bg-[#2F4156] text-white shadow-xs'
                 : 'bg-[#F5EFEB] text-[#567C8D] hover:text-[#2F4156]'
@@ -84,7 +84,7 @@ export const HospitalList: React.FC<HospitalListProps> = ({
           <button
             type="button"
             onClick={() => setFilterType('AMPLE_BEDS')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
+            className={`px-3 py-2 sm:py-1.5 min-h-[38px] rounded-xl text-xs font-bold transition cursor-pointer ${
               filterType === 'AMPLE_BEDS'
                 ? 'bg-emerald-600 text-white shadow-xs'
                 : 'bg-[#F5EFEB] text-[#567C8D] hover:text-[#2F4156]'
@@ -95,7 +95,7 @@ export const HospitalList: React.FC<HospitalListProps> = ({
           <button
             type="button"
             onClick={() => setFilterType('ICU')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
+            className={`px-3 py-2 sm:py-1.5 min-h-[38px] rounded-xl text-xs font-bold transition cursor-pointer ${
               filterType === 'ICU'
                 ? 'bg-blue-600 text-white shadow-xs'
                 : 'bg-[#F5EFEB] text-[#567C8D] hover:text-[#2F4156]'
@@ -106,7 +106,7 @@ export const HospitalList: React.FC<HospitalListProps> = ({
           <button
             type="button"
             onClick={() => setFilterType('TRAUMA')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
+            className={`px-3 py-2 sm:py-1.5 min-h-[38px] rounded-xl text-xs font-bold transition cursor-pointer ${
               filterType === 'TRAUMA'
                 ? 'bg-red-600 text-white shadow-xs'
                 : 'bg-[#F5EFEB] text-[#567C8D] hover:text-[#2F4156]'
@@ -141,7 +141,7 @@ export const HospitalList: React.FC<HospitalListProps> = ({
               <div
                 key={h.id}
                 onClick={() => onSelectHospital(h)}
-                className={`p-5 rounded-3xl border transition cursor-pointer bg-white ${
+                className={`p-4 sm:p-5 rounded-3xl border transition cursor-pointer bg-white ${
                   isSelected
                     ? 'border-[#2F4156] ring-2 ring-[#2F4156]/20 shadow-md'
                     : 'border-[#C8D9E6]/60 hover:border-[#567C8D] hover:shadow-sm'
@@ -249,7 +249,7 @@ export const HospitalList: React.FC<HospitalListProps> = ({
                       e.stopPropagation();
                       onSelectHospital(h);
                     }}
-                    className="text-xs font-bold text-[#2F4156] hover:text-blue-600 flex items-center gap-1"
+                    className="text-xs font-bold text-[#2F4156] hover:text-blue-600 flex items-center gap-1 min-h-[40px] py-1 cursor-pointer"
                   >
                     <span>View Hospital Details</span>
                     <ArrowRight className="w-3.5 h-3.5" />

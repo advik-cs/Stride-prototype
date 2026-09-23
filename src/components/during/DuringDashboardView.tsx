@@ -75,21 +75,21 @@ export const DuringDashboardView: React.FC<DuringDashboardViewProps> = ({
               Live Disaster Operations
             </span>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-bold font-['Space_Grotesk',sans-serif] text-[#2F4156] tracking-tight mt-1">
+          <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold font-['Space_Grotesk',sans-serif] text-[#2F4156] tracking-tight mt-1">
             Community Status & Incident Command
           </h1>
-          <p className="text-sm font-medium text-[#567C8D] mt-1">
+          <p className="text-xs sm:text-sm font-medium text-[#567C8D] mt-1">
             Real-time citizen safety telemetry for {activeDisaster?.title || 'Active Disaster'}.
           </p>
         </div>
 
         {/* Actions (Citizen only) */}
         {user.role === 'CITIZEN' && (
-          <div className="flex flex-wrap items-center gap-2.5">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full sm:w-auto mt-2 sm:mt-0">
             <button
               type="button"
               onClick={() => setShowVoiceModal(true)}
-              className="px-4 py-3 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition flex items-center gap-2 shadow-md cursor-pointer"
+              className="w-full sm:w-auto px-4 py-3 min-h-[48px] rounded-2xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition flex items-center justify-center gap-2 shadow-md cursor-pointer"
             >
               <Mic className="w-4 h-4 text-white" />
               <span>Talk to STRIDE</span>
@@ -97,7 +97,7 @@ export const DuringDashboardView: React.FC<DuringDashboardViewProps> = ({
             <button
               type="button"
               onClick={() => onNavigateTab('safe')}
-              className="px-5 py-3 rounded-2xl bg-[#DC2626] hover:bg-red-700 text-white text-xs font-bold transition flex items-center gap-2 shadow-lg shadow-red-600/20 cursor-pointer animate-pulse"
+              className="w-full sm:w-auto px-5 py-3 min-h-[48px] rounded-2xl bg-[#DC2626] hover:bg-red-700 text-white text-xs font-bold transition flex items-center justify-center gap-2 shadow-lg shadow-red-600/20 cursor-pointer animate-pulse"
             >
               <LifeBuoy className="w-4 h-4 text-white" />
               <span>Report Safety / Request SOS</span>
@@ -108,10 +108,10 @@ export const DuringDashboardView: React.FC<DuringDashboardViewProps> = ({
 
       {/* CITIZEN VOICE HERO BANNER */}
       {user.role === 'CITIZEN' && (
-        <div className="p-5 sm:p-6 rounded-3xl bg-gradient-to-r from-[#2F4156] via-[#243445] to-[#1e2b3a] text-white shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-5">
-          <div className="flex items-start sm:items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-red-600 text-white flex items-center justify-center flex-shrink-0 shadow-md animate-pulse">
-              <Mic className="w-6 h-6" />
+        <div className="p-4 sm:p-6 rounded-3xl bg-gradient-to-r from-[#2F4156] via-[#243445] to-[#1e2b3a] text-white shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-4 sm:gap-5">
+          <div className="flex items-start sm:items-center gap-3.5 sm:gap-4">
+            <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-red-600 text-white flex items-center justify-center flex-shrink-0 shadow-md animate-pulse">
+              <Mic className="w-5 h-5 sm:w-6 sm:h-6" />
             </div>
             <div>
               <div className="flex items-center gap-2">
@@ -130,7 +130,7 @@ export const DuringDashboardView: React.FC<DuringDashboardViewProps> = ({
           <button
             type="button"
             onClick={() => setShowVoiceModal(true)}
-            className="px-5 py-3 rounded-2xl bg-red-600 hover:bg-red-700 text-white text-xs sm:text-sm font-bold transition flex items-center gap-2 shadow-lg shadow-red-600/30 cursor-pointer self-start sm:self-auto flex-shrink-0"
+            className="w-full sm:w-auto px-5 py-3 min-h-[48px] rounded-2xl bg-red-600 hover:bg-red-700 text-white text-xs sm:text-sm font-bold transition flex items-center justify-center gap-2 shadow-lg shadow-red-600/30 cursor-pointer self-stretch sm:self-auto flex-shrink-0"
           >
             <Mic className="w-4 h-4" />
             <span>Talk to STRIDE</span>
@@ -139,13 +139,13 @@ export const DuringDashboardView: React.FC<DuringDashboardViewProps> = ({
       )}
 
       {/* 3 LARGE CLEAN COMMUNITY STATUS CARDS */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
         {/* Card 1: CONFIRMED SAFE (Green) */}
-        <div className="bg-white rounded-3xl p-6 sm:p-8 border border-emerald-200 shadow-sm hover:shadow-md transition relative overflow-hidden">
+        <div className="bg-white rounded-3xl p-5 sm:p-6 lg:p-8 border border-emerald-200 shadow-sm hover:shadow-md transition relative overflow-hidden">
           <div className="absolute top-0 left-0 w-full h-1.5 bg-emerald-500" />
           <div className="flex items-center justify-between mb-4">
-            <div className="w-12 h-12 rounded-2xl bg-emerald-50 flex items-center justify-center text-emerald-600">
-              <CheckCircle2 className="w-6 h-6" />
+            <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-emerald-50 flex items-center justify-center text-emerald-600">
+              <CheckCircle2 className="w-5 h-5 sm:w-6 sm:h-6" />
             </div>
             <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800">
               {safePct}% of population
@@ -156,7 +156,7 @@ export const DuringDashboardView: React.FC<DuringDashboardViewProps> = ({
             Confirmed Safe
           </p>
           <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-4xl sm:text-5xl font-bold font-['Space_Grotesk',sans-serif] text-emerald-700">
+            <span className="text-3xl sm:text-4xl lg:text-5xl font-bold font-['Space_Grotesk',sans-serif] text-emerald-700">
               {safeCount}
             </span>
             <span className="text-xs font-semibold text-[#567C8D]">
@@ -171,11 +171,11 @@ export const DuringDashboardView: React.FC<DuringDashboardViewProps> = ({
         </div>
 
         {/* Card 2: IN DISTRESS (Red) */}
-        <div className="bg-white rounded-3xl p-6 sm:p-8 border border-red-200 shadow-sm hover:shadow-md transition relative overflow-hidden">
+        <div className="bg-white rounded-3xl p-5 sm:p-6 lg:p-8 border border-red-200 shadow-sm hover:shadow-md transition relative overflow-hidden">
           <div className="absolute top-0 left-0 w-full h-1.5 bg-red-600" />
           <div className="flex items-center justify-between mb-4">
-            <div className="w-12 h-12 rounded-2xl bg-red-50 flex items-center justify-center text-red-600">
-              <AlertTriangle className="w-6 h-6" />
+            <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-red-50 flex items-center justify-center text-red-600">
+              <AlertTriangle className="w-5 h-5 sm:w-6 sm:h-6" />
             </div>
             <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-red-100 text-red-800 animate-pulse">
               {distressPct}% in distress
@@ -186,7 +186,7 @@ export const DuringDashboardView: React.FC<DuringDashboardViewProps> = ({
             In Distress (SOS Active)
           </p>
           <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-4xl sm:text-5xl font-bold font-['Space_Grotesk',sans-serif] text-red-600">
+            <span className="text-3xl sm:text-4xl lg:text-5xl font-bold font-['Space_Grotesk',sans-serif] text-red-600">
               {distressCount}
             </span>
             <span className="text-xs font-semibold text-[#567C8D]">
@@ -199,7 +199,7 @@ export const DuringDashboardView: React.FC<DuringDashboardViewProps> = ({
             <button
               type="button"
               onClick={() => onNavigateTab('rescue')}
-              className="text-red-600 font-bold hover:underline flex items-center gap-1"
+              className="text-red-600 font-bold hover:underline flex items-center gap-1 cursor-pointer"
             >
               Dispatch <ArrowRight className="w-3 h-3" />
             </button>
@@ -207,11 +207,11 @@ export const DuringDashboardView: React.FC<DuringDashboardViewProps> = ({
         </div>
 
         {/* Card 3: UNACCOUNTED FOR (Neutral/Gray) */}
-        <div className="bg-white rounded-3xl p-6 sm:p-8 border border-[#C8D9E6] shadow-sm hover:shadow-md transition relative overflow-hidden">
+        <div className="bg-white rounded-3xl p-5 sm:p-6 lg:p-8 border border-[#C8D9E6] shadow-sm hover:shadow-md transition relative overflow-hidden">
           <div className="absolute top-0 left-0 w-full h-1.5 bg-[#567C8D]" />
           <div className="flex items-center justify-between mb-4">
-            <div className="w-12 h-12 rounded-2xl bg-[#C8D9E6]/30 flex items-center justify-center text-[#2F4156]">
-              <HelpCircle className="w-6 h-6" />
+            <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-[#C8D9E6]/30 flex items-center justify-center text-[#2F4156]">
+              <HelpCircle className="w-5 h-5 sm:w-6 sm:h-6" />
             </div>
             <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-[#567C8D]/15 text-[#2F4156]">
               {unaccountedPct}% pending
@@ -222,7 +222,7 @@ export const DuringDashboardView: React.FC<DuringDashboardViewProps> = ({
             Unaccounted For
           </p>
           <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-4xl sm:text-5xl font-bold font-['Space_Grotesk',sans-serif] text-[#2F4156]">
+            <span className="text-3xl sm:text-4xl lg:text-5xl font-bold font-['Space_Grotesk',sans-serif] text-[#2F4156]">
               {unaccountedCount}
             </span>
             <span className="text-xs font-semibold text-[#567C8D]">
@@ -321,15 +321,15 @@ export const DuringDashboardView: React.FC<DuringDashboardViewProps> = ({
       )}
 
       {/* Quick Navigation Panels */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
         {user.role !== 'CITIZEN' && (
           <div
             onClick={() => onNavigateTab('buildings')}
-            className="bg-white rounded-3xl p-6 border border-[#C8D9E6]/70 shadow-sm hover:shadow-md transition cursor-pointer flex items-center justify-between"
+            className="bg-white rounded-3xl p-5 sm:p-6 border border-[#C8D9E6]/70 shadow-sm hover:shadow-md transition cursor-pointer flex items-center justify-between min-h-[56px]"
           >
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-2xl bg-[#C8D9E6]/30 flex items-center justify-center text-[#2F4156]">
-                <Building2 className="w-6 h-6" />
+            <div className="flex items-center gap-3.5 sm:gap-4">
+              <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-[#C8D9E6]/30 flex items-center justify-center text-[#2F4156] flex-shrink-0">
+                <Building2 className="w-5 h-5 sm:w-6 sm:h-6" />
               </div>
               <div>
                 <h4 className="text-sm font-bold text-[#2F4156]">
@@ -340,17 +340,17 @@ export const DuringDashboardView: React.FC<DuringDashboardViewProps> = ({
                 </p>
               </div>
             </div>
-            <ArrowRight className="w-5 h-5 text-[#567C8D]" />
+            <ArrowRight className="w-5 h-5 text-[#567C8D] flex-shrink-0" />
           </div>
         )}
 
         <div
           onClick={() => onNavigateTab('shelters')}
-          className="bg-white rounded-3xl p-6 border border-[#C8D9E6]/70 shadow-sm hover:shadow-md transition cursor-pointer flex items-center justify-between"
+          className="bg-white rounded-3xl p-5 sm:p-6 border border-[#C8D9E6]/70 shadow-sm hover:shadow-md transition cursor-pointer flex items-center justify-between min-h-[56px]"
         >
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-emerald-50 flex items-center justify-center text-emerald-700">
-              <Tent className="w-6 h-6" />
+          <div className="flex items-center gap-3.5 sm:gap-4">
+            <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-emerald-50 flex items-center justify-center text-emerald-700 flex-shrink-0">
+              <Tent className="w-5 h-5 sm:w-6 sm:h-6" />
             </div>
             <div>
               <h4 className="text-sm font-bold text-[#2F4156]">
@@ -361,16 +361,16 @@ export const DuringDashboardView: React.FC<DuringDashboardViewProps> = ({
               </p>
             </div>
           </div>
-          <ArrowRight className="w-5 h-5 text-emerald-700" />
+          <ArrowRight className="w-5 h-5 text-emerald-700 flex-shrink-0" />
         </div>
 
         <div
           onClick={() => onNavigateTab('hospitals')}
-          className="bg-white rounded-3xl p-6 border border-[#C8D9E6]/70 shadow-sm hover:shadow-md transition cursor-pointer flex items-center justify-between"
+          className="bg-white rounded-3xl p-5 sm:p-6 border border-[#C8D9E6]/70 shadow-sm hover:shadow-md transition cursor-pointer flex items-center justify-between min-h-[56px]"
         >
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-red-50 flex items-center justify-center text-red-600">
-              <Activity className="w-6 h-6" />
+          <div className="flex items-center gap-3.5 sm:gap-4">
+            <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-red-50 flex items-center justify-center text-red-600 flex-shrink-0">
+              <Activity className="w-5 h-5 sm:w-6 sm:h-6" />
             </div>
             <div>
               <h4 className="text-sm font-bold text-[#2F4156]">
@@ -381,16 +381,16 @@ export const DuringDashboardView: React.FC<DuringDashboardViewProps> = ({
               </p>
             </div>
           </div>
-          <ArrowRight className="w-5 h-5 text-red-600" />
+          <ArrowRight className="w-5 h-5 text-red-600 flex-shrink-0" />
         </div>
 
         <div
           onClick={() => onNavigateTab('maps')}
-          className="bg-white rounded-3xl p-6 border border-[#C8D9E6]/70 shadow-sm hover:shadow-md transition cursor-pointer flex items-center justify-between"
+          className="bg-white rounded-3xl p-5 sm:p-6 border border-[#C8D9E6]/70 shadow-sm hover:shadow-md transition cursor-pointer flex items-center justify-between min-h-[56px]"
         >
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-blue-50 flex items-center justify-center text-blue-600">
-              <MapPin className="w-6 h-6" />
+          <div className="flex items-center gap-3.5 sm:gap-4">
+            <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-blue-50 flex items-center justify-center text-blue-600 flex-shrink-0">
+              <MapPin className="w-5 h-5 sm:w-6 sm:h-6" />
             </div>
             <div>
               <h4 className="text-sm font-bold text-[#2F4156]">
@@ -401,7 +401,7 @@ export const DuringDashboardView: React.FC<DuringDashboardViewProps> = ({
               </p>
             </div>
           </div>
-          <ArrowRight className="w-5 h-5 text-blue-600" />
+          <ArrowRight className="w-5 h-5 text-blue-600 flex-shrink-0" />
         </div>
       </div>
 

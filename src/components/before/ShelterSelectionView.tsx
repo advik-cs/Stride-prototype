@@ -178,10 +178,10 @@ export const ShelterSelectionView: React.FC<ShelterSelectionViewProps> = ({
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-bold font-['Space_Grotesk',sans-serif] text-[#2F4156] tracking-tight">
+          <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold font-['Space_Grotesk',sans-serif] text-[#2F4156] tracking-tight">
             {t('navigation.shelterInfo')}
           </h1>
-          <p className="text-sm font-medium text-[#567C8D] mt-1">
+          <p className="text-xs sm:text-sm font-medium text-[#567C8D] mt-1">
             {user.role === 'AUTHORITY'
               ? 'Real-time shelter capacities, operational status, and remaining capacity calculations.'
               : 'Designated relief centers, address details, and operational status directory.'}
@@ -195,15 +195,15 @@ export const ShelterSelectionView: React.FC<ShelterSelectionViewProps> = ({
           )}
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 w-full sm:w-auto overflow-x-auto no-scrollbar">
           {/* Status Filter Tabs */}
-          <div className="p-1 rounded-xl bg-white border border-[#C8D9E6] flex items-center text-xs font-semibold">
+          <div className="p-1 rounded-xl bg-white border border-[#C8D9E6] flex items-center text-xs font-semibold overflow-x-auto no-scrollbar max-w-full flex-shrink-0">
             {['ALL', 'AVAILABLE', 'NEAR_CAPACITY', 'OVER_CAPACITY'].map((tab) => (
               <button
                 key={tab}
                 type="button"
                 onClick={() => setStatusFilter(tab)}
-                className={`px-3 py-1.5 rounded-lg transition ${
+                className={`px-3 py-2 sm:py-1.5 min-h-[38px] whitespace-nowrap rounded-lg transition cursor-pointer ${
                   statusFilter === tab
                     ? 'bg-[#2F4156] text-white shadow-sm font-bold'
                     : 'text-[#567C8D] hover:text-[#2F4156]'
@@ -218,7 +218,7 @@ export const ShelterSelectionView: React.FC<ShelterSelectionViewProps> = ({
             <button
               type="button"
               onClick={() => setShowAddModal(true)}
-              className="px-4 py-2 rounded-xl bg-[#2F4156] hover:bg-[#1F2D3D] text-white text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
+              className="px-4 py-2 min-h-[40px] rounded-xl bg-[#2F4156] hover:bg-[#1F2D3D] text-white text-xs font-bold transition flex items-center gap-1.5 shadow-sm flex-shrink-0 cursor-pointer"
             >
               <Plus className="w-4 h-4 text-[#C8D9E6]" />
               <span>Add Shelter</span>
@@ -250,7 +250,7 @@ export const ShelterSelectionView: React.FC<ShelterSelectionViewProps> = ({
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
           {filteredShelters.map((shelter) => {
             const isOverCapacity = shelter.status === 'OVER_CAPACITY' || shelter.remainingCapacity < 0;
             const isNearCapacity = shelter.status === 'NEAR_CAPACITY';
@@ -258,7 +258,7 @@ export const ShelterSelectionView: React.FC<ShelterSelectionViewProps> = ({
             return (
               <div
                 key={shelter.id}
-                className={`bg-white rounded-3xl p-6 border shadow-sm hover:shadow-md transition flex flex-col justify-between ${
+                className={`bg-white rounded-3xl p-5 sm:p-6 border shadow-sm hover:shadow-md transition flex flex-col justify-between ${
                   isOverCapacity
                     ? 'border-red-300 ring-1 ring-red-200'
                     : isNearCapacity
@@ -279,11 +279,11 @@ export const ShelterSelectionView: React.FC<ShelterSelectionViewProps> = ({
                   </h3>
                   <p className="text-xs text-[#567C8D] mt-1 flex items-center gap-1.5">
                     <MapPin className="w-3.5 h-3.5 flex-shrink-0 text-[#567C8D]" />
-                    <span>{shelter.address}</span>
+                    <span className="line-clamp-1">{shelter.address}</span>
                   </p>
 
                   {/* Capacity Progress Bar */}
-                  <div className="mt-5 space-y-2">
+                  <div className="mt-4 sm:mt-5 space-y-2">
                     <div className="flex items-center justify-between text-xs font-bold">
                       <span className="text-[#567C8D]">
                         {shelterMeta.source === 'cache' ? 'Occupancy Trend (Cached Snapshot)' : 'Occupancy Trend'}
@@ -321,21 +321,21 @@ export const ShelterSelectionView: React.FC<ShelterSelectionViewProps> = ({
                   </div>
 
                   {/* Capacity & Arrivals Grid */}
-                  <div className="grid grid-cols-3 gap-2 mt-5 pt-4 border-t border-[#F5EFEB] text-center">
-                    <div className="p-2 rounded-xl bg-[#F5EFEB]/50">
+                  <div className="grid grid-cols-3 gap-1.5 sm:gap-2 mt-4 sm:mt-5 pt-3 sm:pt-4 border-t border-[#F5EFEB] text-center">
+                    <div className="p-2 sm:p-2.5 rounded-xl bg-[#F5EFEB]/50">
                       <span className="text-[10px] font-extrabold uppercase text-[#567C8D] block">
                         Total Cap
                       </span>
-                      <span className="text-sm font-bold text-[#2F4156]">
+                      <span className="text-xs sm:text-sm font-bold text-[#2F4156]">
                         {shelter.capacity}
                       </span>
                     </div>
 
-                    <div className="p-2 rounded-xl bg-[#F5EFEB]/50">
+                    <div className="p-2 sm:p-2.5 rounded-xl bg-[#F5EFEB]/50">
                       <span className="text-[10px] font-extrabold uppercase text-[#567C8D] block">
                         Expected
                       </span>
-                      <span className="text-sm font-bold text-[#2F4156]">
+                      <span className="text-xs sm:text-sm font-bold text-[#2F4156]">
                         {shelter.hasOccupancyData === false || shelter.occupancyUnavailable
                           ? '—'
                           : (shelter.expectedArrivals ?? 0)}
@@ -343,7 +343,7 @@ export const ShelterSelectionView: React.FC<ShelterSelectionViewProps> = ({
                     </div>
 
                     <div
-                      className={`p-2 rounded-xl ${
+                      className={`p-2 sm:p-2.5 rounded-xl ${
                         isOverCapacity
                           ? 'bg-red-50 text-red-700'
                           : isNearCapacity
@@ -354,7 +354,7 @@ export const ShelterSelectionView: React.FC<ShelterSelectionViewProps> = ({
                       <span className="text-[10px] font-extrabold uppercase block opacity-80">
                         Remaining
                       </span>
-                      <span className="text-sm font-bold">
+                      <span className="text-xs sm:text-sm font-bold">
                         {shelter.hasOccupancyData === false || shelter.occupancyUnavailable
                           ? shelter.capacity
                           : (shelter.remainingCapacity < 0 ? 'NIL' : shelter.remainingCapacity)}
@@ -366,7 +366,7 @@ export const ShelterSelectionView: React.FC<ShelterSelectionViewProps> = ({
                   {isOffline && (
                     <div
                       data-testid="offline-shelter-capacity-warning"
-                      className="mt-3 px-3 py-2 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-950 flex items-center justify-center gap-2 text-xs font-semibold shadow-sm"
+                      className="mt-3 px-3 py-2 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-950 flex items-center justify-center gap-2 text-xs font-semibold shadow-sm text-center"
                     >
                       <AlertTriangle className="w-3.5 h-3.5 text-amber-700 flex-shrink-0" />
                       <span>Offline! Unable to update Shelter Capacity</span>
@@ -374,12 +374,15 @@ export const ShelterSelectionView: React.FC<ShelterSelectionViewProps> = ({
                   )}
                 </div>
 
-                <div className="mt-5 pt-3.5 border-t border-[#F5EFEB]">
+                <div className="mt-4 sm:mt-5 pt-3 sm:pt-3.5 border-t border-[#F5EFEB]">
                   <div className="flex items-center justify-between text-xs text-[#567C8D]">
-                    <span className="flex items-center gap-1 font-medium">
-                      <Phone className="w-3.5 h-3.5 text-[#567C8D]" />
+                    <a
+                      href={`tel:${shelter.contactNumber}`}
+                      className="inline-flex items-center gap-1.5 font-medium min-h-[44px] py-1 text-[#567C8D] hover:text-[#2F4156] transition"
+                    >
+                      <Phone className="w-3.5 h-3.5 text-[#567C8D] flex-shrink-0" />
                       <span>{shelter.contactNumber}</span>
-                    </span>
+                    </a>
                   </div>
                 </div>
               </div>
