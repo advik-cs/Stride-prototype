@@ -33,7 +33,9 @@ import {
   Check,
   Globe,
   Waves,
+  Info,
 } from 'lucide-react';
+import { MobileBottomSheet } from '../common/MobileBottomSheet.tsx';
 
 const SATELLITE_TILE_URL =
   (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_SATELLITE_TILE_URL) ||
@@ -401,6 +403,7 @@ export const DuringMapView: React.FC<DuringMapViewProps> = ({
 
   // Selected item modal / drawer
   const [selectedItem, setSelectedItem] = useState<any>(null);
+  const [isMobileLegendOpen, setIsMobileLegendOpen] = useState(false);
 
   const isCitizen = user.role === 'CITIZEN';
 
@@ -1445,10 +1448,10 @@ export const DuringMapView: React.FC<DuringMapViewProps> = ({
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-bold font-['Space_Grotesk',sans-serif] text-[#2F4156] tracking-tight">
+          <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold font-['Space_Grotesk',sans-serif] text-[#2F4156] tracking-tight">
             {isCitizen ? 'Live Emergency & Safety Map' : 'Live Emergency Incident Map'}
           </h1>
-          <p className="text-sm font-medium text-[#567C8D] mt-1">
+          <p className="text-xs sm:text-sm font-medium text-[#567C8D] mt-1">
             {isCitizen
               ? 'Geospatial disaster awareness: active danger zones, designated safe shelters, and nearby emergency services.'
               : 'Real-time geospatial tactical feed. Beacons display calculated Priority Scores.'}
@@ -1470,9 +1473,9 @@ export const DuringMapView: React.FC<DuringMapViewProps> = ({
           })()}
         </div>
 
-        {/* Legend */}
+        {/* Desktop Legend (FROZEN at >=1024px) */}
         {isCitizen ? (
-          <div className="flex flex-wrap items-center gap-2 text-xs font-semibold">
+          <div className="hidden lg:flex flex-wrap items-center gap-2 text-xs font-semibold">
             <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white border border-[#2F4156]/30 text-[#2F4156] shadow-sm">
               <span className="w-2.5 h-2.5 rounded-full bg-[#2F4156]" />
               <span>Registered Home</span>
@@ -1491,7 +1494,7 @@ export const DuringMapView: React.FC<DuringMapViewProps> = ({
             </div>
           </div>
         ) : (
-          <div className="flex flex-wrap items-center gap-2 text-xs font-semibold">
+          <div className="hidden lg:flex flex-wrap items-center gap-2 text-xs font-semibold">
             <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white border border-red-300 text-red-700 shadow-sm">
               <span className="w-2.5 h-2.5 rounded-full bg-red-600 animate-pulse" />
               <span>Pending (Score)</span>
@@ -1526,15 +1529,24 @@ export const DuringMapView: React.FC<DuringMapViewProps> = ({
             </div>
           </div>
         )}
+
+        {/* Mobile Compact Legend Trigger (<1024px) */}
+        <div className="lg:hidden flex items-center">
+          <button
+            type="button"
+            onClick={() => setIsMobileLegendOpen(true)}
+            className="px-3.5 py-2 min-h-[40px] rounded-2xl bg-white border border-[#C8D9E6] text-xs font-bold text-[#2F4156] flex items-center gap-1.5 shadow-2xs active:scale-95 cursor-pointer"
+          >
+            <Info className="w-3.5 h-3.5 text-[#567C8D]" />
+            <span>Map Legend</span>
+          </button>
+        </div>
       </div>
 
       {/* Map Canvas */}
-      <div
-        className="relative rounded-3xl overflow-hidden border border-[#C8D9E6] shadow-sm bg-white"
-        style={{ minHeight: '650px' }}
-      >
-        {/* Floating Controls */}
-        <div className="absolute top-4 left-4 z-[400] flex flex-wrap gap-2 max-w-xl">
+      <div className="relative rounded-3xl overflow-hidden border border-[#C8D9E6] shadow-sm bg-white">
+        {/* Desktop Floating Controls (FROZEN at >=1024px) */}
+        <div className="hidden lg:flex absolute top-4 left-4 z-[400] flex flex-wrap gap-2 max-w-xl">
           {isCitizen ? (
             <>
               <button
@@ -1679,6 +1691,145 @@ export const DuringMapView: React.FC<DuringMapViewProps> = ({
           )}
         </div>
 
+        {/* Mobile Floating Layer Bar (<1024px) */}
+        <div className="lg:hidden absolute top-2.5 inset-x-2.5 z-[400] flex items-center justify-between pointer-events-none gap-2">
+          {/* Scrollable Layer Chips */}
+          <div data-testid="mobile-filter-chips-bar" className="pointer-events-auto flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1 pr-1 max-w-[calc(100%-52px)]">
+            {isCitizen ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setShowHome(!showHome)}
+                  className={`px-3 py-2 min-h-[44px] rounded-2xl text-xs font-bold transition flex items-center gap-1.5 shadow-md flex-shrink-0 cursor-pointer active:scale-95 ${
+                    showHome
+                      ? 'bg-[#2F4156] text-white'
+                      : 'bg-white/95 backdrop-blur-md text-[#2F4156] border border-[#C8D9E6]'
+                  }`}
+                >
+                  <Home className="w-3.5 h-3.5" />
+                  <span>Household</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowFloodZones(!showFloodZones)}
+                  className={`px-3 py-2 min-h-[44px] rounded-2xl text-xs font-bold transition flex items-center gap-1.5 shadow-md flex-shrink-0 cursor-pointer active:scale-95 ${
+                    showFloodZones
+                      ? 'bg-red-600 text-white'
+                      : 'bg-white/95 backdrop-blur-md text-[#2F4156] border border-[#C8D9E6]'
+                  }`}
+                >
+                  <AlertTriangle className="w-3.5 h-3.5" />
+                  <span>Danger Zones</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowShelters(!showShelters)}
+                  className={`px-3 py-2 min-h-[44px] rounded-2xl text-xs font-bold transition flex items-center gap-1.5 shadow-md flex-shrink-0 cursor-pointer active:scale-95 ${
+                    showShelters
+                      ? 'bg-[#059669] text-white'
+                      : 'bg-white/95 backdrop-blur-md text-[#2F4156] border border-[#C8D9E6]'
+                  }`}
+                >
+                  <Tent className="w-3.5 h-3.5" />
+                  <span>Shelters</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowFacilities(!showFacilities)}
+                  className={`px-3 py-2 min-h-[44px] rounded-2xl text-xs font-bold transition flex items-center gap-1.5 shadow-md flex-shrink-0 cursor-pointer active:scale-95 ${
+                    showFacilities
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-white/95 backdrop-blur-md text-[#2F4156] border border-[#C8D9E6]'
+                  }`}
+                >
+                  <Shield className="w-3.5 h-3.5" />
+                  <span>Services</span>
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setShowDistressMarkers(!showDistressMarkers)}
+                  className={`px-3 py-2 min-h-[44px] rounded-2xl text-xs font-bold transition flex items-center gap-1.5 shadow-md flex-shrink-0 cursor-pointer active:scale-95 ${
+                    showDistressMarkers
+                      ? 'bg-red-600 text-white'
+                      : 'bg-white/95 backdrop-blur-md text-[#2F4156] border border-[#C8D9E6]'
+                  }`}
+                >
+                  <LifeBuoy className="w-3.5 h-3.5" />
+                  <span>SOS Beacons</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowHome(!showHome)}
+                  className={`px-3 py-2 min-h-[44px] rounded-2xl text-xs font-bold transition flex items-center gap-1.5 shadow-md flex-shrink-0 cursor-pointer active:scale-95 ${
+                    showHome
+                      ? 'bg-[#2F4156] text-white'
+                      : 'bg-white/95 backdrop-blur-md text-[#2F4156] border border-[#C8D9E6]'
+                  }`}
+                >
+                  <Home className="w-3.5 h-3.5" />
+                  <span>Buildings</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowFloodZones(!showFloodZones)}
+                  className={`px-3 py-2 min-h-[44px] rounded-2xl text-xs font-bold transition flex items-center gap-1.5 shadow-md flex-shrink-0 cursor-pointer active:scale-95 ${
+                    showFloodZones
+                      ? 'bg-[#2F4156] text-white'
+                      : 'bg-white/95 backdrop-blur-md text-[#2F4156] border border-[#C8D9E6]'
+                  }`}
+                >
+                  <AlertTriangle className="w-3.5 h-3.5 text-red-400" />
+                  <span>Inundation</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowShelters(!showShelters)}
+                  className={`px-3 py-2 min-h-[44px] rounded-2xl text-xs font-bold transition flex items-center gap-1.5 shadow-md flex-shrink-0 cursor-pointer active:scale-95 ${
+                    showShelters
+                      ? 'bg-[#059669] text-white'
+                      : 'bg-white/95 backdrop-blur-md text-[#2F4156] border border-[#C8D9E6]'
+                  }`}
+                >
+                  <Tent className="w-3.5 h-3.5" />
+                  <span>Shelters</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowFacilities(!showFacilities)}
+                  className={`px-3 py-2 min-h-[44px] rounded-2xl text-xs font-bold transition flex items-center gap-1.5 shadow-md flex-shrink-0 cursor-pointer active:scale-95 ${
+                    showFacilities
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-white/95 backdrop-blur-md text-[#2F4156] border border-[#C8D9E6]'
+                  }`}
+                >
+                  <Shield className="w-3.5 h-3.5" />
+                  <span>Facilities</span>
+                </button>
+              </>
+            )}
+          </div>
+
+          {/* Mobile Center Floating Action Button */}
+          <button
+            type="button"
+            onClick={handleCenterHome}
+            title={isCitizen ? "Center on Registered Household" : "Center Operations (Bengaluru Command)"}
+            className="pointer-events-auto flex-shrink-0 w-11 h-11 min-h-[44px] min-w-[44px] rounded-2xl bg-white/95 backdrop-blur-md border border-[#C8D9E6] shadow-md flex items-center justify-center text-[#2F4156] active:scale-95 cursor-pointer"
+          >
+            <LocateFixed className="w-4 h-4 text-[#2F4156]" />
+          </button>
+        </div>
+
         {/* Loading Overlay */}
         {loading && (
           <div className="absolute inset-0 z-[500] bg-white/70 backdrop-blur-xs flex items-center justify-center pointer-events-none">
@@ -1700,16 +1851,19 @@ export const DuringMapView: React.FC<DuringMapViewProps> = ({
           </div>
         )}
 
-        {/* Leaflet Map Canvas */}
+        {/* Leaflet Map Canvas (Mobile Full-Bleed, Desktop Frozen 650px) */}
         <div
           ref={mapContainerRef}
-          className="w-full h-[650px] min-h-[650px] z-0"
-          style={{ height: '650px', minHeight: '650px', width: '100%' }}
+          className="w-full h-[calc(100vh-14rem)] min-h-[380px] sm:min-h-[460px] lg:h-[650px] lg:min-h-[650px] z-0"
         />
 
-        {/* Selected Beacon / Entity Drawer */}
+        {/* Selected Beacon / Entity Drawer (FROZEN at >=1024px) */}
         {selectedItem && (
-          <div className="absolute bottom-6 left-6 right-6 sm:right-auto sm:w-[420px] z-[400] bg-white/95 backdrop-blur-md rounded-3xl border border-[#C8D9E6] shadow-2xl p-5 transition-all max-h-[80vh] overflow-y-auto">
+          <div
+            id="selected-entity-card"
+            data-testid="selected-entity-card"
+            className="hidden lg:block absolute bottom-6 left-6 right-6 sm:right-auto sm:w-[420px] z-[400] bg-white/95 backdrop-blur-md rounded-3xl border border-[#C8D9E6] shadow-2xl p-5 transition-all max-h-[80vh] overflow-y-auto"
+          >
             <div className="flex items-start justify-between">
               <div>
                 <span className="text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded bg-[#F5EFEB] text-[#2F4156]">
@@ -1848,6 +2002,16 @@ export const DuringMapView: React.FC<DuringMapViewProps> = ({
                   <p className="text-[11px] text-[#567C8D]">
                     Distance from your registered home: <strong>{selectedItem.distanceKm.toFixed(1)} km</strong>
                   </p>
+                )}
+                {/* Offline Caution Warning (Verbatim) */}
+                {(hookOffline || (typeof navigator !== 'undefined' && !navigator.onLine)) && (
+                  <div
+                    data-testid="offline-shelter-capacity-warning"
+                    className="p-2.5 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 text-xs font-bold flex items-center gap-2"
+                  >
+                    <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                    <span>Offline! Unable to update Shelter Capacity</span>
+                  </div>
                 )}
                 {selectedItem.contact && (
                   <div className="p-2.5 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-between">
@@ -2166,6 +2330,493 @@ export const DuringMapView: React.FC<DuringMapViewProps> = ({
             )}
           </div>
         )}
+
+        {/* Mobile Entity Inspector Bottom Sheet (<1024px) */}
+        {selectedItem && (
+          <MobileBottomSheet
+            isOpen={Boolean(selectedItem)}
+            onClose={() => setSelectedItem(null)}
+            title={selectedItem.name}
+            subtitle={selectedItem.type}
+            id="mobile-entity-bottom-sheet"
+          >
+            <div className="space-y-4">
+              {/* Type Badge & Distance */}
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-extrabold uppercase px-2.5 py-1 rounded-md bg-[#F5EFEB] text-[#2F4156]">
+                  {selectedItem.type}
+                </span>
+                {selectedItem.distanceKm !== undefined && (
+                  <span className="text-xs font-semibold text-[#567C8D]">
+                    {selectedItem.distanceKm.toFixed(1)} km from home
+                  </span>
+                )}
+              </div>
+
+              {/* Household Info */}
+              {selectedItem.isOwnHousehold && (
+                <div className="space-y-3">
+                  <div className="p-3 rounded-2xl bg-[#F5EFEB]/70 border border-[#C8D9E6]/60 text-xs space-y-1.5">
+                    <div className="flex items-center gap-1.5 text-[#2F4156] font-bold">
+                      <MapPin className="w-3.5 h-3.5 text-[#2F4156]" />
+                      <span>{selectedItem.address}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-[#567C8D] pt-1 border-t border-[#C8D9E6]/40">
+                      <span>Family Members:</span>
+                      <span className="font-bold text-[#2F4156]">{selectedItem.membersCount} people</span>
+                    </div>
+                  </div>
+
+                  {selectedItem.activeSos ? (
+                    <div className="p-3.5 rounded-2xl bg-red-50 border border-red-200 text-xs space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-extrabold uppercase text-red-700">
+                          Active Emergency Distress Beacon
+                        </span>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-red-200 text-red-900">
+                          {selectedItem.activeSos.status}
+                        </span>
+                      </div>
+                      <p className="text-red-900 italic">
+                        "{selectedItem.activeSos.description}"
+                      </p>
+                      <div className="flex items-center justify-between pt-1 border-t border-red-200 text-[11px]">
+                        <span>Emergency Type:</span>
+                        <span className="font-bold text-red-700">{selectedItem.activeSos.emergencyType}</span>
+                      </div>
+                      {onNavigateTab && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedItem(null);
+                            onNavigateTab('rescue');
+                          }}
+                          className="w-full min-h-[48px] py-3 rounded-2xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer shadow-md"
+                        >
+                          <Radio className="w-4 h-4 text-white" />
+                          <span>View Rescue Dispatch Status</span>
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-xs space-y-2.5">
+                      <div className="flex items-center gap-1.5 text-emerald-800 font-bold">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                        <span>Household Recorded as Safe</span>
+                      </div>
+                      <p className="text-[#567C8D] text-[11px]">
+                        No active distress beacon recorded. Signal emergency teams immediately if conditions change.
+                      </p>
+                      {onNavigateTab && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedItem(null);
+                            onNavigateTab('safe');
+                          }}
+                          className="w-full min-h-[48px] py-3 rounded-2xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer shadow-md"
+                        >
+                          <LifeBuoy className="w-4 h-4 text-white" />
+                          <span>Are You Safe? / Report SOS</span>
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Designated Safe Shelter Details */}
+              {selectedItem.type === 'Designated Safe Shelter' && (
+                <div className="space-y-3">
+                  {selectedItem.address && (
+                    <p className="text-xs text-[#567C8D] flex items-center gap-1.5">
+                      <MapPin className="w-4 h-4 text-[#567C8D] flex-shrink-0" />
+                      <span>{selectedItem.address}</span>
+                    </p>
+                  )}
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div className="p-3 rounded-2xl bg-[#F5EFEB] border border-[#C8D9E6]/60">
+                      <span className="text-[10px] text-[#567C8D] font-bold uppercase block">Capacity:</span>
+                      <span className="text-sm font-bold text-[#2F4156]">{selectedItem.capacity}</span>
+                    </div>
+                    <div className="p-3 rounded-2xl bg-emerald-50 border border-emerald-200">
+                      <span className="text-[10px] text-emerald-700 font-bold uppercase block">Remaining:</span>
+                      <span className="text-sm font-bold text-emerald-900">
+                        {selectedItem.remainingCapacity ?? selectedItem.capacity}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Offline Caution Warning (Verbatim) */}
+                  {(hookOffline || (typeof navigator !== 'undefined' && !navigator.onLine)) && (
+                    <div
+                      data-testid="offline-shelter-capacity-warning"
+                      className="p-3 rounded-2xl bg-amber-50 border border-amber-300 text-amber-900 text-xs font-bold flex items-center gap-2"
+                    >
+                      <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                      <span>Offline! Unable to update Shelter Capacity</span>
+                    </div>
+                  )}
+
+                  {selectedItem.contact && (
+                    <a
+                      href={`tel:${selectedItem.contact}`}
+                      className="w-full min-h-[48px] py-3 px-4 rounded-2xl bg-[#059669] hover:bg-[#047857] text-white text-xs font-bold transition flex items-center justify-center gap-2 shadow-md cursor-pointer"
+                    >
+                      <Phone className="w-4 h-4 text-white" />
+                      <span>Call Shelter ({selectedItem.contact})</span>
+                    </a>
+                  )}
+                </div>
+              )}
+
+              {/* Emergency Facility Details (Hospital / Fire / Police) */}
+              {(selectedItem.type === 'Hospital / Medical Center' ||
+                selectedItem.type === 'Fire & Rescue Station' ||
+                selectedItem.type === 'Police Station' ||
+                selectedItem.type?.startsWith('Facility:')) && (
+                <div className="space-y-3">
+                  {selectedItem.address && (
+                    <p className="text-xs text-[#567C8D] flex items-center gap-1.5">
+                      <MapPin className="w-4 h-4 text-[#567C8D] flex-shrink-0" />
+                      <span>{selectedItem.address}</span>
+                    </p>
+                  )}
+                  {selectedItem.contact && (
+                    <a
+                      href={`tel:${selectedItem.contact}`}
+                      className="w-full min-h-[48px] py-3 px-4 rounded-2xl bg-[#DC2626] hover:bg-[#B91C1C] text-white text-xs font-bold transition flex items-center justify-center gap-2 shadow-md cursor-pointer"
+                    >
+                      <Phone className="w-4 h-4 text-white" />
+                      <span>Call Facility ({selectedItem.contact})</span>
+                    </a>
+                  )}
+                </div>
+              )}
+
+              {/* Hazard Inundation Zone Details */}
+              {selectedItem.type === 'Hazard Inundation Zone' && (
+                <div className="space-y-3">
+                  <div
+                    className={`p-3.5 rounded-2xl border space-y-1.5 ${
+                      selectedItem.isRed ||
+                      selectedItem.riskLevel?.includes('RED') ||
+                      selectedItem.riskLevel?.includes('High') ||
+                      selectedItem.riskLevel?.includes('Critical')
+                        ? 'bg-red-50 border-red-200'
+                        : 'bg-orange-50 border-orange-200'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span
+                        className={`text-[10px] font-extrabold uppercase ${
+                          selectedItem.isRed ||
+                          selectedItem.riskLevel?.includes('RED') ||
+                          selectedItem.riskLevel?.includes('High') ||
+                          selectedItem.riskLevel?.includes('Critical')
+                            ? 'text-red-700'
+                            : 'text-orange-700'
+                        }`}
+                      >
+                        Threat Alert: {selectedItem.riskLevel}
+                      </span>
+                      {selectedItem.isDemoSimulation && (
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 border border-blue-200">
+                          Demo Simulation
+                        </span>
+                      )}
+                    </div>
+                    <p
+                      className={`text-xs ${
+                        selectedItem.isRed ||
+                        selectedItem.riskLevel?.includes('RED') ||
+                        selectedItem.riskLevel?.includes('High') ||
+                        selectedItem.riskLevel?.includes('Critical')
+                          ? 'text-red-900'
+                          : 'text-orange-900'
+                      }`}
+                    >
+                      {selectedItem.details}
+                    </p>
+                  </div>
+
+                  {selectedItem.severityLabel && (
+                    <div className="p-3 rounded-2xl bg-sky-50 border border-sky-200 space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-extrabold uppercase text-sky-800 flex items-center gap-1.5">
+                          <Waves className="w-3.5 h-3.5 text-sky-600" />
+                          <span>Inundation Status</span>
+                        </span>
+                        {selectedItem.floodCoveragePercent !== undefined && (
+                          <span className="text-xs font-black text-sky-700">
+                            {selectedItem.floodCoveragePercent}% Area
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs font-bold text-sky-950">{selectedItem.severityLabel}</p>
+                      {selectedItem.floodDepth && (
+                        <p className="text-[11px] text-sky-800">
+                          Estimated Depth: <span className="font-semibold">{selectedItem.floodDepth}</span>
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Registered Building (Authority / Rescuer) */}
+              {selectedItem.type === 'Registered Building' && (
+                <div className="space-y-3">
+                  <div className="p-3 rounded-2xl bg-[#F5EFEB]/70 border border-[#C8D9E6]/60 text-xs space-y-1.5">
+                    <div className="flex items-center gap-1.5 text-[#2F4156] font-bold">
+                      <MapPin className="w-3.5 h-3.5 text-[#2F4156]" />
+                      <span>{selectedItem.address || 'Address on file'}</span>
+                    </div>
+                    {selectedItem.isAffected && (
+                      <div className="flex items-center justify-between text-[#567C8D] pt-1 border-t border-[#C8D9E6]/40">
+                        <span>Risk Level:</span>
+                        <span className="font-bold text-[#2F4156]">{selectedItem.isAffected}</span>
+                      </div>
+                    )}
+                    {selectedItem.population && (
+                      <div className="flex items-center justify-between text-[#567C8D] pt-1 border-t border-[#C8D9E6]/40">
+                        <span>Registered Population:</span>
+                        <span className="font-bold text-[#2F4156]">{selectedItem.population} residents</span>
+                      </div>
+                    )}
+                  </div>
+                  {selectedItem.details && (
+                    <p className="text-xs text-[#567C8D] bg-white p-2.5 rounded-xl border border-[#C8D9E6]/50">
+                      {selectedItem.details}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Operational Distress Call (Authority / Rescuer only) */}
+              {selectedItem.type === 'Emergency Distress Call' && (
+                <div className="space-y-3">
+                  {selectedItem.score !== undefined && (
+                    <div className="p-3 rounded-2xl bg-red-50 border border-red-200 flex items-center justify-between">
+                      <div>
+                        <span className="text-[10px] font-extrabold uppercase text-red-700">
+                          Priority Score & Status
+                        </span>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className="text-xs font-bold px-2 py-0.5 rounded bg-white border border-red-300 text-red-800">
+                            {selectedItem.status}
+                          </span>
+                          {selectedItem.level && (
+                            <span className="text-xs font-extrabold text-red-600">
+                              {selectedItem.level}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <span className="text-3xl font-bold font-['Space_Grotesk',sans-serif] text-red-600">
+                        {selectedItem.score}
+                      </span>
+                    </div>
+                  )}
+
+                  {selectedItem.address && (
+                    <p className="text-xs text-[#567C8D] flex items-center gap-1">
+                      <MapPin className="w-3.5 h-3.5 flex-shrink-0" />
+                      <span>{selectedItem.address}</span>
+                    </p>
+                  )}
+
+                  {selectedItem.description && (
+                    <p className="text-xs text-[#2F4156] bg-[#F5EFEB] p-2.5 rounded-xl font-medium">
+                      "{selectedItem.description}"
+                    </p>
+                  )}
+
+                  {/* Actions for Operational Distress Calls */}
+                  <div className="pt-2 flex flex-col gap-2">
+                    {user.role === 'AUTHORITY' && (
+                      <>
+                        {selectedItem.status === 'PENDING' && (
+                          <button
+                            type="button"
+                            disabled={actionLoading}
+                            onClick={async () => {
+                              setActionLoading(true);
+                              try {
+                                await duringApi.updateAuthorityRequestStatus(selectedItem.id, 'ACKNOWLEDGED');
+                                await loadLiveMapData();
+                                setSelectedItem(null);
+                              } catch (err: any) {
+                                alert('Failed to acknowledge: ' + err.message);
+                              } finally {
+                                setActionLoading(false);
+                              }
+                            }}
+                            className="w-full min-h-[48px] py-3 rounded-2xl bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer shadow-md"
+                          >
+                            {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                            <span>Acknowledge Distress Call</span>
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedItem(null);
+                            onSelectRequest?.(selectedItem.rawRequest);
+                          }}
+                          className="w-full min-h-[48px] py-3 rounded-2xl bg-[#2F4156] hover:bg-[#1f2d3d] text-white text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer shadow-md"
+                        >
+                          <span>Open in Operations Queue</span>
+                          <ArrowRight className="w-4 h-4" />
+                        </button>
+                      </>
+                    )}
+
+                    {user.role === 'RESCUER' && (
+                      <>
+                        {selectedItem.status === 'ASSIGNED' && (
+                          <button
+                            type="button"
+                            disabled={actionLoading}
+                            onClick={async () => {
+                              setActionLoading(true);
+                              try {
+                                await duringApi.updateMissionStatus(selectedItem.id, 'IN_PROGRESS');
+                                await loadLiveMapData();
+                                setSelectedItem(null);
+                              } catch (err: any) {
+                                alert('Failed to update: ' + err.message);
+                              } finally {
+                                setActionLoading(false);
+                              }
+                            }}
+                            className="w-full min-h-[48px] py-3 rounded-2xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer shadow-md"
+                          >
+                            {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Navigation className="w-4 h-4" />}
+                            <span>Mark En Route (In Progress)</span>
+                          </button>
+                        )}
+                        {selectedItem.status === 'IN_PROGRESS' && (
+                          <button
+                            type="button"
+                            disabled={actionLoading}
+                            onClick={async () => {
+                              setActionLoading(true);
+                              try {
+                                await duringApi.updateMissionStatus(selectedItem.id, 'RESCUED');
+                                await loadLiveMapData();
+                                setSelectedItem(null);
+                              } catch (err: any) {
+                                alert('Failed to mark rescued: ' + err.message);
+                              } finally {
+                                setActionLoading(false);
+                              }
+                            }}
+                            className="w-full min-h-[48px] py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer shadow-md"
+                          >
+                            {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                            <span>Confirm Safely Rescued</span>
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Close Button */}
+              <button
+                type="button"
+                onClick={() => setSelectedItem(null)}
+                className="w-full min-h-[44px] py-2.5 rounded-2xl border border-[#C8D9E6] text-xs font-bold text-[#567C8D] hover:text-[#2F4156] cursor-pointer"
+              >
+                Close Inspector
+              </button>
+            </div>
+          </MobileBottomSheet>
+        )}
+
+        {/* Mobile Legend Bottom Sheet (<1024px) */}
+        <MobileBottomSheet
+          isOpen={isMobileLegendOpen}
+          onClose={() => setIsMobileLegendOpen(false)}
+          title="Map Legend"
+          subtitle={isCitizen ? "Emergency symbols & zones" : "Tactical incident symbols"}
+          id="mobile-legend-bottom-sheet"
+        >
+          <div className="space-y-2.5 py-1">
+            {isCitizen ? (
+              <>
+                <div className="flex items-center gap-3 p-3 rounded-2xl bg-[#F5EFEB]/60 border border-[#C8D9E6]/60">
+                  <span className="w-3.5 h-3.5 rounded-full bg-[#2F4156] flex-shrink-0" />
+                  <div>
+                    <span className="text-xs font-bold text-[#2F4156] block">Registered Home</span>
+                    <span className="text-[11px] text-[#567C8D]">Your household baseline position</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 p-3 rounded-2xl bg-red-50 border border-red-200">
+                  <span className="w-3.5 h-3.5 rounded-full bg-red-600 animate-pulse flex-shrink-0" />
+                  <div>
+                    <span className="text-xs font-bold text-red-900 block">Inundation Zone</span>
+                    <span className="text-[11px] text-red-700">Active flood hazard boundary</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 p-3 rounded-2xl bg-[#F5EFEB]/60 border border-[#C8D9E6]/60">
+                  <span className="w-3.5 h-3.5 rounded-full bg-emerald-600 flex-shrink-0" />
+                  <div>
+                    <span className="text-xs font-bold text-emerald-800 block">Safe Shelters</span>
+                    <span className="text-[11px] text-[#567C8D]">Evacuation centers with capacity</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 p-3 rounded-2xl bg-[#F5EFEB]/60 border border-[#C8D9E6]/60">
+                  <span className="w-3.5 h-3.5 rounded-full bg-blue-600 flex-shrink-0" />
+                  <div>
+                    <span className="text-xs font-bold text-blue-800 block">Emergency Services</span>
+                    <span className="text-[11px] text-[#567C8D]">Hospitals, fire, and police facilities</span>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="flex items-center gap-3 p-3 rounded-2xl bg-red-50 border border-red-200">
+                  <span className="w-3.5 h-3.5 rounded-full bg-red-600 animate-pulse flex-shrink-0" />
+                  <div>
+                    <span className="text-xs font-bold text-red-900 block">Pending SOS (Score)</span>
+                    <span className="text-[11px] text-red-700">Triage priority beacon awaiting dispatch</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 p-3 rounded-2xl bg-orange-50 border border-orange-200">
+                  <span className="w-3.5 h-3.5 rounded-full bg-orange-600 flex-shrink-0" />
+                  <div>
+                    <span className="text-xs font-bold text-orange-900 block">Acknowledged</span>
+                    <span className="text-[11px] text-orange-700">Command triage acknowledged</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 p-3 rounded-2xl bg-blue-50 border border-blue-200">
+                  <span className="w-3.5 h-3.5 rounded-full bg-blue-600 flex-shrink-0" />
+                  <div>
+                    <span className="text-xs font-bold text-blue-900 block">Assigned / In Progress</span>
+                    <span className="text-[11px] text-blue-700">Rescue team en route to location</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 p-3 rounded-2xl bg-emerald-50 border border-emerald-200">
+                  <span className="w-3.5 h-3.5 rounded-full bg-emerald-600 flex-shrink-0" />
+                  <div>
+                    <span className="text-xs font-bold text-emerald-900 block">Rescued</span>
+                    <span className="text-[11px] text-emerald-700">Safely evacuated to shelter</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 p-3 rounded-2xl bg-[#F5EFEB]/60 border border-[#C8D9E6]/60">
+                  <span className="w-3.5 h-3.5 rounded-full bg-[#2F4156] flex-shrink-0" />
+                  <div>
+                    <span className="text-xs font-bold text-[#2F4156] block">Buildings & Shelters</span>
+                    <span className="text-[11px] text-[#567C8D]">Registered structures and relief centers</span>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </MobileBottomSheet>
       </div>
 
       {/* SECOND MAP: Satellite View (CITIZEN & AUTHORITY) */}
@@ -2262,11 +2913,10 @@ export const DuringMapView: React.FC<DuringMapViewProps> = ({
           </div>
 
           <div className="relative rounded-3xl overflow-hidden border border-[#C8D9E6] shadow-sm bg-slate-900">
-            {/* Satellite Map Canvas */}
+            {/* Satellite Map Canvas (Mobile Full-Bleed, Desktop Frozen 650px) */}
             <div
               ref={satelliteMapContainerRef}
-              className="w-full h-[650px] min-h-[650px] z-0"
-              style={{ height: '650px', minHeight: '650px', width: '100%' }}
+              className="w-full h-[calc(100vh-14rem)] min-h-[380px] sm:min-h-[460px] lg:h-[650px] lg:min-h-[650px] z-0"
             />
 
             {/* Satellite Mode Badge */}

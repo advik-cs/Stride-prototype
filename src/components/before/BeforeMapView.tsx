@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { formatLastUpdated } from '../../offline/offlineDateUtils.ts';
 import { useConnectivityStatus } from '../../offline/useConnectivityStatus.ts';
+import { MobileBottomSheet } from '../common/MobileBottomSheet.tsx';
 
 interface BeforeMapViewProps {
   user: User;
@@ -55,6 +56,7 @@ export const BeforeMapView: React.FC<BeforeMapViewProps> = ({ user, activeDisast
 
   // Selected item details drawer
   const [selectedEntity, setSelectedEntity] = useState<any>(null);
+  const [isMobileLegendOpen, setIsMobileLegendOpen] = useState(false);
 
   useEffect(() => {
     loadMapData();
@@ -826,10 +828,10 @@ function isValidCoordinate(lat: any, lng: any): boolean {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-bold font-['Space_Grotesk',sans-serif] text-[#2F4156] tracking-tight">
+          <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold font-['Space_Grotesk',sans-serif] text-[#2F4156] tracking-tight">
             Preparedness Map Intelligence
           </h1>
-          <p className="text-sm font-medium text-[#567C8D] mt-1">
+          <p className="text-xs sm:text-sm font-medium text-[#567C8D] mt-1">
             {user.role === 'CITIZEN'
               ? '5km dynamic perimeter around your registered home with real-time OpenStreetMap emergency facilities, shelters, and hazard zones.'
               : 'Command GIS: All 16 registered buildings, danger zones & facility coverage across Bengaluru.'}
@@ -857,8 +859,8 @@ function isValidCoordinate(lat: any, lng: any): boolean {
           })()}
         </div>
 
-        {/* Complete Legend Pills matching all facility types */}
-        <div className="flex flex-wrap items-center gap-1.5 text-xs font-semibold">
+        {/* Desktop Legend Pills matching all facility types (FROZEN at >=1024px) */}
+        <div className="hidden lg:flex flex-wrap items-center gap-1.5 text-xs font-semibold">
           <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-white border border-[#C8D9E6] text-[#2F4156] shadow-2xs">
             <span className="w-2.5 h-2.5 rounded-full bg-[#2F4156]" />
             <span>{user.role === 'CITIZEN' ? 'Home' : 'Buildings'}</span>
@@ -894,12 +896,24 @@ function isValidCoordinate(lat: any, lng: any): boolean {
             </div>
           )}
         </div>
+
+        {/* Mobile Compact Legend Trigger (<1024px) */}
+        <div className="lg:hidden flex items-center">
+          <button
+            type="button"
+            onClick={() => setIsMobileLegendOpen(true)}
+            className="px-3.5 py-2 min-h-[40px] rounded-2xl bg-white border border-[#C8D9E6] text-xs font-bold text-[#2F4156] flex items-center gap-1.5 shadow-2xs active:scale-95 cursor-pointer"
+          >
+            <Info className="w-3.5 h-3.5 text-[#567C8D]" />
+            <span>Map Legend</span>
+          </button>
+        </div>
       </div>
 
       {/* Main Map Canvas Area with Filter Bar */}
       <div className="relative rounded-3xl overflow-hidden border border-[#C8D9E6] shadow-sm bg-white">
-        {/* Top Floating Control Bar */}
-        <div className="absolute top-4 left-4 z-[400] flex flex-wrap gap-2 max-w-2xl">
+        {/* Desktop Top Floating Control Bar (FROZEN at >=1024px) */}
+        <div className="hidden lg:flex absolute top-4 left-4 z-[400] flex-wrap gap-2 max-w-2xl">
           <div className="bg-white/95 backdrop-blur-md px-3 py-1.5 rounded-2xl border border-[#C8D9E6] shadow-md flex items-center gap-1.5 text-xs font-bold text-[#2F4156]">
             <Layers className="w-3.5 h-3.5 text-[#567C8D]" />
             <span>Layers:</span>
@@ -1024,6 +1038,130 @@ function isValidCoordinate(lat: any, lng: any): boolean {
           </button>
         </div>
 
+        {/* Mobile Floating Layer Bar (<1024px) */}
+        <div className="lg:hidden absolute top-2.5 inset-x-2.5 z-[400] flex items-center justify-between pointer-events-none gap-2">
+          {/* Scrollable Layer Chips */}
+          <div data-testid="mobile-filter-chips-bar" className="pointer-events-auto flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1 pr-1 max-w-[calc(100%-52px)]">
+            {user.role === 'CITIZEN' ? (
+              <button
+                type="button"
+                onClick={() => setShowHome(!showHome)}
+                className={`px-3 py-2 min-h-[44px] rounded-2xl text-xs font-bold transition flex items-center gap-1.5 shadow-md flex-shrink-0 cursor-pointer active:scale-95 ${
+                  showHome
+                    ? 'bg-[#2F4156] text-white'
+                    : 'bg-white/95 backdrop-blur-md text-[#2F4156] border border-[#C8D9E6]'
+                }`}
+              >
+                <Home className="w-3.5 h-3.5" />
+                <span>Home</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setShowHome(!showHome)}
+                className={`px-3 py-2 min-h-[44px] rounded-2xl text-xs font-bold transition flex items-center gap-1.5 shadow-md flex-shrink-0 cursor-pointer active:scale-95 ${
+                  showHome
+                    ? 'bg-[#2F4156] text-white'
+                    : 'bg-white/95 backdrop-blur-md text-[#2F4156] border border-[#C8D9E6]'
+                }`}
+              >
+                <Home className="w-3.5 h-3.5" />
+                <span>Buildings {buildingCount > 0 ? `(${buildingCount})` : ''}</span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={() => setShowShelters(!showShelters)}
+              className={`px-3 py-2 min-h-[44px] rounded-2xl text-xs font-bold transition flex items-center gap-1.5 shadow-md flex-shrink-0 cursor-pointer active:scale-95 ${
+                showShelters
+                  ? 'bg-[#059669] text-white'
+                  : 'bg-white/95 backdrop-blur-md text-[#2F4156] border border-[#C8D9E6]'
+              }`}
+            >
+              <Tent className="w-3.5 h-3.5" />
+              <span>Shelters {shelterCount > 0 ? `(${shelterCount})` : ''}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowHospitals(!showHospitals)}
+              className={`px-3 py-2 min-h-[44px] rounded-2xl text-xs font-bold transition flex items-center gap-1.5 shadow-md flex-shrink-0 cursor-pointer active:scale-95 ${
+                showHospitals
+                  ? 'bg-[#DC2626] text-white'
+                  : 'bg-white/95 backdrop-blur-md text-[#2F4156] border border-[#C8D9E6]'
+              }`}
+            >
+              <Cross className="w-3.5 h-3.5" />
+              <span>Hospitals {hospitalCount > 0 ? `(${hospitalCount})` : ''}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowFireStations(!showFireStations)}
+              className={`px-3 py-2 min-h-[44px] rounded-2xl text-xs font-bold transition flex items-center gap-1.5 shadow-md flex-shrink-0 cursor-pointer active:scale-95 ${
+                showFireStations
+                  ? 'bg-[#D97706] text-white'
+                  : 'bg-white/95 backdrop-blur-md text-[#2F4156] border border-[#C8D9E6]'
+              }`}
+            >
+              <Flame className="w-3.5 h-3.5" />
+              <span>Fire {fireCount > 0 ? `(${fireCount})` : ''}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowPoliceStations(!showPoliceStations)}
+              className={`px-3 py-2 min-h-[44px] rounded-2xl text-xs font-bold transition flex items-center gap-1.5 shadow-md flex-shrink-0 cursor-pointer active:scale-95 ${
+                showPoliceStations
+                  ? 'bg-[#2563EB] text-white'
+                  : 'bg-white/95 backdrop-blur-md text-[#2F4156] border border-[#C8D9E6]'
+              }`}
+            >
+              <Shield className="w-3.5 h-3.5" />
+              <span>Police {policeCount > 0 ? `(${policeCount})` : ''}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowDangerZones(!showDangerZones)}
+              className={`px-3 py-2 min-h-[44px] rounded-2xl text-xs font-bold transition flex items-center gap-1.5 shadow-md flex-shrink-0 cursor-pointer active:scale-95 ${
+                showDangerZones
+                  ? 'bg-red-600 text-white'
+                  : 'bg-white/95 backdrop-blur-md text-[#2F4156] border border-[#C8D9E6]'
+              }`}
+            >
+              <AlertTriangle className="w-3.5 h-3.5" />
+              <span>Danger Zones</span>
+            </button>
+
+            {user.role === 'CITIZEN' && (
+              <button
+                type="button"
+                onClick={() => setShow5kmRadius(!show5kmRadius)}
+                className={`px-3 py-2 min-h-[44px] rounded-2xl text-xs font-bold transition flex items-center gap-1.5 shadow-md flex-shrink-0 cursor-pointer active:scale-95 ${
+                  show5kmRadius
+                    ? 'bg-[#567C8D] text-white'
+                    : 'bg-white/95 backdrop-blur-md text-[#2F4156] border border-[#C8D9E6]'
+                }`}
+              >
+                <Compass className="w-3.5 h-3.5" />
+                <span>5 km</span>
+              </button>
+            )}
+          </div>
+
+          {/* Mobile Center Floating Action Button */}
+          <button
+            type="button"
+            onClick={handleCenterMap}
+            title={user.role === 'CITIZEN' ? "Center on Registered Home" : "Center on Incident Command Jurisdiction"}
+            className="pointer-events-auto flex-shrink-0 w-11 h-11 min-h-[44px] min-w-[44px] rounded-2xl bg-white/95 backdrop-blur-md border border-[#C8D9E6] shadow-md flex items-center justify-center text-[#2F4156] active:scale-95 cursor-pointer"
+          >
+            <LocateFixed className="w-4 h-4 text-[#2F4156]" />
+          </button>
+        </div>
+
         {/* Loading Overlay */}
         {loading && (
           <div className="absolute inset-0 z-[500] bg-white/70 backdrop-blur-xs flex items-center justify-center pointer-events-none">
@@ -1063,19 +1201,18 @@ function isValidCoordinate(lat: any, lng: any): boolean {
           </div>
         )}
 
-        {/* Leaflet Map Canvas (Vertically prominent ~17.2% increase from 640px to 750px) */}
+        {/* Leaflet Map Canvas (Mobile Full-Bleed, Desktop Frozen 750px) */}
         <div
           ref={mapContainerRef}
-          className="w-full h-[750px] min-h-[750px] z-0"
-          style={{ height: '750px', minHeight: '750px' }}
+          className="w-full h-[calc(100vh-14rem)] min-h-[380px] sm:min-h-[460px] lg:h-[750px] lg:min-h-[750px] z-0"
         />
 
-        {/* Floating Entity Details Card (when clicked on a marker or zone) */}
+        {/* Floating Entity Details Card (FROZEN at >=1024px) */}
         {selectedEntity && (
           <div
             id="selected-entity-card"
             data-testid="selected-entity-card"
-            className="absolute bottom-6 left-6 right-6 sm:right-auto sm:w-96 z-[400] bg-white/95 backdrop-blur-md rounded-2xl border border-[#C8D9E6] shadow-xl p-4 transition-all"
+            className="hidden lg:block absolute bottom-6 left-6 right-6 sm:right-auto sm:w-96 z-[400] bg-white/95 backdrop-blur-md rounded-2xl border border-[#C8D9E6] shadow-xl p-4 transition-all"
           >
             <div className="flex items-start justify-between">
               <div>
@@ -1187,6 +1324,223 @@ function isValidCoordinate(lat: any, lng: any): boolean {
             )}
           </div>
         )}
+
+        {/* Mobile Entity Inspector Bottom Sheet (<1024px) */}
+        {selectedEntity && (
+          <MobileBottomSheet
+            isOpen={Boolean(selectedEntity)}
+            onClose={() => setSelectedEntity(null)}
+            title={selectedEntity.name}
+            subtitle={selectedEntity.type}
+            id="mobile-entity-bottom-sheet"
+          >
+            <div className="space-y-4">
+              {/* Type Badge & Distance */}
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-extrabold uppercase px-2.5 py-1 rounded-md bg-[#567C8D]/15 text-[#2F4156]">
+                  {selectedEntity.type}
+                </span>
+                {selectedEntity.distance && (
+                  <span className="text-xs font-semibold text-[#567C8D]">
+                    {selectedEntity.distance}
+                  </span>
+                )}
+              </div>
+
+              {selectedEntity.address && (
+                <p className="text-xs text-[#567C8D] flex items-center gap-1.5">
+                  <MapPin className="w-4 h-4 text-[#567C8D] flex-shrink-0" />
+                  <span>{selectedEntity.address}</span>
+                </p>
+              )}
+
+              {selectedEntity.details && (
+                <p className="text-xs text-[#2F4156] font-medium bg-[#F5EFEB] p-3 rounded-2xl">
+                  {selectedEntity.details}
+                </p>
+              )}
+
+              {/* Designated Shelter Details */}
+              {selectedEntity.capacity && (
+                <div className="space-y-3 pt-1">
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div className="p-3 rounded-2xl bg-[#F5EFEB] border border-[#C8D9E6]/60">
+                      <span className="text-[10px] text-[#567C8D] font-bold uppercase block">Total Capacity:</span>
+                      <span className="text-sm font-bold text-[#2F4156]">{selectedEntity.capacity} People</span>
+                    </div>
+                    <div className="p-3 rounded-2xl bg-emerald-50 border border-emerald-200">
+                      <span className="text-[10px] text-emerald-700 font-bold uppercase block">Remaining:</span>
+                      <span className="text-sm font-bold text-emerald-900">
+                        {selectedEntity.remainingCapacity !== undefined && selectedEntity.remainingCapacity <= 0 ? (
+                          <span className="text-red-600 font-extrabold">NIL (Full)</span>
+                        ) : (
+                          `${selectedEntity.remainingCapacity ?? selectedEntity.capacity} Avail.`
+                        )}
+                      </span>
+                    </div>
+                  </div>
+
+                  {selectedEntity.expectedArrivals !== undefined && (
+                    <div className="flex items-center justify-between text-xs text-[#567C8D] px-1">
+                      <span>Expected Occupancy:</span>
+                      <span className="font-bold text-[#2F4156]">{selectedEntity.expectedArrivals} People</span>
+                    </div>
+                  )}
+
+                  {selectedEntity.status && (
+                    <div className="flex items-center justify-between text-xs px-1">
+                      <span className="text-[#567C8D]">Status:</span>
+                      <span className="font-bold text-[#059669] px-2 py-0.5 rounded-md bg-emerald-50 border border-emerald-200">
+                        {selectedEntity.status}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Offline Shelter Capacity Caution Warning (Verbatim) */}
+                  {(hookOffline || (typeof navigator !== 'undefined' && !navigator.onLine)) && (
+                    <div
+                      data-testid="offline-shelter-capacity-warning"
+                      className="p-3 rounded-2xl bg-amber-50 border border-amber-300 text-amber-900 text-xs font-bold flex items-center gap-2"
+                    >
+                      <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                      <span>Offline! Unable to update Shelter Capacity</span>
+                    </div>
+                  )}
+
+                  {/* Direct Shelter Call Link */}
+                  {selectedEntity.contact && (
+                    <a
+                      href={`tel:${selectedEntity.contact}`}
+                      className="w-full min-h-[48px] py-3 px-4 rounded-2xl bg-[#059669] hover:bg-[#047857] text-white text-xs font-bold transition flex items-center justify-center gap-2 shadow-md cursor-pointer"
+                    >
+                      <Phone className="w-4 h-4 text-white" />
+                      <span>Call Shelter ({selectedEntity.contact})</span>
+                    </a>
+                  )}
+                </div>
+              )}
+
+              {/* Hospital / Facility Specific Contact */}
+              {selectedEntity.contact && !selectedEntity.capacity && (
+                <div className="space-y-3 pt-1">
+                  <a
+                    href={`tel:${selectedEntity.contact}`}
+                    className="w-full min-h-[48px] py-3 px-4 rounded-2xl bg-[#DC2626] hover:bg-[#B91C1C] text-white text-xs font-bold transition flex items-center justify-center gap-2 shadow-md cursor-pointer"
+                  >
+                    <Phone className="w-4 h-4 text-white" />
+                    <span>Call Helpline ({selectedEntity.contact})</span>
+                  </a>
+                  {selectedEntity.source && (
+                    <p className="text-[11px] text-center text-[#567C8D]">
+                      Data Source: {selectedEntity.source}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Registered Family Members Roster */}
+              {selectedEntity.members && selectedEntity.members.length > 0 && (
+                <div className="pt-2 border-t border-[#F5EFEB]">
+                  <p className="text-xs font-bold text-[#2F4156] mb-2">
+                    {user.role === 'AUTHORITY' ? 'Registered Residents:' : 'Registered Family Members:'}
+                  </p>
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                    {selectedEntity.members.map((m: any) => (
+                      <div
+                        key={m.id || m.name}
+                        className="flex items-center justify-between text-xs text-[#567C8D] bg-[#F5EFEB]/70 p-2.5 rounded-xl"
+                      >
+                        <span className="font-medium text-[#2F4156]">
+                          {m.name} {m.relationship ? `(${m.relationship})` : ''}
+                        </span>
+                        <span className="font-bold text-[#2F4156]">{m.category || `${m.age} yrs`}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Close Button */}
+              <button
+                type="button"
+                onClick={() => setSelectedEntity(null)}
+                className="w-full min-h-[44px] py-2.5 rounded-2xl border border-[#C8D9E6] text-xs font-bold text-[#567C8D] hover:text-[#2F4156] cursor-pointer"
+              >
+                Close Inspector
+              </button>
+            </div>
+          </MobileBottomSheet>
+        )}
+
+        {/* Mobile Legend Bottom Sheet (<1024px) */}
+        <MobileBottomSheet
+          isOpen={isMobileLegendOpen}
+          onClose={() => setIsMobileLegendOpen(false)}
+          title="Map Legend"
+          subtitle="Emergency symbols & markers"
+          id="mobile-legend-bottom-sheet"
+        >
+          <div className="space-y-2.5 py-1">
+            <div className="flex items-center gap-3 p-3 rounded-2xl bg-[#F5EFEB]/60 border border-[#C8D9E6]/60">
+              <span className="w-3.5 h-3.5 rounded-full bg-[#2F4156] flex-shrink-0" />
+              <div>
+                <span className="text-xs font-bold text-[#2F4156] block">{user.role === 'CITIZEN' ? 'Registered Home' : 'Registered Buildings'}</span>
+                <span className="text-[11px] text-[#567C8D]">{user.role === 'CITIZEN' ? 'Your home origin point' : 'All 16 registered buildings'}</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 p-3 rounded-2xl bg-[#F5EFEB]/60 border border-[#C8D9E6]/60">
+              <span className="w-3.5 h-3.5 rounded-full bg-[#059669] flex-shrink-0" />
+              <div>
+                <span className="text-xs font-bold text-[#059669] block">Designated Safe Shelter</span>
+                <span className="text-[11px] text-[#567C8D]">Official relief center with real-time capacity</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 p-3 rounded-2xl bg-[#F5EFEB]/60 border border-[#C8D9E6]/60">
+              <span className="w-3.5 h-3.5 rounded-full bg-[#DC2626] flex-shrink-0" />
+              <div>
+                <span className="text-xs font-bold text-[#DC2626] block">Hospital / Medical Center</span>
+                <span className="text-[11px] text-[#567C8D]">Emergency medical facility and trauma triage</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 p-3 rounded-2xl bg-[#F5EFEB]/60 border border-[#C8D9E6]/60">
+              <span className="w-3.5 h-3.5 rounded-full bg-[#D97706] flex-shrink-0" />
+              <div>
+                <span className="text-xs font-bold text-[#D97706] block">Fire & Rescue Station</span>
+                <span className="text-[11px] text-[#567C8D]">First responders and evacuation equipment</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 p-3 rounded-2xl bg-[#F5EFEB]/60 border border-[#C8D9E6]/60">
+              <span className="w-3.5 h-3.5 rounded-full bg-[#2563EB] flex-shrink-0" />
+              <div>
+                <span className="text-xs font-bold text-[#2563EB] block">Police Station</span>
+                <span className="text-[11px] text-[#567C8D]">Area security and evacuation coordination</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 p-3 rounded-2xl bg-red-50 border border-red-200">
+              <span className="w-3.5 h-3.5 rounded-full bg-[#DC2626] flex-shrink-0" />
+              <div>
+                <span className="text-xs font-bold text-red-900 block">RED Danger Zone</span>
+                <span className="text-[11px] text-red-700">Critical hazard flood inundation boundary</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 p-3 rounded-2xl bg-orange-50 border border-orange-200">
+              <span className="w-3.5 h-3.5 rounded-full bg-[#EA580C] flex-shrink-0" />
+              <div>
+                <span className="text-xs font-bold text-orange-900 block">ORANGE Danger Zone</span>
+                <span className="text-[11px] text-orange-700">Moderate risk flood overflow perimeter</span>
+              </div>
+            </div>
+            {user.role === 'CITIZEN' && (
+              <div className="flex items-center gap-3 p-3 rounded-2xl bg-[#F5EFEB]/60 border border-[#C8D9E6]/60">
+                <span className="w-3.5 h-3.5 rounded-full border-2 border-dashed border-[#567C8D] flex-shrink-0" />
+                <div>
+                  <span className="text-xs font-bold text-[#567C8D] block">5 km Coverage</span>
+                  <span className="text-[11px] text-[#567C8D]">Perimeter around registered home location</span>
+                </div>
+              </div>
+            )}
+          </div>
+        </MobileBottomSheet>
       </div>
     </div>
   );
