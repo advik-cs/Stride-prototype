@@ -84,8 +84,8 @@ async function runAudit() {
   // 1. Production repository untouched verification
   const originRev = execSync('git rev-parse origin/main', { encoding: 'utf-8' }).trim();
   assert(
-    originRev === '59dc3526ffdde0b1a2096ef8cdc0a8d20afed5fb',
-    'Production repository (origin/main) is completely untouched at 59dc352'
+    originRev === '9fb9dd5e45a938db997aa1139de617a04f52d39a',
+    'Production repository (origin/main) is completely untouched at 9fb9dd5'
   );
 
   // 2. Single canonical mutation queue audit

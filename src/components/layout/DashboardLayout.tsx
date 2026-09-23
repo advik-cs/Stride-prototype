@@ -6,6 +6,10 @@ import { notificationService, NotificationItem } from '../../services/notificati
 import { DisasterEvent, disasterService } from '../../services/disasterService.ts';
 import { useLanguage } from '../../i18n/LanguageContext';
 import { LanguageSelectorDropdown } from '../common/LanguageSelectorDropdown';
+import { MobileHeader } from './MobileHeader';
+import { MobileBottomNav } from './MobileBottomNav';
+import { MobileDrawer } from './MobileDrawer';
+import { MobileBottomSheet } from '../common/MobileBottomSheet';
 import {
   LayoutDashboard,
   Map as MapIcon,
@@ -87,6 +91,15 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
   const { t } = useLanguage();
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [testSheetOpen, setTestSheetOpen] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      (window as any).__STRIDE_TEST_OPEN_SHEET__ = () => setTestSheetOpen(true);
+      (window as any).__STRIDE_TEST_CLOSE_SHEET__ = () => setTestSheetOpen(false);
+    }
+  }, []);
 
   useEffect(() => {
     loadNotifications();
@@ -145,9 +158,9 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
 
   return (
     <div className={`min-h-screen flex transition-colors duration-200 ${isDarkSidebar ? 'bg-[#0B132B]' : 'bg-[#F5EFEB]'}`}>
-      {/* ALWAYS-VISIBLE LEFT SIDEBAR (Not collapsed on desktop) */}
+      {/* ALWAYS-VISIBLE LEFT SIDEBAR (Not collapsed on desktop, hidden on mobile) */}
       <aside
-        className={`w-64 xl:w-72 flex flex-col flex-shrink-0 z-30 sticky top-0 h-screen overflow-y-auto transition-colors duration-200 ${
+        className={`hidden lg:flex w-64 xl:w-72 flex-col flex-shrink-0 z-30 sticky top-0 h-screen overflow-y-auto transition-colors duration-200 ${
           isDarkSidebar
             ? 'bg-[#0B132B] border-r border-[#1C2541] text-slate-200'
             : 'bg-white border-r border-[#C8D9E6]/60 text-[#2F4156]'
@@ -450,9 +463,9 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
 
       {/* MAIN CONTENT AREA */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Top Header Bar */}
+        {/* Desktop Top Header Bar (Hidden on mobile) */}
         <header
-          className={`h-16 backdrop-blur px-6 flex items-center justify-between sticky top-0 z-20 transition-colors duration-200 ${
+          className={`hidden lg:flex h-16 backdrop-blur px-6 items-center justify-between sticky top-0 z-20 transition-colors duration-200 ${
             isDarkSidebar
               ? 'bg-[#0B132B]/95 border-b border-[#1C2541] text-slate-200'
               : 'bg-white/95 border-b border-[#C8D9E6]/60 text-[#2F4156]'
@@ -622,17 +635,77 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
           </div>
         </header>
 
+        {/* Mobile Top Header Bar */}
+        <MobileHeader
+          mode={mode}
+          activeDisaster={activeDisaster}
+          notifications={notifications}
+          unreadCount={unreadCount}
+          onMarkRead={handleMarkRead}
+          onOpenDrawer={() => setIsDrawerOpen(true)}
+          isDark={isDarkSidebar}
+        />
+
+        {/* Mobile Slide-Over Navigation Drawer */}
+        <MobileDrawer
+          isOpen={isDrawerOpen}
+          onClose={() => setIsDrawerOpen(false)}
+          user={user}
+          mode={mode}
+          onSwitchMode={onSwitchMode}
+          onLogout={onLogout}
+          activeBeforeTab={activeBeforeTab}
+          onSelectBeforeTab={onSelectBeforeTab}
+          activeDuringTab={activeDuringTab}
+          onSelectDuringTab={onSelectDuringTab}
+          onSwitchRole={onSwitchRole}
+          activeDisaster={activeDisaster}
+          onSelectDisaster={onSelectDisaster}
+          disasters={disasters}
+          isDark={isDarkSidebar}
+        />
+
         {/* Global Offline / Connectivity State Indicator */}
         <GlobalOfflineBanner />
 
         {/* View Body */}
         <main
           className={`flex-1 overflow-x-hidden ${
-            mode === 'FLOODX' ? 'p-0 overflow-hidden' : 'p-6 lg:p-8'
+            mode === 'FLOODX'
+              ? 'p-0 overflow-hidden'
+              : 'p-3 sm:p-4 md:p-6 lg:p-8 pb-24 lg:pb-8'
           }`}
         >
           {children}
         </main>
+
+        {/* Mobile Bottom Navigation Bar */}
+        <MobileBottomNav
+          user={user}
+          mode={mode}
+          activeBeforeTab={activeBeforeTab}
+          onSelectBeforeTab={onSelectBeforeTab}
+          activeDuringTab={activeDuringTab}
+          onSelectDuringTab={onSelectDuringTab}
+          onOpenDrawer={() => setIsDrawerOpen(true)}
+          isDark={isDarkSidebar}
+        />
+
+        {/* Phase 1 MobileBottomSheet Primitive Validation Instance */}
+        <MobileBottomSheet
+          id="test-mobile-bottom-sheet"
+          isOpen={testSheetOpen}
+          onClose={() => setTestSheetOpen(false)}
+          title="Validation Bottom Sheet"
+          subtitle="Phase 1 Primitive Testing"
+          isDark={isDarkSidebar}
+        >
+          <div className="py-2 space-y-2">
+            <p id="test-sheet-content" className="text-xs">
+              Mobile bottom sheet primitive verified for field inspectors.
+            </p>
+          </div>
+        </MobileBottomSheet>
       </div>
     </div>
   );
