@@ -374,20 +374,13 @@ export const ShelterSelectionView: React.FC<ShelterSelectionViewProps> = ({
                   )}
                 </div>
 
-                <div className="mt-6 pt-4 border-t border-[#F5EFEB]">
-                  <div className="flex items-center justify-between text-xs text-[#567C8D] mb-3">
+                <div className="mt-5 pt-3.5 border-t border-[#F5EFEB]">
+                  <div className="flex items-center justify-between text-xs text-[#567C8D]">
                     <span className="flex items-center gap-1 font-medium">
                       <Phone className="w-3.5 h-3.5 text-[#567C8D]" />
                       <span>{shelter.contactNumber}</span>
                     </span>
                   </div>
-
-                  {user.role === 'CITIZEN' && (
-                    <div className="w-full py-2.5 px-3 rounded-xl bg-[#F5EFEB]/80 border border-[#C8D9E6]/50 text-center text-xs font-medium text-[#567C8D] flex items-center justify-center gap-1.5">
-                      <Tent className="w-3.5 h-3.5 text-[#567C8D]" />
-                      <span>{t('shelters.informationalNotice') || 'Designated relief center — Informational directory for emergency evacuation'}</span>
-                    </div>
-                  )}
                 </div>
               </div>
             );

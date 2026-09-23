@@ -136,6 +136,16 @@ async function runOfflineShelterCapacityWarningSuite() {
     'All sections retain formatLastUpdated for standardized timestamp rendering'
   );
 
+  // Invariant 10: "Designated relief center" footer notice completely removed
+  assert(
+    !shelterViewContent.includes('Designated relief center — Informational directory for emergency evacuation'),
+    'Shelter card footer line "Designated relief center — Informational directory for emergency evacuation" is completely removed'
+  );
+  assert(
+    !shelterViewContent.includes('shelters.informationalNotice'),
+    'Shelter card has no reference to shelters.informationalNotice'
+  );
+
   // ============================================================================
   // SUITE 2: REAL BROWSER HYDRATION & OFFLINE TOGGLE TESTS (PLAYWRIGHT)
   // ============================================================================
@@ -322,6 +332,10 @@ async function runOfflineShelterCapacityWarningSuite() {
     const onlineHeadingTimestamp = await page.locator('text=/Last updated:/').count();
     assert(onlineHeadingTimestamp === 0, 'Online shelter section does NOT display "Last updated" timestamp');
 
+    // Verify directory footer notice is completely removed online
+    const onlineFooterNotices = await page.locator('text=/Informational directory for emergency evacuation/i').count();
+    assert(onlineFooterNotices === 0, 'Online shelter cards do NOT display directory footer notice (count: 0)');
+
     // Verify existing capacity metrics are rendered online
     const onlineTotalCap = await page.locator('text=Total Cap').count();
     const onlineExpected = await page.locator('text=Expected').count();
@@ -375,6 +389,10 @@ async function runOfflineShelterCapacityWarningSuite() {
     // Verify contact numbers and names remain intact
     const phoneCount = await page.locator('text=+91 80').count();
     assert(phoneCount === 3, '5. Shelter contact numbers remain intact on all cards');
+
+    // Verify directory footer notice is completely removed offline
+    const offlineFooterNotices = await page.locator('text=/Informational directory for emergency evacuation/i').count();
+    assert(offlineFooterNotices === 0, '5. Offline shelter cards do NOT display directory footer notice (count: 0)');
 
     // ------------------------------------------------------------------------
     // Test 6: Reconnection removes warning and timestamp cleanly
