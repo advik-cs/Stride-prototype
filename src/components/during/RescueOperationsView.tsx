@@ -24,7 +24,9 @@ import {
   Check,
   Filter,
   Mic,
+  Eye,
 } from 'lucide-react';
+import { MobileBottomSheet } from '../common/MobileBottomSheet.tsx';
 
 interface RescueOperationsViewProps {
   user: User;
@@ -50,6 +52,11 @@ export const RescueOperationsView: React.FC<RescueOperationsViewProps> = ({
   const [selectedTeamId, setSelectedTeamId] = useState<string>('');
   const [assignLoading, setAssignLoading] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+
+  // Mobile Details Bottom Sheet state
+  const [selectedDetailReq, setSelectedDetailReq] = useState<RescueRequest | null>(null);
+  // Duplicate operation protection state
+  const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
 
   useEffect(() => {
     loadData();
@@ -128,12 +135,15 @@ export const RescueOperationsView: React.FC<RescueOperationsViewProps> = ({
 
   const handleAssignTeamSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!assignModalReq || !selectedTeamId) return;
+    if (!assignModalReq || !selectedTeamId || assignLoading) return;
     setAssignLoading(true);
     setActionError(null);
     try {
       await duringApi.assignTeam(assignModalReq.id, selectedTeamId);
       setAssignModalReq(null);
+      if (selectedDetailReq && selectedDetailReq.id === assignModalReq.id) {
+        setSelectedDetailReq(null);
+      }
       await loadData();
     } catch (err: any) {
       setActionError(err.message || 'Failed to assign rescue team.');
@@ -143,6 +153,8 @@ export const RescueOperationsView: React.FC<RescueOperationsViewProps> = ({
   };
 
   const handleUpdateStatus = async (reqId: string, status: 'IN_PROGRESS' | 'RESCUED' | 'ACKNOWLEDGED' | 'CANCELLED') => {
+    if (actionLoadingId) return;
+    setActionLoadingId(reqId);
     setActionError(null);
     try {
       if (status === 'IN_PROGRESS' || status === 'RESCUED') {
@@ -151,8 +163,13 @@ export const RescueOperationsView: React.FC<RescueOperationsViewProps> = ({
         await duringApi.updateAuthorityRequestStatus(reqId, status);
       }
       await loadData();
+      if (selectedDetailReq && selectedDetailReq.id === reqId) {
+        setSelectedDetailReq(null);
+      }
     } catch (err: any) {
       alert('Status update failed: ' + err.message);
+    } finally {
+      setActionLoadingId(null);
     }
   };
 
@@ -370,7 +387,7 @@ export const RescueOperationsView: React.FC<RescueOperationsViewProps> = ({
                 <button
                   type="button"
                   onClick={() => onNavigateTab('safe')}
-                  className="w-full sm:w-auto px-4 py-3 min-h-[48px] sm:min-h-0 sm:py-2 rounded-xl bg-[#2F4156] hover:bg-[#1f2c3a] text-white text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer shadow-sm"
+                  className="w-full sm:w-auto px-4 py-3 min-h-[48px] lg:min-h-0 lg:py-2 rounded-xl bg-[#2F4156] hover:bg-[#1f2c3a] text-white text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer shadow-sm"
                 >
                   <Activity className="w-3.5 h-3.5" />
                   <span>Update Status in "Are You Safe?"</span>
@@ -380,7 +397,7 @@ export const RescueOperationsView: React.FC<RescueOperationsViewProps> = ({
                   <button
                     type="button"
                     onClick={() => handleCancelOwnRequest(ownActiveRequest.id)}
-                    className="w-full sm:w-auto px-4 py-3 min-h-[48px] sm:min-h-0 sm:py-2 rounded-xl border border-red-300 text-red-600 hover:bg-red-50 text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
+                    className="w-full sm:w-auto px-4 py-3 min-h-[48px] lg:min-h-0 lg:py-2 rounded-xl border border-red-300 text-red-600 hover:bg-red-50 text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
                   >
                     <Ban className="w-3.5 h-3.5" />
                     <span>Cancel Distress Call</span>
@@ -560,7 +577,7 @@ export const RescueOperationsView: React.FC<RescueOperationsViewProps> = ({
               {assignedMissions.map((m) => (
                 <div
                   key={m.id}
-                  className="p-5 rounded-2xl bg-blue-50/50 border border-blue-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                  className="p-5 rounded-2xl bg-blue-50/50 border border-blue-200 flex flex-col lg:flex-row lg:items-center justify-between gap-4"
                 >
                   <div className="space-y-1.5 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
@@ -581,32 +598,65 @@ export const RescueOperationsView: React.FC<RescueOperationsViewProps> = ({
                     </div>
                     <h4 className="text-sm font-bold text-[#2F4156]">{m.address}</h4>
                     <p className="text-xs text-[#567C8D]">"{m.description}"</p>
-                    <div className="text-[11px] text-[#567C8D] flex flex-wrap gap-3 pt-1">
-                      <span>Citizen: <strong>{m.citizen?.name}</strong></span>
-                      <span>Phone: <strong>{m.citizen?.phone}</strong></span>
+                    <div className="text-[11px] text-[#567C8D] flex flex-wrap items-center gap-3 pt-1">
+                      <span>Citizen: <strong>{m.citizen?.name || 'Citizen'}</strong></span>
+                      <span>
+                        Phone:{' '}
+                        {m.citizen?.phone ? (
+                          <a
+                            href={`tel:${m.citizen.phone}`}
+                            className="font-bold underline text-blue-700 hover:text-blue-900 inline-flex items-center gap-1 min-h-[44px] lg:min-h-0 py-1"
+                          >
+                            <Phone className="w-3 h-3" />
+                            <span>{m.citizen.phone}</span>
+                          </a>
+                        ) : (
+                          <strong>N/A</strong>
+                        )}
+                      </span>
                       <span>People: <strong>{m.peopleCount}</strong></span>
                       <span>Water Level: <strong>{m.waterLevel}</strong></span>
                     </div>
+
+                    {/* Mobile Inspect Button */}
+                    <button
+                      type="button"
+                      onClick={() => setSelectedDetailReq(m)}
+                      className="lg:hidden w-full px-3 py-2 min-h-[44px] rounded-xl bg-blue-100/70 hover:bg-blue-200/70 text-blue-900 text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer mt-2"
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                      <span>Inspect Mission Details</span>
+                    </button>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full lg:w-auto">
                     {m.status === 'ASSIGNED' && (
                       <button
                         type="button"
+                        disabled={actionLoadingId === m.id || assignLoading}
                         onClick={() => handleUpdateStatus(m.id, 'IN_PROGRESS')}
-                        className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-sm cursor-pointer"
+                        className="w-full sm:w-auto px-4 py-2.5 min-h-[48px] rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
                       >
-                        <Radio className="w-3.5 h-3.5" />
+                        {actionLoadingId === m.id ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Radio className="w-3.5 h-3.5" />
+                        )}
                         <span>En Route</span>
                       </button>
                     )}
                     {m.status === 'IN_PROGRESS' && (
                       <button
                         type="button"
+                        disabled={actionLoadingId === m.id || assignLoading}
                         onClick={() => handleUpdateStatus(m.id, 'RESCUED')}
-                        className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-sm cursor-pointer"
+                        className="w-full sm:w-auto px-4 py-2.5 min-h-[48px] rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
                       >
-                        <Check className="w-3.5 h-3.5" />
+                        {actionLoadingId === m.id ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Check className="w-3.5 h-3.5" />
+                        )}
                         <span>Mark Rescued</span>
                       </button>
                     )}
@@ -632,15 +682,15 @@ export const RescueOperationsView: React.FC<RescueOperationsViewProps> = ({
             </div>
 
             {/* Filter by Priority */}
-            <div className="flex items-center gap-2">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 w-full sm:w-auto">
               <span className="text-xs font-semibold text-[#567C8D]">Filter:</span>
-              <div className="p-1 rounded-xl bg-[#F5EFEB] border border-[#C8D9E6] flex items-center text-xs font-semibold">
+              <div className="p-1 rounded-xl bg-[#F5EFEB] border border-[#C8D9E6] flex items-center text-xs font-semibold overflow-x-auto no-scrollbar max-w-full">
                 {['ALL', 'CRITICAL', 'HIGH', 'MEDIUM', 'LOW'].map((lvl) => (
                   <button
                     key={lvl}
                     type="button"
                     onClick={() => setFilterPriority(lvl)}
-                    className={`px-2.5 py-1 rounded-lg transition cursor-pointer ${
+                    className={`px-3 py-2 min-h-[44px] lg:min-h-0 lg:py-1 rounded-lg transition cursor-pointer whitespace-nowrap ${
                       filterPriority === lvl
                         ? lvl === 'CRITICAL'
                           ? 'bg-red-600 text-white font-bold'
@@ -708,7 +758,21 @@ export const RescueOperationsView: React.FC<RescueOperationsViewProps> = ({
 
                       {/* Metadata row */}
                       <div className="flex flex-wrap items-center gap-3 text-xs text-[#567C8D] pt-1">
-                        <span>Citizen: <strong>{req.citizen?.name || 'Citizen'}</strong> ({req.citizen?.phone || 'N/A'})</span>
+                        <span>
+                          Citizen: <strong>{req.citizen?.name || 'Citizen'}</strong> (
+                          {req.citizen?.phone ? (
+                            <a
+                              href={`tel:${req.citizen.phone}`}
+                              className="font-bold underline text-[#2F4156] hover:text-blue-700 inline-flex items-center gap-0.5 min-h-[44px] lg:min-h-0 py-1"
+                            >
+                              <Phone className="w-3 h-3 text-[#567C8D]" />
+                              {req.citizen.phone}
+                            </a>
+                          ) : (
+                            'N/A'
+                          )}
+                          )
+                        </span>
                         <span>•</span>
                         <span>People: <strong>{req.peopleCount}</strong> (Injured: {req.injuredCount}, Disabled: {req.disabledCount})</span>
                         <span>•</span>
@@ -723,24 +787,41 @@ export const RescueOperationsView: React.FC<RescueOperationsViewProps> = ({
                           <span>Assigned Squad: <strong>{req.team.name}</strong> ({req.team.type})</span>
                         </div>
                       )}
+
+                      {/* Mobile Inspect Button */}
+                      <button
+                        type="button"
+                        onClick={() => setSelectedDetailReq(req)}
+                        className="lg:hidden w-full px-3 py-2 min-h-[44px] rounded-xl bg-[#F5EFEB] hover:bg-[#C8D9E6]/60 text-[#2F4156] text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer mt-2"
+                      >
+                        <Eye className="w-3.5 h-3.5 text-[#567C8D]" />
+                        <span>Inspect Request Details</span>
+                      </button>
                     </div>
                   </div>
 
                   {/* Actions for Authority & Rescuer */}
-                  <div className="flex flex-wrap items-center gap-2 self-end lg:self-center">
+                  <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-2 w-full lg:w-auto self-end lg:self-center">
                     {user.role === 'AUTHORITY' && req.status === 'PENDING' && (
                       <>
                         <button
                           type="button"
+                          disabled={actionLoadingId === req.id || assignLoading}
                           onClick={() => handleUpdateStatus(req.id, 'ACKNOWLEDGED')}
-                          className="px-3 py-2 rounded-xl bg-purple-100 hover:bg-purple-200 text-purple-900 text-xs font-bold transition cursor-pointer"
+                          className="w-full sm:w-auto px-4 py-2.5 min-h-[48px] rounded-xl bg-purple-100 hover:bg-purple-200 disabled:opacity-50 text-purple-900 text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
                         >
-                          Acknowledge
+                          {actionLoadingId === req.id ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <ShieldCheck className="w-3.5 h-3.5 text-purple-700" />
+                          )}
+                          <span>Acknowledge</span>
                         </button>
                         <button
                           type="button"
+                          disabled={actionLoadingId === req.id || assignLoading}
                           onClick={() => handleOpenAssignModal(req)}
-                          className="px-4 py-2 rounded-xl bg-[#2F4156] hover:bg-[#1F2D3D] text-white text-xs font-bold transition flex items-center gap-1.5 shadow-sm cursor-pointer"
+                          className="w-full sm:w-auto px-4 py-2.5 min-h-[48px] rounded-xl bg-[#2F4156] hover:bg-[#1F2D3D] disabled:opacity-50 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
                         >
                           <Users className="w-3.5 h-3.5 text-[#C8D9E6]" />
                           <span>Assign Team</span>
@@ -751,8 +832,9 @@ export const RescueOperationsView: React.FC<RescueOperationsViewProps> = ({
                     {user.role === 'AUTHORITY' && req.status === 'ACKNOWLEDGED' && (
                       <button
                         type="button"
+                        disabled={actionLoadingId === req.id || assignLoading}
                         onClick={() => handleOpenAssignModal(req)}
-                        className="px-4 py-2 rounded-xl bg-[#2F4156] hover:bg-[#1F2D3D] text-white text-xs font-bold transition flex items-center gap-1.5 shadow-sm cursor-pointer"
+                        className="w-full sm:w-auto px-4 py-2.5 min-h-[48px] rounded-xl bg-[#2F4156] hover:bg-[#1F2D3D] disabled:opacity-50 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
                       >
                         <Users className="w-3.5 h-3.5 text-[#C8D9E6]" />
                         <span>Assign Team</span>
@@ -762,10 +844,15 @@ export const RescueOperationsView: React.FC<RescueOperationsViewProps> = ({
                     {req.status === 'ASSIGNED' && (
                       <button
                         type="button"
+                        disabled={actionLoadingId === req.id || assignLoading}
                         onClick={() => handleUpdateStatus(req.id, 'IN_PROGRESS')}
-                        className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-sm cursor-pointer"
+                        className="w-full sm:w-auto px-4 py-2.5 min-h-[48px] rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
                       >
-                        <Radio className="w-3.5 h-3.5" />
+                        {actionLoadingId === req.id ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Radio className="w-3.5 h-3.5" />
+                        )}
                         <span>Deploy En Route</span>
                       </button>
                     )}
@@ -773,10 +860,15 @@ export const RescueOperationsView: React.FC<RescueOperationsViewProps> = ({
                     {req.status === 'IN_PROGRESS' && (
                       <button
                         type="button"
+                        disabled={actionLoadingId === req.id || assignLoading}
                         onClick={() => handleUpdateStatus(req.id, 'RESCUED')}
-                        className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-sm cursor-pointer"
+                        className="w-full sm:w-auto px-4 py-2.5 min-h-[48px] rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
                       >
-                        <CheckCircle2 className="w-3.5 h-3.5 text-white" />
+                        {actionLoadingId === req.id ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <CheckCircle2 className="w-3.5 h-3.5 text-white" />
+                        )}
                         <span>Mark Rescued</span>
                       </button>
                     )}
@@ -788,9 +880,253 @@ export const RescueOperationsView: React.FC<RescueOperationsViewProps> = ({
         </div>
       )}
 
-      {/* Assign Team Modal for Authority */}
+      {/* Mobile Request Details Bottom Sheet (<1024px) */}
+      <MobileBottomSheet
+        id="mobile-request-detail-sheet"
+        isOpen={!!selectedDetailReq}
+        onClose={() => setSelectedDetailReq(null)}
+        title={selectedDetailReq ? `Triage Details: ${selectedDetailReq.address}` : 'Triage Details'}
+        subtitle={
+          selectedDetailReq
+            ? `Score: ${selectedDetailReq.priorityScore} (${selectedDetailReq.priorityLevel}) • Status: ${selectedDetailReq.status}`
+            : undefined
+        }
+      >
+        {selectedDetailReq && (
+          <div className="space-y-4">
+            {/* Priority & Status Header Badges */}
+            <div className="flex flex-wrap items-center gap-2">
+              {getPriorityPill(selectedDetailReq.priorityScore, selectedDetailReq.priorityLevel)}
+              {getStatusBadge(selectedDetailReq.status)}
+              {selectedDetailReq.source === 'VOICE' && (
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-100 text-blue-900 border border-blue-200 flex items-center gap-1 shadow-sm">
+                  <Mic className="w-3 h-3 text-blue-600" />
+                  VOICE SOS
+                </span>
+              )}
+              {selectedDetailReq.locationConflict && (
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-100 text-amber-900 border border-amber-200 flex items-center gap-1 shadow-sm">
+                  <AlertTriangle className="w-3 h-3 text-amber-600" />
+                  Location Discrepancy {selectedDetailReq.spokenLocation ? `(Spoken: ${selectedDetailReq.spokenLocation})` : ''}
+                </span>
+              )}
+            </div>
+
+            {/* Direct Citizen Contact Dialer */}
+            {selectedDetailReq.citizen?.phone ? (
+              <a
+                href={`tel:${selectedDetailReq.citizen.phone}`}
+                className="w-full px-4 py-3 min-h-[48px] rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition flex items-center justify-center gap-2 shadow-sm cursor-pointer"
+              >
+                <Phone className="w-4 h-4 text-white" />
+                <span>Call Citizen Directly: {selectedDetailReq.citizen.phone} ({selectedDetailReq.citizen.name || 'Citizen'})</span>
+              </a>
+            ) : (
+              <div className="p-3 rounded-xl bg-gray-100 text-xs text-[#567C8D] font-semibold text-center">
+                Citizen: {selectedDetailReq.citizen?.name || 'Citizen'} (No direct phone registered)
+              </div>
+            )}
+
+            {/* Description */}
+            <div className="p-3.5 rounded-2xl bg-[#F5EFEB]/70 border border-[#C8D9E6]/60">
+              <span className="text-[10px] uppercase font-bold text-[#567C8D]">Emergency Narrative</span>
+              <p className="text-xs font-medium text-[#2F4156] mt-1">"{selectedDetailReq.description}"</p>
+            </div>
+
+            {/* Metrics Breakdown */}
+            <div className="grid grid-cols-2 gap-2 text-center text-xs">
+              <div className="p-3 rounded-xl bg-red-50 border border-red-200">
+                <span className="text-[10px] font-bold uppercase text-red-800">Water Level</span>
+                <p className="text-sm font-bold text-red-700 mt-0.5">{selectedDetailReq.waterLevel}</p>
+              </div>
+              <div className="p-3 rounded-xl bg-blue-50 border border-blue-200">
+                <span className="text-[10px] font-bold uppercase text-blue-800">Emergency Type</span>
+                <p className="text-sm font-bold text-blue-700 mt-0.5">{selectedDetailReq.emergencyType}</p>
+              </div>
+              <div className="p-3 rounded-xl bg-amber-50 border border-amber-200">
+                <span className="text-[10px] font-bold uppercase text-amber-800">Household Count</span>
+                <p className="text-sm font-bold text-amber-700 mt-0.5">{selectedDetailReq.peopleCount} occupants</p>
+              </div>
+              <div className="p-3 rounded-xl bg-purple-50 border border-purple-200">
+                <span className="text-[10px] font-bold uppercase text-purple-800">Vulnerabilities</span>
+                <p className="text-xs font-bold text-purple-700 mt-0.5">
+                  Injured: {selectedDetailReq.injuredCount} • Disabled: {selectedDetailReq.disabledCount}
+                </p>
+              </div>
+            </div>
+
+            {/* Assigned Squad if any */}
+            {selectedDetailReq.team && (
+              <div className="p-3 rounded-xl bg-blue-50 border border-blue-200 text-xs text-blue-900 font-semibold flex items-center gap-2">
+                <Users className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                <span>Assigned Unit: <strong>{selectedDetailReq.team.name}</strong> ({selectedDetailReq.team.type} - Capacity: {selectedDetailReq.team.capacity})</span>
+              </div>
+            )}
+
+            {/* Tactical Actions inside Sheet */}
+            <div className="pt-2 flex flex-col gap-2">
+              {user.role === 'AUTHORITY' && selectedDetailReq.status === 'PENDING' && (
+                <>
+                  <button
+                    type="button"
+                    disabled={actionLoadingId === selectedDetailReq.id || assignLoading}
+                    onClick={() => handleUpdateStatus(selectedDetailReq.id, 'ACKNOWLEDGED')}
+                    className="w-full px-4 py-3 min-h-[48px] rounded-xl bg-purple-100 hover:bg-purple-200 disabled:opacity-50 text-purple-900 text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    {actionLoadingId === selectedDetailReq.id ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <ShieldCheck className="w-4 h-4 text-purple-700" />
+                    )}
+                    <span>Acknowledge Distress</span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={actionLoadingId === selectedDetailReq.id || assignLoading}
+                    onClick={() => {
+                      const target = selectedDetailReq;
+                      setSelectedDetailReq(null);
+                      handleOpenAssignModal(target);
+                    }}
+                    className="w-full px-4 py-3 min-h-[48px] rounded-xl bg-[#2F4156] hover:bg-[#1F2D3D] disabled:opacity-50 text-white text-xs font-bold transition flex items-center justify-center gap-2 shadow-sm cursor-pointer"
+                  >
+                    <Users className="w-4 h-4 text-[#C8D9E6]" />
+                    <span>Assign Rescue Team</span>
+                  </button>
+                </>
+              )}
+
+              {user.role === 'AUTHORITY' && selectedDetailReq.status === 'ACKNOWLEDGED' && (
+                <button
+                  type="button"
+                  disabled={actionLoadingId === selectedDetailReq.id || assignLoading}
+                  onClick={() => {
+                    const target = selectedDetailReq;
+                    setSelectedDetailReq(null);
+                    handleOpenAssignModal(target);
+                  }}
+                  className="w-full px-4 py-3 min-h-[48px] rounded-xl bg-[#2F4156] hover:bg-[#1F2D3D] disabled:opacity-50 text-white text-xs font-bold transition flex items-center justify-center gap-2 shadow-sm cursor-pointer"
+                >
+                  <Users className="w-4 h-4 text-[#C8D9E6]" />
+                  <span>Assign Rescue Team</span>
+                </button>
+              )}
+
+              {selectedDetailReq.status === 'ASSIGNED' && (
+                <button
+                  type="button"
+                  disabled={actionLoadingId === selectedDetailReq.id || assignLoading}
+                  onClick={() => handleUpdateStatus(selectedDetailReq.id, 'IN_PROGRESS')}
+                  className="w-full px-4 py-3 min-h-[48px] rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-bold transition flex items-center justify-center gap-2 shadow-sm cursor-pointer"
+                >
+                  {actionLoadingId === selectedDetailReq.id ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Radio className="w-4 h-4" />
+                  )}
+                  <span>Deploy En Route</span>
+                </button>
+              )}
+
+              {selectedDetailReq.status === 'IN_PROGRESS' && (
+                <button
+                  type="button"
+                  disabled={actionLoadingId === selectedDetailReq.id || assignLoading}
+                  onClick={() => handleUpdateStatus(selectedDetailReq.id, 'RESCUED')}
+                  className="w-full px-4 py-3 min-h-[48px] rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold transition flex items-center justify-center gap-2 shadow-sm cursor-pointer"
+                >
+                  {actionLoadingId === selectedDetailReq.id ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <CheckCircle2 className="w-4 h-4 text-white" />
+                  )}
+                  <span>Confirm Safely Rescued</span>
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setSelectedDetailReq(null)}
+                className="w-full px-4 py-2.5 min-h-[44px] rounded-xl text-xs font-bold text-[#567C8D] hover:text-[#2F4156] bg-gray-100 flex items-center justify-center cursor-pointer mt-1"
+              >
+                Close Details
+              </button>
+            </div>
+          </div>
+        )}
+      </MobileBottomSheet>
+
+      {/* Mobile Assign Team Bottom Sheet (<1024px) */}
+      <MobileBottomSheet
+        id="mobile-assign-team-sheet"
+        isOpen={!!assignModalReq}
+        onClose={() => setAssignModalReq(null)}
+        title="Dispatch Rescue Unit"
+        subtitle={
+          assignModalReq
+            ? `Score: ${assignModalReq.priorityScore} (${assignModalReq.priorityLevel}) • ${assignModalReq.address}`
+            : undefined
+        }
+      >
+        {actionError && (
+          <div className="mb-4 p-3 rounded-xl bg-red-50 border border-red-200 text-xs text-red-700 font-semibold">
+            {actionError}
+          </div>
+        )}
+
+        {assignModalReq && (
+          <form onSubmit={handleAssignTeamSubmit} className="space-y-4">
+            <div>
+              <label className="block text-xs font-semibold text-[#2F4156] mb-1.5">
+                Select Available Rescue Team
+              </label>
+              {availableTeams.length === 0 ? (
+                <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-xs text-amber-800">
+                  No teams currently marked as AVAILABLE. Responders may be on active missions.
+                </div>
+              ) : (
+                <select
+                  value={selectedTeamId}
+                  onChange={(e) => setSelectedTeamId(e.target.value)}
+                  className="w-full px-3.5 py-3 min-h-[48px] rounded-xl border border-[#C8D9E6] text-xs font-semibold text-[#2F4156] outline-none bg-white"
+                >
+                  {availableTeams.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name} ({t.type} - Capacity: {t.capacity})
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+
+            <div className="p-3 rounded-xl bg-[#F5EFEB] text-[11px] text-[#567C8D]">
+              Assigning this unit will automatically transition the request to <strong>ASSIGNED</strong> and set the team's operational status to <strong>BUSY</strong>.
+            </div>
+
+            <div className="pt-2 flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setAssignModalReq(null)}
+                className="w-full sm:w-auto px-4 py-3 min-h-[48px] rounded-xl text-xs font-bold text-[#567C8D] hover:text-[#2F4156] bg-gray-100 flex items-center justify-center cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={assignLoading || availableTeams.length === 0}
+                className="w-full sm:w-auto px-5 py-3 min-h-[48px] rounded-xl bg-[#2F4156] hover:bg-[#1F2D3D] text-white text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                {assignLoading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                <span>Confirm Dispatch</span>
+              </button>
+            </div>
+          </form>
+        )}
+      </MobileBottomSheet>
+
+      {/* Desktop Assign Team Modal (>=1024px) */}
       {assignModalReq && (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="hidden lg:flex fixed inset-0 z-50 bg-black/40 backdrop-blur-sm items-center justify-center p-4">
           <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full border border-[#C8D9E6] shadow-2xl animate-scaleUp">
             <div className="flex items-center justify-between pb-4 border-b border-[#F5EFEB]">
               <div>

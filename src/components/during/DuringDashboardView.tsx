@@ -264,13 +264,13 @@ export const DuringDashboardView: React.FC<DuringDashboardViewProps> = ({
             </button>
           </div>
 
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4 mt-6">
             {/* Pending */}
-            <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200">
+            <div className="p-3 sm:p-4 rounded-2xl bg-amber-50 border border-amber-200">
               <span className="text-[10px] uppercase font-extrabold text-amber-800 tracking-wider">
                 Pending Queue
               </span>
-              <p className="text-2xl font-bold font-['Space_Grotesk',sans-serif] text-amber-900 mt-1">
+              <p className="text-xl sm:text-2xl font-bold font-['Space_Grotesk',sans-serif] text-amber-900 mt-1">
                 {status?.emergencyRequests?.pending || 0}
               </p>
               <span className="text-[11px] text-amber-700 mt-1 block">
@@ -279,11 +279,11 @@ export const DuringDashboardView: React.FC<DuringDashboardViewProps> = ({
             </div>
 
             {/* Team Assigned */}
-            <div className="p-4 rounded-2xl bg-blue-50 border border-blue-200">
+            <div className="p-3 sm:p-4 rounded-2xl bg-blue-50 border border-blue-200">
               <span className="text-[10px] uppercase font-extrabold text-blue-800 tracking-wider">
                 Team Assigned
               </span>
-              <p className="text-2xl font-bold font-['Space_Grotesk',sans-serif] text-blue-900 mt-1">
+              <p className="text-xl sm:text-2xl font-bold font-['Space_Grotesk',sans-serif] text-blue-900 mt-1">
                 {status?.emergencyRequests?.teamAssigned || 0}
               </p>
               <span className="text-[11px] text-blue-700 mt-1 block">
@@ -292,11 +292,11 @@ export const DuringDashboardView: React.FC<DuringDashboardViewProps> = ({
             </div>
 
             {/* Safely Rescued */}
-            <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200">
+            <div className="p-3 sm:p-4 rounded-2xl bg-emerald-50 border border-emerald-200">
               <span className="text-[10px] uppercase font-extrabold text-emerald-800 tracking-wider">
                 Safely Rescued
               </span>
-              <p className="text-2xl font-bold font-['Space_Grotesk',sans-serif] text-emerald-900 mt-1">
+              <p className="text-xl sm:text-2xl font-bold font-['Space_Grotesk',sans-serif] text-emerald-900 mt-1">
                 {status?.emergencyRequests?.safelyRescued || 0}
               </p>
               <span className="text-[11px] text-emerald-700 mt-1 block">
@@ -305,11 +305,11 @@ export const DuringDashboardView: React.FC<DuringDashboardViewProps> = ({
             </div>
 
             {/* Not Found */}
-            <div className="p-4 rounded-2xl bg-red-50 border border-red-200">
+            <div className="p-3 sm:p-4 rounded-2xl bg-red-50 border border-red-200">
               <span className="text-[10px] uppercase font-extrabold text-red-800 tracking-wider">
                 Not Found
               </span>
-              <p className="text-2xl font-bold font-['Space_Grotesk',sans-serif] text-red-900 mt-1">
+              <p className="text-xl sm:text-2xl font-bold font-['Space_Grotesk',sans-serif] text-red-900 mt-1">
                 {status?.emergencyRequests?.notFound || 0}
               </p>
               <span className="text-[11px] text-red-700 mt-1 block">

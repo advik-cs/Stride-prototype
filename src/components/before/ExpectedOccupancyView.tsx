@@ -457,12 +457,12 @@ export const ExpectedOccupancyView: React.FC<ExpectedOccupancyViewProps> = ({
         </div>
 
         {/* View Mode Switcher */}
-        <div className="flex items-center gap-2">
-          <div className="p-1 rounded-xl bg-white border border-[#C8D9E6] flex items-center text-xs font-semibold shadow-sm">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full lg:w-auto">
+          <div className="p-1 rounded-xl bg-white border border-[#C8D9E6] flex items-center text-xs font-semibold shadow-sm overflow-x-auto no-scrollbar max-w-full">
             <button
               type="button"
               onClick={() => setViewMode('SPLIT')}
-              className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 cursor-pointer ${
+              className={`px-3 py-2 min-h-[44px] lg:min-h-0 lg:py-1.5 rounded-lg transition flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
                 viewMode === 'SPLIT'
                   ? 'bg-[#2F4156] text-white font-bold'
                   : 'text-[#567C8D] hover:text-[#2F4156]'
@@ -474,7 +474,7 @@ export const ExpectedOccupancyView: React.FC<ExpectedOccupancyViewProps> = ({
             <button
               type="button"
               onClick={() => setViewMode('MAP')}
-              className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 cursor-pointer ${
+              className={`px-3 py-2 min-h-[44px] lg:min-h-0 lg:py-1.5 rounded-lg transition flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
                 viewMode === 'MAP'
                   ? 'bg-[#2F4156] text-white font-bold'
                   : 'text-[#567C8D] hover:text-[#2F4156]'
@@ -486,7 +486,7 @@ export const ExpectedOccupancyView: React.FC<ExpectedOccupancyViewProps> = ({
             <button
               type="button"
               onClick={() => setViewMode('CARDS')}
-              className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 cursor-pointer ${
+              className={`px-3 py-2 min-h-[44px] lg:min-h-0 lg:py-1.5 rounded-lg transition flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
                 viewMode === 'CARDS'
                   ? 'bg-[#2F4156] text-white font-bold'
                   : 'text-[#567C8D] hover:text-[#2F4156]'
@@ -501,7 +501,7 @@ export const ExpectedOccupancyView: React.FC<ExpectedOccupancyViewProps> = ({
             type="button"
             onClick={loadData}
             title="Refresh Intelligence Data"
-            className="p-2 rounded-xl bg-white border border-[#C8D9E6] text-[#567C8D] hover:text-[#2F4156] hover:bg-[#F5EFEB] transition shadow-sm cursor-pointer"
+            className="p-2.5 min-w-[44px] min-h-[44px] rounded-xl bg-white border border-[#C8D9E6] text-[#567C8D] hover:text-[#2F4156] hover:bg-[#F5EFEB] transition shadow-sm flex items-center justify-center cursor-pointer"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
@@ -605,23 +605,23 @@ export const ExpectedOccupancyView: React.FC<ExpectedOccupancyViewProps> = ({
       {/* Filter and Search Bar */}
       <div className="p-3 bg-white rounded-2xl border border-[#C8D9E6]/70 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         {/* Search */}
-        <div className="relative flex-1 max-w-md">
+        <div className="relative flex-1 max-w-md w-full">
           <Search className="w-4 h-4 text-[#567C8D] absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search building name, street, or zone..."
-            className="w-full pl-9 pr-4 py-2 rounded-xl bg-[#F5EFEB]/50 border border-[#C8D9E6] text-xs font-semibold text-[#2F4156] outline-none placeholder-[#567C8D]/60 focus:border-[#567C8D] focus:bg-white transition"
+            className="w-full pl-9 pr-4 py-2.5 min-h-[44px] lg:min-h-0 lg:py-2 rounded-xl bg-[#F5EFEB]/50 border border-[#C8D9E6] text-xs font-semibold text-[#2F4156] outline-none placeholder-[#567C8D]/60 focus:border-[#567C8D] focus:bg-white transition"
           />
         </div>
 
         {/* Zone Pill Buttons */}
-        <div className="flex flex-wrap items-center gap-1.5 text-xs font-semibold">
+        <div className="flex items-center gap-1.5 text-xs font-semibold overflow-x-auto no-scrollbar max-w-full">
           <button
             type="button"
             onClick={() => setFilterRisk('ALL')}
-            className={`px-3 py-1.5 rounded-xl transition cursor-pointer ${
+            className={`px-3 py-2 min-h-[44px] lg:min-h-0 lg:py-1.5 rounded-xl transition whitespace-nowrap cursor-pointer ${
               filterRisk === 'ALL'
                 ? 'bg-[#2F4156] text-white font-bold shadow-sm'
                 : 'bg-[#F5EFEB]/70 text-[#567C8D] hover:bg-[#F5EFEB] hover:text-[#2F4156]'
@@ -632,7 +632,7 @@ export const ExpectedOccupancyView: React.FC<ExpectedOccupancyViewProps> = ({
           <button
             type="button"
             onClick={() => setFilterRisk('RED')}
-            className={`px-3 py-1.5 rounded-xl transition flex items-center gap-1 cursor-pointer ${
+            className={`px-3 py-2 min-h-[44px] lg:min-h-0 lg:py-1.5 rounded-xl transition flex items-center gap-1 whitespace-nowrap cursor-pointer ${
               filterRisk === 'RED'
                 ? 'bg-red-600 text-white font-bold shadow-sm'
                 : 'bg-red-50 text-red-700 hover:bg-red-100'
@@ -644,7 +644,7 @@ export const ExpectedOccupancyView: React.FC<ExpectedOccupancyViewProps> = ({
           <button
             type="button"
             onClick={() => setFilterRisk('ORANGE')}
-            className={`px-3 py-1.5 rounded-xl transition flex items-center gap-1 cursor-pointer ${
+            className={`px-3 py-2 min-h-[44px] lg:min-h-0 lg:py-1.5 rounded-xl transition flex items-center gap-1 whitespace-nowrap cursor-pointer ${
               filterRisk === 'ORANGE'
                 ? 'bg-orange-500 text-white font-bold shadow-sm'
                 : 'bg-orange-50 text-orange-700 hover:bg-orange-100'
@@ -656,7 +656,7 @@ export const ExpectedOccupancyView: React.FC<ExpectedOccupancyViewProps> = ({
           <button
             type="button"
             onClick={() => setFilterRisk('SAFE')}
-            className={`px-3 py-1.5 rounded-xl transition flex items-center gap-1 cursor-pointer ${
+            className={`px-3 py-2 min-h-[44px] lg:min-h-0 lg:py-1.5 rounded-xl transition flex items-center gap-1 whitespace-nowrap cursor-pointer ${
               filterRisk === 'SAFE'
                 ? 'bg-emerald-600 text-white font-bold shadow-sm'
                 : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
@@ -814,7 +814,7 @@ export const ExpectedOccupancyView: React.FC<ExpectedOccupancyViewProps> = ({
                   return (
                     <div
                       key={idx}
-                      className={`bg-white rounded-3xl p-6 border shadow-sm hover:shadow-md transition flex flex-col justify-between ${cardBorder} ${
+                      className={`bg-white rounded-3xl p-5 sm:p-6 border shadow-sm hover:shadow-md transition flex flex-col justify-between ${cardBorder} ${
                         isSelected ? 'ring-2 ring-[#2F4156]' : ''
                       }`}
                     >

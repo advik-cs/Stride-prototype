@@ -97,11 +97,11 @@ export const LiveAnalyticsView: React.FC<LiveAnalyticsViewProps> = ({
         </div>
 
         {/* View Switcher Controls */}
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex flex-wrap rounded-2xl bg-white border border-[#C8D9E6] p-1 text-xs font-semibold shadow-xs gap-1">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full lg:w-auto">
+          <div className="flex overflow-x-auto no-scrollbar rounded-2xl bg-white border border-[#C8D9E6] p-1 text-xs font-semibold shadow-xs gap-1 max-w-full">
             <button
               onClick={() => setActiveTab('ACCOUNTABILITY')}
-              className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
+              className={`px-3 py-2 min-h-[44px] lg:min-h-0 lg:py-1.5 rounded-xl transition-all whitespace-nowrap cursor-pointer ${
                 activeTab === 'ACCOUNTABILITY'
                   ? 'bg-[#2F4156] text-white shadow-xs'
                   : 'text-[#567C8D] hover:text-[#2F4156]'
@@ -111,7 +111,7 @@ export const LiveAnalyticsView: React.FC<LiveAnalyticsViewProps> = ({
             </button>
             <button
               onClick={() => setActiveTab('RISK_MATRIX')}
-              className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
+              className={`px-3 py-2 min-h-[44px] lg:min-h-0 lg:py-1.5 rounded-xl transition-all whitespace-nowrap cursor-pointer ${
                 activeTab === 'RISK_MATRIX'
                   ? 'bg-[#2F4156] text-white shadow-xs'
                   : 'text-[#567C8D] hover:text-[#2F4156]'
@@ -121,7 +121,7 @@ export const LiveAnalyticsView: React.FC<LiveAnalyticsViewProps> = ({
             </button>
             <button
               onClick={() => setActiveTab('DEMOGRAPHICS')}
-              className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
+              className={`px-3 py-2 min-h-[44px] lg:min-h-0 lg:py-1.5 rounded-xl transition-all whitespace-nowrap cursor-pointer ${
                 activeTab === 'DEMOGRAPHICS'
                   ? 'bg-[#2F4156] text-white shadow-xs'
                   : 'text-[#567C8D] hover:text-[#2F4156]'
@@ -131,7 +131,7 @@ export const LiveAnalyticsView: React.FC<LiveAnalyticsViewProps> = ({
             </button>
             <button
               onClick={() => setActiveTab('SHELTERS')}
-              className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
+              className={`px-3 py-2 min-h-[44px] lg:min-h-0 lg:py-1.5 rounded-xl transition-all whitespace-nowrap cursor-pointer ${
                 activeTab === 'SHELTERS'
                   ? 'bg-[#2F4156] text-white shadow-xs'
                   : 'text-[#567C8D] hover:text-[#2F4156]'
@@ -144,7 +144,7 @@ export const LiveAnalyticsView: React.FC<LiveAnalyticsViewProps> = ({
           <button
             onClick={loadSummary}
             disabled={loading}
-            className="p-2.5 rounded-2xl bg-white border border-[#C8D9E6] hover:bg-[#F5EFEB] text-[#2F4156] transition shadow-xs cursor-pointer"
+            className="p-2.5 min-w-[44px] min-h-[44px] rounded-2xl bg-white border border-[#C8D9E6] hover:bg-[#F5EFEB] text-[#2F4156] transition shadow-xs flex items-center justify-center cursor-pointer"
             title="Refresh analytics telemetry"
           >
             <RefreshCw className={`w-4 h-4 text-[#567C8D] ${loading ? 'animate-spin' : ''}`} />
@@ -153,9 +153,9 @@ export const LiveAnalyticsView: React.FC<LiveAnalyticsViewProps> = ({
       </div>
 
       {/* KPI Highlights Bar */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         {/* Card 1: Basin Headcount */}
-        <div className="bg-white rounded-3xl p-5 border border-emerald-200 shadow-sm relative overflow-hidden">
+        <div className="bg-white rounded-3xl p-4 sm:p-5 border border-emerald-200 shadow-sm relative overflow-hidden">
           <div className="absolute top-0 left-0 w-full h-1.5 bg-emerald-500" />
           <div className="flex items-center justify-between mb-2">
             <div className="w-10 h-10 rounded-2xl bg-emerald-50 flex items-center justify-center text-emerald-600">
@@ -179,7 +179,7 @@ export const LiveAnalyticsView: React.FC<LiveAnalyticsViewProps> = ({
         </div>
 
         {/* Card 2: Active Distress */}
-        <div className="bg-white rounded-3xl p-5 border border-rose-200 shadow-sm relative overflow-hidden">
+        <div className="bg-white rounded-3xl p-4 sm:p-5 border border-rose-200 shadow-sm relative overflow-hidden">
           <div className="absolute top-0 left-0 w-full h-1.5 bg-rose-500" />
           <div className="flex items-center justify-between mb-2">
             <div className="w-10 h-10 rounded-2xl bg-rose-50 flex items-center justify-center text-rose-600">
@@ -201,7 +201,7 @@ export const LiveAnalyticsView: React.FC<LiveAnalyticsViewProps> = ({
         </div>
 
         {/* Card 3: Unaccounted Balance */}
-        <div className="bg-white rounded-3xl p-5 border border-amber-200 shadow-sm relative overflow-hidden">
+        <div className="bg-white rounded-3xl p-4 sm:p-5 border border-amber-200 shadow-sm relative overflow-hidden">
           <div className="absolute top-0 left-0 w-full h-1.5 bg-amber-500" />
           <div className="flex items-center justify-between mb-2">
             <div className="w-10 h-10 rounded-2xl bg-amber-50 flex items-center justify-center text-amber-600">
@@ -223,7 +223,7 @@ export const LiveAnalyticsView: React.FC<LiveAnalyticsViewProps> = ({
         </div>
 
         {/* Card 4: Shelter Capacity Buffer */}
-        <div className="bg-white rounded-3xl p-5 border border-indigo-200 shadow-sm relative overflow-hidden">
+        <div className="bg-white rounded-3xl p-4 sm:p-5 border border-indigo-200 shadow-sm relative overflow-hidden">
           <div className="absolute top-0 left-0 w-full h-1.5 bg-indigo-500" />
           <div className="flex items-center justify-between mb-2">
             <div className="w-10 h-10 rounded-2xl bg-indigo-50 flex items-center justify-center text-indigo-700">

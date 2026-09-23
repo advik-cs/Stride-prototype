@@ -74,26 +74,26 @@ export const DuringBuildingsView: React.FC<DuringBuildingsViewProps> = ({
         </div>
 
         {/* Filter Controls */}
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="relative">
+        <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-3 w-full sm:w-auto">
+          <div className="relative w-full sm:w-auto">
             <Search className="w-4 h-4 text-[#567C8D] absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search building address..."
-              className="pl-9 pr-4 py-2 rounded-xl bg-white border border-[#C8D9E6] text-xs font-semibold text-[#2F4156] outline-none"
+              className="w-full sm:w-auto pl-9 pr-4 py-2.5 min-h-[44px] lg:min-h-0 lg:py-2 rounded-xl bg-white border border-[#C8D9E6] text-xs font-semibold text-[#2F4156] outline-none"
             />
           </div>
 
-          <div className="p-1 rounded-xl bg-white border border-[#C8D9E6] flex items-center text-xs font-semibold">
+          <div className="p-1 rounded-xl bg-white border border-[#C8D9E6] flex items-center text-xs font-semibold overflow-x-auto no-scrollbar max-w-full">
             {(['ALL', 'DISTRESS', 'SAFE'] as const).map((mode) => (
               <button
                 key={mode}
                 id={`filter-buildings-${mode.toLowerCase()}`}
                 type="button"
                 onClick={() => setFilter(mode)}
-                className={`px-3 py-1.5 rounded-lg transition ${
+                className={`px-3 py-2 min-h-[44px] lg:min-h-0 lg:py-1.5 rounded-lg transition whitespace-nowrap cursor-pointer ${
                   filter === mode
                     ? mode === 'DISTRESS'
                       ? 'bg-red-600 text-white font-bold'
@@ -120,7 +120,7 @@ export const DuringBuildingsView: React.FC<DuringBuildingsViewProps> = ({
           return (
             <div
               key={idx}
-              className={`bg-white rounded-3xl p-6 border shadow-sm hover:shadow-md transition flex flex-col justify-between ${
+              className={`bg-white rounded-3xl p-5 sm:p-6 border shadow-sm hover:shadow-md transition flex flex-col justify-between ${
                 hasDistress
                   ? 'border-red-500 ring-2 ring-red-200'
                   : 'border-[#C8D9E6]/70'
@@ -220,7 +220,7 @@ export const DuringBuildingsView: React.FC<DuringBuildingsViewProps> = ({
                           key={req.id}
                           className="text-[11px] text-red-800 bg-white/80 p-1.5 rounded-lg border border-red-200 flex items-center justify-between"
                         >
-                          <span className="font-semibold truncate max-w-[160px]">
+                          <span className="font-semibold truncate max-w-[120px] xs:max-w-[140px] sm:max-w-[160px]">
                             {req.description || 'Assistance requested'}
                           </span>
                           <span className="font-extrabold px-1.5 py-0.2 rounded bg-red-600 text-white text-[10px]">

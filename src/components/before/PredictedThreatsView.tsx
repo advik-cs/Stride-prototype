@@ -14,6 +14,7 @@ import {
   CheckCircle2,
   X,
 } from 'lucide-react';
+import { MobileBottomSheet } from '../common/MobileBottomSheet.tsx';
 
 interface PredictedThreatsViewProps {
   user: User;
@@ -157,7 +158,7 @@ export const PredictedThreatsView: React.FC<PredictedThreatsViewProps> = ({
           <button
             type="button"
             onClick={() => setShowAddModal(true)}
-            className="px-4 py-2.5 rounded-xl bg-[#2F4156] hover:bg-[#1F2D3D] text-white text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
+            className="w-full sm:w-auto px-4 py-3 min-h-[48px] rounded-2xl lg:rounded-xl bg-[#2F4156] hover:bg-[#1F2D3D] text-white text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
           >
             <Plus className="w-4 h-4 text-[#C8D9E6]" />
             <span>Publish Disaster Threat</span>
@@ -221,9 +222,9 @@ export const PredictedThreatsView: React.FC<PredictedThreatsViewProps> = ({
               </div>
 
               {/* Action */}
-              <div className="flex items-center gap-3 self-end lg:self-center">
+              <div className="flex items-center gap-3 w-full sm:w-auto self-end lg:self-center">
                 {isSelected ? (
-                  <span className="px-4 py-2 rounded-xl bg-[#2F4156] text-white text-xs font-bold flex items-center gap-1.5 shadow-sm">
+                  <span className="w-full sm:w-auto px-4 py-2.5 min-h-[44px] rounded-xl bg-[#2F4156] text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm">
                     <CheckCircle2 className="w-4 h-4 text-[#C8D9E6]" />
                     <span>Active In Scope</span>
                   </span>
@@ -231,7 +232,7 @@ export const PredictedThreatsView: React.FC<PredictedThreatsViewProps> = ({
                   <button
                     type="button"
                     onClick={() => onSelectDisaster(d)}
-                    className="px-4 py-2 rounded-xl bg-[#F5EFEB] hover:bg-[#2F4156] text-[#2F4156] hover:text-white text-xs font-bold transition shadow-sm"
+                    className="w-full sm:w-auto px-4 py-2.5 min-h-[44px] rounded-xl bg-[#F5EFEB] hover:bg-[#2F4156] text-[#2F4156] hover:text-white text-xs font-bold transition shadow-sm cursor-pointer"
                   >
                     Select Event
                   </button>
@@ -278,9 +279,98 @@ export const PredictedThreatsView: React.FC<PredictedThreatsViewProps> = ({
         </div>
       )}
 
-      {/* Add Disaster Threat Modal */}
+      {/* Mobile Add Disaster Threat Bottom Sheet (<1024px) */}
+      <MobileBottomSheet
+        id="mobile-add-threat-sheet"
+        isOpen={showAddModal}
+        onClose={() => setShowAddModal(false)}
+        title="Publish New Disaster Threat"
+        subtitle="Broadcast active spatial hazard alert across responder networks"
+      >
+        <form onSubmit={handleCreateDisaster} className="space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-[#2F4156] mb-1">
+                Disaster Type
+              </label>
+              <select
+                value={threatType}
+                onChange={(e: any) => setThreatType(e.target.value)}
+                className="w-full px-3.5 py-2.5 min-h-[44px] rounded-xl border border-[#C8D9E6] text-xs font-medium text-[#2F4156] outline-none bg-white"
+              >
+                <option value="FLOOD">Flood</option>
+                <option value="CYCLONE">Cyclone</option>
+                <option value="EARTHQUAKE">Earthquake</option>
+                <option value="LANDSLIDE">Landslide</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-[#2F4156] mb-1">
+                Alert Level
+              </label>
+              <select
+                value={threatAlert}
+                onChange={(e: any) => setThreatAlert(e.target.value)}
+                className="w-full px-3.5 py-2.5 min-h-[44px] rounded-xl border border-[#C8D9E6] text-xs font-medium text-[#2F4156] outline-none bg-white"
+              >
+                <option value="RED">RED (Critical)</option>
+                <option value="ORANGE">ORANGE (High)</option>
+                <option value="YELLOW">YELLOW (Moderate)</option>
+                <option value="GREEN">GREEN (Advisory)</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-[#2F4156] mb-1">
+              Threat Title
+            </label>
+            <input
+              type="text"
+              required
+              value={threatTitle}
+              onChange={(e) => setThreatTitle(e.target.value)}
+              placeholder="e.g. River Delta Flash Flood Warning"
+              className="w-full px-3.5 py-2.5 min-h-[44px] rounded-xl border border-[#C8D9E6] text-xs font-medium text-[#2F4156] outline-none"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-[#2F4156] mb-1">
+              Description & Sensor Evidence
+            </label>
+            <textarea
+              rows={3}
+              value={threatDesc}
+              onChange={(e) => setThreatDesc(e.target.value)}
+              placeholder="e.g. Telemetry indicates 220mm rainfall with river stage crossing 4.8m safety threshold."
+              className="w-full px-3.5 py-2.5 rounded-xl border border-[#C8D9E6] text-xs font-medium text-[#2F4156] outline-none resize-none"
+            />
+          </div>
+
+          <div className="pt-2 flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-2.5">
+            <button
+              type="button"
+              onClick={() => setShowAddModal(false)}
+              className="w-full sm:w-auto px-4 py-3 min-h-[48px] rounded-xl text-xs font-bold text-[#567C8D] hover:text-[#2F4156] bg-gray-100 flex items-center justify-center cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
+              className="w-full sm:w-auto px-5 py-3 min-h-[48px] rounded-xl bg-[#2F4156] hover:bg-[#1F2D3D] text-white text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+            >
+              {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+              <span>Publish Alert</span>
+            </button>
+          </div>
+        </form>
+      </MobileBottomSheet>
+
+      {/* Desktop Add Disaster Threat Modal (>=1024px) */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="hidden lg:flex fixed inset-0 z-50 bg-black/40 backdrop-blur-sm items-center justify-center p-4">
           <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-lg w-full border border-[#C8D9E6] shadow-2xl animate-scaleUp">
             <div className="flex items-center justify-between pb-4 border-b border-[#F5EFEB]">
               <h3 className="text-lg font-bold font-['Space_Grotesk',sans-serif] text-[#2F4156]">
@@ -289,7 +379,7 @@ export const PredictedThreatsView: React.FC<PredictedThreatsViewProps> = ({
               <button
                 type="button"
                 onClick={() => setShowAddModal(false)}
-                className="p-1 rounded-lg text-[#567C8D] hover:text-[#2F4156]"
+                className="p-1 rounded-lg text-[#567C8D] hover:text-[#2F4156] cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -360,14 +450,14 @@ export const PredictedThreatsView: React.FC<PredictedThreatsViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setShowAddModal(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-[#567C8D] hover:text-[#2F4156]"
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-[#567C8D] hover:text-[#2F4156] cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={saving}
-                  className="px-5 py-2.5 rounded-xl bg-[#2F4156] hover:bg-[#1F2D3D] text-white text-xs font-bold transition flex items-center gap-1.5"
+                  className="px-5 py-2.5 rounded-xl bg-[#2F4156] hover:bg-[#1F2D3D] text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
                 >
                   {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                   <span>Publish Alert</span>

@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { formatLastUpdated } from '../../offline/offlineDateUtils.ts';
 import { useConnectivityStatus } from '../../offline/useConnectivityStatus.ts';
+import { MobileBottomSheet } from '../common/MobileBottomSheet.tsx';
 
 interface ShelterSelectionViewProps {
   user: User;
@@ -203,7 +204,7 @@ export const ShelterSelectionView: React.FC<ShelterSelectionViewProps> = ({
                 key={tab}
                 type="button"
                 onClick={() => setStatusFilter(tab)}
-                className={`px-3 py-2 sm:py-1.5 min-h-[38px] whitespace-nowrap rounded-lg transition cursor-pointer ${
+                className={`px-3 py-2 min-h-[44px] sm:min-h-[38px] sm:py-1.5 whitespace-nowrap rounded-lg transition cursor-pointer ${
                   statusFilter === tab
                     ? 'bg-[#2F4156] text-white shadow-sm font-bold'
                     : 'text-[#567C8D] hover:text-[#2F4156]'
@@ -218,7 +219,7 @@ export const ShelterSelectionView: React.FC<ShelterSelectionViewProps> = ({
             <button
               type="button"
               onClick={() => setShowAddModal(true)}
-              className="px-4 py-2 min-h-[40px] rounded-xl bg-[#2F4156] hover:bg-[#1F2D3D] text-white text-xs font-bold transition flex items-center gap-1.5 shadow-sm flex-shrink-0 cursor-pointer"
+              className="w-full sm:w-auto px-4 py-3 min-h-[48px] rounded-2xl lg:rounded-xl bg-[#2F4156] hover:bg-[#1F2D3D] text-white text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-sm flex-shrink-0 cursor-pointer"
             >
               <Plus className="w-4 h-4 text-[#C8D9E6]" />
               <span>Add Shelter</span>
@@ -391,9 +392,94 @@ export const ShelterSelectionView: React.FC<ShelterSelectionViewProps> = ({
         </div>
       )}
 
-      {/* Add Shelter Modal (for Rescuer) */}
+      {/* Mobile Add Shelter Bottom Sheet (<1024px) */}
+      <MobileBottomSheet
+        id="mobile-add-shelter-sheet"
+        isOpen={showAddModal}
+        onClose={() => setShowAddModal(false)}
+        title="Add Designated Shelter"
+        subtitle="Register emergency relief shelter capacity"
+      >
+        <form onSubmit={handleCreateShelter} className="space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-[#2F4156] mb-1">
+              Shelter Center Name
+            </label>
+            <input
+              type="text"
+              required
+              value={newShelterName}
+              onChange={(e) => setNewShelterName(e.target.value)}
+              placeholder="e.g. South District Gymnasium"
+              className="w-full px-3.5 py-2.5 min-h-[44px] rounded-xl border border-[#C8D9E6] text-xs font-medium text-[#2F4156] outline-none"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-[#2F4156] mb-1">Address</label>
+            <input
+              type="text"
+              required
+              value={newShelterAddress}
+              onChange={(e) => setNewShelterAddress(e.target.value)}
+              placeholder="e.g. 55 Stadium Road"
+              className="w-full px-3.5 py-2.5 min-h-[44px] rounded-xl border border-[#C8D9E6] text-xs font-medium text-[#2F4156] outline-none"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-[#2F4156] mb-1">
+                Capacity (People)
+              </label>
+              <input
+                type="number"
+                required
+                min="1"
+                value={newShelterCapacity}
+                onChange={(e) =>
+                  setNewShelterCapacity(e.target.value ? parseInt(e.target.value, 10) : '')
+                }
+                className="w-full px-3.5 py-2.5 min-h-[44px] rounded-xl border border-[#C8D9E6] text-xs font-medium text-[#2F4156] outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-[#2F4156] mb-1">
+                Contact Phone
+              </label>
+              <input
+                type="tel"
+                value={newShelterContact}
+                onChange={(e) => setNewShelterContact(e.target.value)}
+                placeholder="+91 44 2498 1000"
+                className="w-full px-3.5 py-2.5 min-h-[44px] rounded-xl border border-[#C8D9E6] text-xs font-medium text-[#2F4156] outline-none"
+              />
+            </div>
+          </div>
+
+          <div className="pt-2 flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-2.5">
+            <button
+              type="button"
+              onClick={() => setShowAddModal(false)}
+              className="w-full sm:w-auto px-4 py-3 min-h-[48px] rounded-xl text-xs font-bold text-[#567C8D] hover:text-[#2F4156] bg-gray-100 flex items-center justify-center cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={createLoading}
+              className="w-full sm:w-auto px-5 py-3 min-h-[48px] rounded-xl bg-[#2F4156] hover:bg-[#1F2D3D] text-white text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+            >
+              {createLoading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+              <span>Save Shelter</span>
+            </button>
+          </div>
+        </form>
+      </MobileBottomSheet>
+
+      {/* Desktop Add Shelter Modal (>=1024px) */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="hidden lg:flex fixed inset-0 z-50 bg-black/40 backdrop-blur-sm items-center justify-center p-4">
           <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full border border-[#C8D9E6] shadow-2xl animate-scaleUp">
             <div className="flex items-center justify-between pb-4 border-b border-[#F5EFEB]">
               <h3 className="text-lg font-bold font-['Space_Grotesk',sans-serif] text-[#2F4156]">
@@ -402,7 +488,7 @@ export const ShelterSelectionView: React.FC<ShelterSelectionViewProps> = ({
               <button
                 type="button"
                 onClick={() => setShowAddModal(false)}
-                className="p-1 rounded-lg text-[#567C8D] hover:text-[#2F4156]"
+                className="p-1 rounded-lg text-[#567C8D] hover:text-[#2F4156] cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -469,14 +555,14 @@ export const ShelterSelectionView: React.FC<ShelterSelectionViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setShowAddModal(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-[#567C8D] hover:text-[#2F4156]"
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-[#567C8D] hover:text-[#2F4156] cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={createLoading}
-                  className="px-5 py-2.5 rounded-xl bg-[#2F4156] hover:bg-[#1F2D3D] text-white text-xs font-bold transition flex items-center gap-1.5"
+                  className="px-5 py-2.5 rounded-xl bg-[#2F4156] hover:bg-[#1F2D3D] text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
                 >
                   {createLoading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                   <span>Save Shelter</span>
