@@ -199,6 +199,7 @@ export const AreYouSafeView: React.FC<AreYouSafeViewProps> = ({
 
   const handleSubmitDistress = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (actionLoading) return;
     if (!address.trim() || !description.trim()) {
       alert('Please fill in your address and emergency description.');
       return;
@@ -271,25 +272,25 @@ export const AreYouSafeView: React.FC<AreYouSafeViewProps> = ({
   };
 
   return (
-    <div className="space-y-8 max-w-4xl mx-auto">
+    <div className="space-y-6 sm:space-y-8 max-w-4xl mx-auto">
       {/* Title */}
       <div className="text-center">
         <span className="px-3 py-1 rounded-full text-[11px] font-extrabold uppercase bg-red-100 text-red-700 tracking-wider">
           Immediate Safety Check-in & Live Dispatch
         </span>
-        <h1 className="text-3xl sm:text-4xl font-bold font-['Space_Grotesk',sans-serif] text-[#2F4156] tracking-tight mt-2">
+        <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold font-['Space_Grotesk',sans-serif] text-[#2F4156] tracking-tight mt-2">
           {t('during.areYouSafeTitle')}
         </h1>
-        <p className="text-sm font-medium text-[#567C8D] mt-1.5 max-w-lg mx-auto">
+        <p className="text-xs sm:text-sm font-medium text-[#567C8D] mt-1.5 max-w-lg mx-auto">
           {t('during.areYouSafeSubtitle')}
         </p>
       </div>
 
       {/* Voice Emergency Hero Banner */}
-      <div className="p-5 sm:p-6 rounded-3xl bg-gradient-to-r from-[#2F4156] via-[#243445] to-[#1e2b3a] text-white shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-5 border border-[#567C8D]/40">
-        <div className="flex items-start sm:items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-red-600 text-white flex items-center justify-center flex-shrink-0 shadow-md animate-pulse">
-            <Mic className="w-6 h-6" />
+      <div className="p-4 sm:p-5 lg:p-6 rounded-3xl bg-gradient-to-r from-[#2F4156] via-[#243445] to-[#1e2b3a] text-white shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-4 sm:gap-5 border border-[#567C8D]/40">
+        <div className="flex items-start sm:items-center gap-3.5 sm:gap-4">
+          <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-red-600 text-white flex items-center justify-center flex-shrink-0 shadow-md animate-pulse">
+            <Mic className="w-5 h-5 sm:w-6 sm:h-6" />
           </div>
           <div>
             <div className="flex items-center gap-2">
@@ -308,7 +309,7 @@ export const AreYouSafeView: React.FC<AreYouSafeViewProps> = ({
         <button
           type="button"
           onClick={() => setShowVoiceModal(true)}
-          className="px-5 py-3 rounded-2xl bg-red-600 hover:bg-red-700 text-white text-xs sm:text-sm font-bold transition flex items-center gap-2 shadow-lg shadow-red-600/30 cursor-pointer self-start sm:self-auto flex-shrink-0"
+          className="w-full sm:w-auto px-5 py-3 min-h-[48px] rounded-2xl bg-red-600 hover:bg-red-700 text-white text-xs sm:text-sm font-bold transition flex items-center justify-center gap-2 shadow-lg shadow-red-600/30 cursor-pointer self-stretch sm:self-auto flex-shrink-0"
         >
           <Mic className="w-4 h-4" />
           <span>{submittedRequest ? 'Update via Voice' : 'Talk to STRIDE'}</span>
@@ -317,11 +318,11 @@ export const AreYouSafeView: React.FC<AreYouSafeViewProps> = ({
 
       {/* Confirmed Safe Banner */}
       {currentStatus === 'SAFE' && !showDistressForm && (
-        <div className="p-6 rounded-3xl bg-emerald-50 border border-emerald-200 text-center space-y-3">
+        <div className="p-5 sm:p-6 rounded-3xl bg-emerald-50 border border-emerald-200 text-center space-y-3">
           <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto">
             <CheckCircle2 className="w-6 h-6" />
           </div>
-          <h2 className="text-lg font-bold text-emerald-900">
+          <h2 className="text-base sm:text-lg font-bold text-emerald-900">
             You Are Marked as Confirmed Safe
           </h2>
           <p className="text-xs text-emerald-700 max-w-md mx-auto">
@@ -331,9 +332,9 @@ export const AreYouSafeView: React.FC<AreYouSafeViewProps> = ({
             <button
               type="button"
               onClick={() => setShowDistressForm(true)}
-              className="text-xs font-bold text-red-600 hover:underline cursor-pointer"
+              className="text-xs font-bold text-red-600 hover:underline cursor-pointer min-h-[44px] inline-flex items-center"
             >
-              Situation changed? Report emergency distress ?
+              Situation changed? Report emergency distress →
             </button>
           </div>
         </div>
@@ -346,14 +347,14 @@ export const AreYouSafeView: React.FC<AreYouSafeViewProps> = ({
       ((submittedRequest as any).syncStatus === 'PENDING' ||
         (submittedRequest as any).syncStatus === 'SYNCING' ||
         (submittedRequest as any).syncStatus === 'FAILED') ? (
-        <div className="p-6 rounded-3xl bg-amber-50 border border-amber-300 space-y-4 shadow-sm">
-          <div className="flex items-start justify-between">
+        <div className="p-4 sm:p-6 rounded-3xl bg-amber-50 border border-amber-300 space-y-4 shadow-sm">
+          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-2xl bg-amber-500 text-white flex items-center justify-center flex-shrink-0 shadow-sm">
+              <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-amber-500 text-white flex items-center justify-center flex-shrink-0 shadow-sm">
                 {(submittedRequest as any).syncStatus === 'SYNCING' ? (
-                  <RefreshCw className="w-6 h-6 animate-spin" />
+                  <RefreshCw className="w-5 h-5 sm:w-6 sm:h-6 animate-spin" />
                 ) : (
-                  <Clock className="w-6 h-6" />
+                  <Clock className="w-5 h-5 sm:w-6 sm:h-6" />
                 )}
               </div>
               <div>
@@ -364,7 +365,7 @@ export const AreYouSafeView: React.FC<AreYouSafeViewProps> = ({
                     ? 'TRANSMISSION FAILED (RETRYING ON RECONNECT)'
                     : 'STATUS: PENDING SYNC (QUEUED OFFLINE)'}
                 </span>
-                <h3 className="text-lg font-bold text-amber-950 mt-0.5">
+                <h3 className="text-base sm:text-lg font-bold text-amber-950 mt-0.5">
                   Emergency Distress Stored Locally
                 </h3>
                 <span className="text-[11px] text-amber-800 font-mono">
@@ -373,9 +374,9 @@ export const AreYouSafeView: React.FC<AreYouSafeViewProps> = ({
               </div>
             </div>
 
-            <div className="text-right">
+            <div className="text-left sm:text-right pt-1 sm:pt-0 border-t sm:border-t-0 border-amber-200">
               <span className="text-[10px] font-bold uppercase text-amber-700">Triage Status</span>
-              <p className="text-sm font-bold text-amber-900 mt-1">
+              <p className="text-xs sm:text-sm font-bold text-amber-900 mt-0.5 sm:mt-1">
                 Pending Server Evaluation
               </p>
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-200 text-amber-900 mt-1 inline-block">
@@ -403,11 +404,11 @@ export const AreYouSafeView: React.FC<AreYouSafeViewProps> = ({
             </div>
           </div>
 
-          <div className="pt-2 flex flex-wrap items-center justify-between gap-3">
+          <div className="pt-2 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
             <button
               type="button"
               onClick={() => handleCancelRequest(submittedRequest.id)}
-              className="px-3.5 py-2 rounded-xl border border-amber-400 text-amber-800 hover:bg-amber-100 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+              className="w-full sm:w-auto px-4 py-3 min-h-[48px] sm:min-h-0 sm:py-2 rounded-xl border border-amber-400 text-amber-800 hover:bg-amber-100 text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
             >
               <Ban className="w-3.5 h-3.5" />
               <span>Cancel Queued Request</span>
@@ -422,7 +423,7 @@ export const AreYouSafeView: React.FC<AreYouSafeViewProps> = ({
                   alert('Device is currently offline. Transmission will begin automatically when an internet connection is available.');
                 }
               }}
-              className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-md cursor-pointer"
+              className="w-full sm:w-auto px-5 py-3 min-h-[48px] sm:min-h-0 sm:py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-md cursor-pointer"
             >
               <RefreshCw className="w-3.5 h-3.5" />
               <span>Transmit Now</span>
@@ -430,25 +431,25 @@ export const AreYouSafeView: React.FC<AreYouSafeViewProps> = ({
           </div>
         </div>
       ) : submittedRequest && submittedRequest.status !== 'CANCELLED' && submittedRequest.status !== 'RESCUED' ? (
-        <div className="p-6 rounded-3xl bg-red-50 border border-red-200 space-y-4 shadow-sm">
-          <div className="flex items-start justify-between">
+        <div className="p-4 sm:p-6 rounded-3xl bg-red-50 border border-red-200 space-y-4 shadow-sm">
+          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-2xl bg-red-600 text-white flex items-center justify-center flex-shrink-0 shadow-sm">
-                <LifeBuoy className="w-6 h-6" />
+              <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-red-600 text-white flex items-center justify-center flex-shrink-0 shadow-sm">
+                <LifeBuoy className="w-5 h-5 sm:w-6 sm:h-6" />
               </div>
               <div>
                 <span className="text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded bg-red-200 text-red-900">
                   SERVER-CALCULATED PRIORITY: {submittedRequest.priorityLevel}
                 </span>
-                <h3 className="text-lg font-bold text-red-900 mt-0.5">
+                <h3 className="text-base sm:text-lg font-bold text-red-900 mt-0.5">
                   Emergency SOS Active #{submittedRequest.id.slice(0, 8)}
                 </h3>
               </div>
             </div>
 
-            <div className="text-right">
+            <div className="text-left sm:text-right pt-1 sm:pt-0 border-t sm:border-t-0 border-red-200">
               <span className="text-[10px] font-bold uppercase text-red-700">Calculated Score</span>
-              <p className="text-3xl font-bold font-['Space_Grotesk',sans-serif] text-red-600 leading-none">
+              <p className="text-2xl sm:text-3xl lg:text-3xl font-bold font-['Space_Grotesk',sans-serif] text-red-600 leading-none">
                 {submittedRequest.priorityScore}
               </p>
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-200 text-red-900 mt-1 inline-block">
@@ -477,12 +478,12 @@ export const AreYouSafeView: React.FC<AreYouSafeViewProps> = ({
             </div>
           )}
 
-          <div className="pt-2 flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
+          <div className="pt-2 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
               <button
                 type="button"
                 onClick={() => setShowVoiceModal(true)}
-                className="px-3.5 py-2 rounded-xl bg-[#2F4156] text-white hover:bg-[#1f2c3a] text-xs font-bold transition flex items-center gap-1.5 shadow-sm cursor-pointer"
+                className="w-full sm:w-auto px-4 py-3 min-h-[48px] sm:min-h-0 sm:py-2 rounded-xl bg-[#2F4156] text-white hover:bg-[#1f2c3a] text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
               >
                 <Mic className="w-3.5 h-3.5 text-red-400" />
                 <span>Update via Voice Assistant</span>
@@ -492,7 +493,7 @@ export const AreYouSafeView: React.FC<AreYouSafeViewProps> = ({
                 <button
                   type="button"
                   onClick={() => handleCancelRequest(submittedRequest.id)}
-                  className="px-3.5 py-2 rounded-xl border border-red-300 text-red-700 hover:bg-red-100 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+                  className="w-full sm:w-auto px-4 py-3 min-h-[48px] sm:min-h-0 sm:py-2 rounded-xl border border-red-300 text-red-700 hover:bg-red-100 text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
                 >
                   <Ban className="w-3.5 h-3.5" />
                   <span>Cancel Request</span>
@@ -503,7 +504,7 @@ export const AreYouSafeView: React.FC<AreYouSafeViewProps> = ({
             <button
               type="button"
               onClick={() => onNavigateTab('rescue')}
-              className="px-4 py-2 rounded-xl bg-red-600 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-md hover:bg-red-700 cursor-pointer"
+              className="w-full sm:w-auto px-5 py-3 min-h-[48px] sm:min-h-0 sm:py-2 rounded-xl bg-red-600 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-md hover:bg-red-700 cursor-pointer"
             >
               <span>View Rescue Status</span>
               <ArrowRight className="w-3.5 h-3.5" />
@@ -514,19 +515,19 @@ export const AreYouSafeView: React.FC<AreYouSafeViewProps> = ({
 
       {/* TWO LARGE ACTION BUTTONS (SAFE vs NEED HELP) */}
       {!showDistressForm && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6 pt-2">
           {/* I'M SAFE */}
           <button
             type="button"
             disabled={actionLoading}
             onClick={handleImSafe}
-            className="p-8 sm:p-10 rounded-3xl bg-emerald-600 hover:bg-emerald-700 text-white shadow-xl hover:shadow-2xl transition duration-200 flex flex-col items-center justify-center text-center space-y-4 group cursor-pointer"
+            className="p-5 sm:p-8 lg:p-10 min-h-[96px] sm:min-h-[140px] rounded-3xl bg-emerald-600 hover:bg-emerald-700 text-white shadow-xl hover:shadow-2xl transition duration-200 flex flex-row sm:flex-col items-center justify-start sm:justify-center text-left sm:text-center space-x-4 sm:space-x-0 sm:space-y-4 group cursor-pointer"
           >
-            <div className="w-16 h-16 rounded-full bg-white/20 flex items-center justify-center group-hover:scale-110 transition-transform">
-              <CheckCircle2 className="w-10 h-10 text-white" />
+            <div className="w-13 h-13 sm:w-16 sm:h-16 rounded-full bg-white/20 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
+              <CheckCircle2 className="w-8 h-8 sm:w-10 sm:h-10 text-white" />
             </div>
             <div>
-              <h2 className="text-2xl sm:text-3xl font-bold font-['Space_Grotesk',sans-serif] tracking-tight">
+              <h2 className="text-xl sm:text-2xl lg:text-3xl font-bold font-['Space_Grotesk',sans-serif] tracking-tight">
                 {t('during.imSafe')}
               </h2>
               <p className="text-xs font-medium text-emerald-100 mt-1">
@@ -540,13 +541,13 @@ export const AreYouSafeView: React.FC<AreYouSafeViewProps> = ({
             type="button"
             disabled={actionLoading}
             onClick={() => setShowDistressForm(true)}
-            className="p-8 sm:p-10 rounded-3xl bg-[#DC2626] hover:bg-red-700 text-white shadow-xl hover:shadow-2xl transition duration-200 flex flex-col items-center justify-center text-center space-y-4 group cursor-pointer"
+            className="p-5 sm:p-8 lg:p-10 min-h-[96px] sm:min-h-[140px] rounded-3xl bg-[#DC2626] hover:bg-red-700 text-white shadow-xl hover:shadow-2xl transition duration-200 flex flex-row sm:flex-col items-center justify-start sm:justify-center text-left sm:text-center space-x-4 sm:space-x-0 sm:space-y-4 group cursor-pointer"
           >
-            <div className="w-16 h-16 rounded-full bg-white/20 flex items-center justify-center group-hover:scale-110 transition-transform">
-              <LifeBuoy className="w-10 h-10 text-white" />
+            <div className="w-13 h-13 sm:w-16 sm:h-16 rounded-full bg-white/20 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
+              <LifeBuoy className="w-8 h-8 sm:w-10 sm:h-10 text-white" />
             </div>
             <div>
-              <h2 className="text-2xl sm:text-3xl font-bold font-['Space_Grotesk',sans-serif] tracking-tight">
+              <h2 className="text-xl sm:text-2xl lg:text-3xl font-bold font-['Space_Grotesk',sans-serif] tracking-tight">
                 {t('during.iNeedHelp')}
               </h2>
               <p className="text-xs font-medium text-red-100 mt-1">
@@ -559,10 +560,10 @@ export const AreYouSafeView: React.FC<AreYouSafeViewProps> = ({
 
       {/* SOS DISTRESS FORM */}
       {showDistressForm && (
-        <div className="bg-white rounded-3xl p-6 sm:p-10 border border-red-300 shadow-xl space-y-6">
+        <div className="bg-white rounded-3xl p-4 sm:p-6 lg:p-10 border border-red-300 shadow-xl space-y-6 pb-24 lg:pb-10 relative">
           <div className="flex items-center justify-between pb-4 border-b border-[#F5EFEB]">
             <div>
-              <h3 className="text-xl font-bold font-['Space_Grotesk',sans-serif] text-red-600">
+              <h3 className="text-lg sm:text-xl font-bold font-['Space_Grotesk',sans-serif] text-red-600">
                 Submit Emergency Rescue Request (SOS)
               </h3>
               <p className="text-xs text-[#567C8D] mt-0.5">
@@ -572,7 +573,7 @@ export const AreYouSafeView: React.FC<AreYouSafeViewProps> = ({
             <button
               type="button"
               onClick={() => setShowDistressForm(false)}
-              className="text-xs font-bold text-[#567C8D] hover:text-[#2F4156] cursor-pointer"
+              className="text-xs font-bold text-[#567C8D] hover:text-[#2F4156] cursor-pointer min-h-[44px] px-3 py-1 flex items-center"
             >
               Cancel
             </button>
@@ -588,7 +589,7 @@ export const AreYouSafeView: React.FC<AreYouSafeViewProps> = ({
                 <select
                   value={emergencyType}
                   onChange={(e) => setEmergencyType(e.target.value as EmergencyType)}
-                  className="w-full px-4 py-2.5 rounded-xl border border-[#C8D9E6] text-xs font-semibold text-[#2F4156] outline-none"
+                  className="w-full px-4 py-3 sm:py-2.5 min-h-[48px] sm:min-h-0 rounded-xl border border-[#C8D9E6] text-xs font-semibold text-[#2F4156] outline-none bg-white"
                 >
                   <option value="FLOOD">Flood Submersion</option>
                   <option value="TRAPPED">Trapped / Roof Evacuation</option>
@@ -605,7 +606,7 @@ export const AreYouSafeView: React.FC<AreYouSafeViewProps> = ({
                 <select
                   value={waterLevel}
                   onChange={(e) => setWaterLevel(e.target.value as WaterLevel)}
-                  className="w-full px-4 py-2.5 rounded-xl border border-[#C8D9E6] text-xs font-semibold text-[#2F4156] outline-none"
+                  className="w-full px-4 py-3 sm:py-2.5 min-h-[48px] sm:min-h-0 rounded-xl border border-[#C8D9E6] text-xs font-semibold text-[#2F4156] outline-none bg-white"
                 >
                   <option value="LOW">{t('during.waterAnkle')}</option>
                   <option value="MEDIUM">{t('during.waterWaist')}</option>
@@ -620,66 +621,164 @@ export const AreYouSafeView: React.FC<AreYouSafeViewProps> = ({
               <label className="block text-xs font-bold uppercase tracking-wider text-[#2F4156] mb-2">
                 People in Immediate Danger:
               </label>
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-                <div className="p-3 rounded-xl bg-[#F5EFEB] border border-[#C8D9E6]/50">
-                  <label className="block text-[10px] font-bold uppercase text-[#567C8D]">Total People</label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={peopleCount}
-                    onChange={(e) => setPeopleCount(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                    className="w-full mt-1 px-2 py-1 rounded-lg bg-white border border-[#C8D9E6] text-xs font-bold text-[#2F4156]"
-                  />
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                {/* Total People */}
+                <div className="p-3 rounded-2xl lg:rounded-xl bg-[#F5EFEB] border border-[#C8D9E6]/50">
+                  <label className="block text-[11px] lg:text-[10px] font-bold uppercase text-[#567C8D]">Total People</label>
+                  <div className="flex items-center gap-2 mt-2 lg:mt-1">
+                    <button
+                      type="button"
+                      onClick={() => setPeopleCount(Math.max(1, peopleCount - 1))}
+                      className="lg:hidden w-11 h-11 rounded-xl bg-white border border-[#C8D9E6] text-[#2F4156] text-lg font-black flex items-center justify-center active:scale-95 shadow-sm"
+                      aria-label="Decrease Total People"
+                    >
+                      -
+                    </button>
+                    <input
+                      type="number"
+                      min="1"
+                      value={peopleCount}
+                      onChange={(e) => setPeopleCount(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                      className="w-full text-center lg:text-left px-2 py-2 lg:py-1 rounded-xl lg:rounded-lg bg-white border border-[#C8D9E6] text-sm lg:text-xs font-bold text-[#2F4156] min-h-[44px] lg:min-h-0"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setPeopleCount(peopleCount + 1)}
+                      className="lg:hidden w-11 h-11 rounded-xl bg-white border border-[#C8D9E6] text-[#2F4156] text-lg font-black flex items-center justify-center active:scale-95 shadow-sm"
+                      aria-label="Increase Total People"
+                    >
+                      +
+                    </button>
+                  </div>
                 </div>
 
-                <div className="p-3 rounded-xl bg-[#F5EFEB] border border-[#C8D9E6]/50">
-                  <label className="block text-[10px] font-bold uppercase text-[#567C8D]">Infants / Children</label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={childrenCount}
-                    onChange={(e) => setChildrenCount(Math.max(0, parseInt(e.target.value, 10) || 0))}
-                    className="w-full mt-1 px-2 py-1 rounded-lg bg-white border border-[#C8D9E6] text-xs font-bold text-[#2F4156]"
-                  />
+                {/* Infants / Children */}
+                <div className="p-3 rounded-2xl lg:rounded-xl bg-[#F5EFEB] border border-[#C8D9E6]/50">
+                  <label className="block text-[11px] lg:text-[10px] font-bold uppercase text-[#567C8D]">Infants / Children</label>
+                  <div className="flex items-center gap-2 mt-2 lg:mt-1">
+                    <button
+                      type="button"
+                      onClick={() => setChildrenCount(Math.max(0, childrenCount - 1))}
+                      className="lg:hidden w-11 h-11 rounded-xl bg-white border border-[#C8D9E6] text-[#2F4156] text-lg font-black flex items-center justify-center active:scale-95 shadow-sm"
+                      aria-label="Decrease Children Count"
+                    >
+                      -
+                    </button>
+                    <input
+                      type="number"
+                      min="0"
+                      value={childrenCount}
+                      onChange={(e) => setChildrenCount(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                      className="w-full text-center lg:text-left px-2 py-2 lg:py-1 rounded-xl lg:rounded-lg bg-white border border-[#C8D9E6] text-sm lg:text-xs font-bold text-[#2F4156] min-h-[44px] lg:min-h-0"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setChildrenCount(childrenCount + 1)}
+                      className="lg:hidden w-11 h-11 rounded-xl bg-white border border-[#C8D9E6] text-[#2F4156] text-lg font-black flex items-center justify-center active:scale-95 shadow-sm"
+                      aria-label="Increase Children Count"
+                    >
+                      +
+                    </button>
+                  </div>
                 </div>
 
-                <div className="p-3 rounded-xl bg-[#F5EFEB] border border-[#C8D9E6]/50">
-                  <label className="block text-[10px] font-bold uppercase text-[#567C8D]">Elderly (60+)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={elderlyCount}
-                    onChange={(e) => setElderlyCount(Math.max(0, parseInt(e.target.value, 10) || 0))}
-                    className="w-full mt-1 px-2 py-1 rounded-lg bg-white border border-[#C8D9E6] text-xs font-bold text-[#2F4156]"
-                  />
+                {/* Elderly (60+) */}
+                <div className="p-3 rounded-2xl lg:rounded-xl bg-[#F5EFEB] border border-[#C8D9E6]/50">
+                  <label className="block text-[11px] lg:text-[10px] font-bold uppercase text-[#567C8D]">Elderly (60+)</label>
+                  <div className="flex items-center gap-2 mt-2 lg:mt-1">
+                    <button
+                      type="button"
+                      onClick={() => setElderlyCount(Math.max(0, elderlyCount - 1))}
+                      className="lg:hidden w-11 h-11 rounded-xl bg-white border border-[#C8D9E6] text-[#2F4156] text-lg font-black flex items-center justify-center active:scale-95 shadow-sm"
+                      aria-label="Decrease Elderly Count"
+                    >
+                      -
+                    </button>
+                    <input
+                      type="number"
+                      min="0"
+                      value={elderlyCount}
+                      onChange={(e) => setElderlyCount(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                      className="w-full text-center lg:text-left px-2 py-2 lg:py-1 rounded-xl lg:rounded-lg bg-white border border-[#C8D9E6] text-sm lg:text-xs font-bold text-[#2F4156] min-h-[44px] lg:min-h-0"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setElderlyCount(elderlyCount + 1)}
+                      className="lg:hidden w-11 h-11 rounded-xl bg-white border border-[#C8D9E6] text-[#2F4156] text-lg font-black flex items-center justify-center active:scale-95 shadow-sm"
+                      aria-label="Increase Elderly Count"
+                    >
+                      +
+                    </button>
+                  </div>
                 </div>
 
-                <div className="p-3 rounded-xl bg-[#F5EFEB] border border-[#C8D9E6]/50">
-                  <label className="block text-[10px] font-bold uppercase text-[#567C8D]">Disabled / Bedridden</label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={disabledCount}
-                    onChange={(e) => setDisabledCount(Math.max(0, parseInt(e.target.value, 10) || 0))}
-                    className="w-full mt-1 px-2 py-1 rounded-lg bg-white border border-[#C8D9E6] text-xs font-bold text-[#2F4156]"
-                  />
+                {/* Disabled / Bedridden */}
+                <div className="p-3 rounded-2xl lg:rounded-xl bg-[#F5EFEB] border border-[#C8D9E6]/50">
+                  <label className="block text-[11px] lg:text-[10px] font-bold uppercase text-[#567C8D]">Disabled / Bedridden</label>
+                  <div className="flex items-center gap-2 mt-2 lg:mt-1">
+                    <button
+                      type="button"
+                      onClick={() => setDisabledCount(Math.max(0, disabledCount - 1))}
+                      className="lg:hidden w-11 h-11 rounded-xl bg-white border border-[#C8D9E6] text-[#2F4156] text-lg font-black flex items-center justify-center active:scale-95 shadow-sm"
+                      aria-label="Decrease Disabled Count"
+                    >
+                      -
+                    </button>
+                    <input
+                      type="number"
+                      min="0"
+                      value={disabledCount}
+                      onChange={(e) => setDisabledCount(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                      className="w-full text-center lg:text-left px-2 py-2 lg:py-1 rounded-xl lg:rounded-lg bg-white border border-[#C8D9E6] text-sm lg:text-xs font-bold text-[#2F4156] min-h-[44px] lg:min-h-0"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setDisabledCount(disabledCount + 1)}
+                      className="lg:hidden w-11 h-11 rounded-xl bg-white border border-[#C8D9E6] text-[#2F4156] text-lg font-black flex items-center justify-center active:scale-95 shadow-sm"
+                      aria-label="Increase Disabled Count"
+                    >
+                      +
+                    </button>
+                  </div>
                 </div>
 
-                <div className="p-3 rounded-xl bg-[#F5EFEB] border border-[#C8D9E6]/50">
-                  <label className="block text-[10px] font-bold uppercase text-[#567C8D]">Injured</label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={injuredCount}
-                    onChange={(e) => setInjuredCount(Math.max(0, parseInt(e.target.value, 10) || 0))}
-                    className="w-full mt-1 px-2 py-1 rounded-lg bg-white border border-[#C8D9E6] text-xs font-bold text-[#2F4156]"
-                  />
+                {/* Injured */}
+                <div className="p-3 rounded-2xl lg:rounded-xl bg-[#F5EFEB] border border-[#C8D9E6]/50">
+                  <label className="block text-[11px] lg:text-[10px] font-bold uppercase text-[#567C8D]">Injured</label>
+                  <div className="flex items-center gap-2 mt-2 lg:mt-1">
+                    <button
+                      type="button"
+                      onClick={() => setInjuredCount(Math.max(0, injuredCount - 1))}
+                      className="lg:hidden w-11 h-11 rounded-xl bg-white border border-[#C8D9E6] text-[#2F4156] text-lg font-black flex items-center justify-center active:scale-95 shadow-sm"
+                      aria-label="Decrease Injured Count"
+                    >
+                      -
+                    </button>
+                    <input
+                      type="number"
+                      min="0"
+                      value={injuredCount}
+                      onChange={(e) => setInjuredCount(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                      className="w-full text-center lg:text-left px-2 py-2 lg:py-1 rounded-xl lg:rounded-lg bg-white border border-[#C8D9E6] text-sm lg:text-xs font-bold text-[#2F4156] min-h-[44px] lg:min-h-0"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setInjuredCount(injuredCount + 1)}
+                      className="lg:hidden w-11 h-11 rounded-xl bg-white border border-[#C8D9E6] text-[#2F4156] text-lg font-black flex items-center justify-center active:scale-95 shadow-sm"
+                      aria-label="Increase Injured Count"
+                    >
+                      +
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
 
             {/* Critical Medical Checkbox */}
-            <div className="p-4 rounded-2xl bg-red-50 border border-red-200 flex items-center justify-between">
+            <div
+              onClick={() => setCriticalMedicalNeed(!criticalMedicalNeed)}
+              className="p-4 rounded-2xl bg-red-50 border border-red-200 flex items-center justify-between cursor-pointer min-h-[56px] select-none"
+            >
               <div>
                 <span className="text-xs font-bold text-red-900 block">Critical Medical Urgency (+30 Priority Weight)</span>
                 <span className="text-[11px] text-red-700">Check if someone has severe trauma, requires oxygen/dialysis, or is unconscious.</span>
@@ -687,8 +786,11 @@ export const AreYouSafeView: React.FC<AreYouSafeViewProps> = ({
               <input
                 type="checkbox"
                 checked={criticalMedicalNeed}
-                onChange={(e) => setCriticalMedicalNeed(e.target.checked)}
-                className="w-5 h-5 rounded text-red-600 cursor-pointer"
+                onChange={(e) => {
+                  e.stopPropagation();
+                  setCriticalMedicalNeed(e.target.checked);
+                }}
+                className="w-6 h-6 rounded text-red-600 cursor-pointer flex-shrink-0"
               />
             </div>
 
@@ -700,9 +802,9 @@ export const AreYouSafeView: React.FC<AreYouSafeViewProps> = ({
                   <button
                     type="button"
                     onClick={handleDetectLocation}
-                    className="text-[10px] font-bold text-red-600 flex items-center gap-1 hover:underline cursor-pointer"
+                    className="text-xs sm:text-[10px] font-bold text-red-600 flex items-center gap-1 hover:underline cursor-pointer min-h-[36px] sm:min-h-0 px-2.5 py-1 bg-red-50 sm:bg-transparent rounded-lg"
                   >
-                    <Navigation className="w-3 h-3" /> Auto-Detect
+                    <Navigation className="w-3.5 h-3.5" /> Auto-Detect
                   </button>
                 </label>
                 <input
@@ -711,7 +813,7 @@ export const AreYouSafeView: React.FC<AreYouSafeViewProps> = ({
                   required
                   value={latitude}
                   onChange={(e) => setLatitude(parseFloat(e.target.value))}
-                  className="w-full px-4 py-2.5 rounded-xl border border-[#C8D9E6] text-xs font-semibold text-[#2F4156] outline-none"
+                  className="w-full px-4 py-3 sm:py-2.5 min-h-[44px] rounded-xl border border-[#C8D9E6] text-xs font-semibold text-[#2F4156] outline-none"
                 />
               </div>
 
@@ -725,7 +827,7 @@ export const AreYouSafeView: React.FC<AreYouSafeViewProps> = ({
                   required
                   value={longitude}
                   onChange={(e) => setLongitude(parseFloat(e.target.value))}
-                  className="w-full px-4 py-2.5 rounded-xl border border-[#C8D9E6] text-xs font-semibold text-[#2F4156] outline-none"
+                  className="w-full px-4 py-3 sm:py-2.5 min-h-[44px] rounded-xl border border-[#C8D9E6] text-xs font-semibold text-[#2F4156] outline-none"
                 />
               </div>
             </div>
@@ -741,7 +843,7 @@ export const AreYouSafeView: React.FC<AreYouSafeViewProps> = ({
                 value={address}
                 onChange={(e) => setAddress(e.target.value)}
                 placeholder="e.g. 14 Saidapet Bazaar Road, 1st floor terrace, opposite bus depot"
-                className="w-full px-4 py-2.5 rounded-xl border border-[#C8D9E6] text-xs font-medium text-[#2F4156] outline-none"
+                className="w-full px-4 py-3 sm:py-2.5 min-h-[48px] sm:min-h-0 rounded-xl border border-[#C8D9E6] text-xs font-medium text-[#2F4156] outline-none"
               />
             </div>
 
@@ -751,28 +853,33 @@ export const AreYouSafeView: React.FC<AreYouSafeViewProps> = ({
                 Situation Description
               </label>
               <textarea
-                rows={2}
+                rows={3}
                 required
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Briefly state obstacles, stairs trapped, special assistance required..."
-                className="w-full px-4 py-2.5 rounded-xl border border-[#C8D9E6] text-xs font-medium text-[#2F4156] outline-none resize-none"
+                className="w-full px-4 py-3 sm:py-2.5 min-h-[72px] rounded-xl border border-[#C8D9E6] text-xs font-medium text-[#2F4156] outline-none resize-none"
               />
             </div>
 
-            {/* Submit SOS Button */}
-            <div className="pt-2 flex items-center justify-end gap-3">
+            {/* Submit SOS Button - Sticky Bottom on Mobile, Natural on Desktop */}
+            <div
+              className="fixed bottom-0 inset-x-0 z-30 lg:static p-3 sm:p-4 lg:p-0 bg-white/95 lg:bg-transparent backdrop-blur-md lg:backdrop-blur-none border-t border-[#C8D9E6] lg:border-0 shadow-lg lg:shadow-none flex items-center justify-between sm:justify-end gap-3"
+              style={{
+                paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 0.5rem)',
+              }}
+            >
               <button
                 type="button"
                 onClick={() => setShowDistressForm(false)}
-                className="px-4 py-2 rounded-xl text-xs font-bold text-[#567C8D] hover:text-[#2F4156] cursor-pointer"
+                className="flex-1 sm:flex-initial px-4 py-3 min-h-[48px] rounded-2xl lg:rounded-xl text-xs sm:text-sm font-bold border border-[#C8D9E6] lg:border-0 text-[#567C8D] hover:text-[#2F4156] flex items-center justify-center cursor-pointer"
               >
                 Back
               </button>
               <button
                 type="submit"
                 disabled={actionLoading}
-                className="px-6 py-3 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition flex items-center gap-2 shadow-lg shadow-red-600/30 cursor-pointer disabled:opacity-50"
+                className="flex-1 sm:flex-initial px-6 py-3 min-h-[48px] rounded-2xl lg:rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs sm:text-sm font-bold transition flex items-center justify-center gap-2 shadow-lg shadow-red-600/30 cursor-pointer disabled:opacity-50"
               >
                 {actionLoading ? (
                   <Loader2 className="w-4 h-4 animate-spin text-white" />
@@ -826,7 +933,7 @@ export const AreYouSafeView: React.FC<AreYouSafeViewProps> = ({
                     <button
                       type="button"
                       onClick={() => handleCancelRequest(r.id)}
-                      className="px-3 py-1.5 rounded-xl border border-red-200 text-red-600 hover:bg-red-50 text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+                      className="w-full sm:w-auto px-4 py-2.5 min-h-[44px] sm:min-h-0 sm:py-1.5 rounded-xl border border-red-200 text-red-600 hover:bg-red-50 text-xs font-bold transition flex items-center justify-center gap-1 cursor-pointer"
                     >
                       <Ban className="w-3.5 h-3.5" />
                       <span>Cancel</span>

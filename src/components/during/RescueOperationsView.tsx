@@ -249,10 +249,10 @@ export const RescueOperationsView: React.FC<RescueOperationsViewProps> = ({
                 Household Safety Telemetry
               </span>
             </div>
-            <h1 className="text-2xl sm:text-3xl font-bold font-['Space_Grotesk',sans-serif] text-[#2F4156] tracking-tight mt-1">
+            <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold font-['Space_Grotesk',sans-serif] text-[#2F4156] tracking-tight mt-1">
               Rescue & Emergency Assistance Status
             </h1>
-            <p className="text-sm font-medium text-[#567C8D] mt-1">
+            <p className="text-xs sm:text-sm font-medium text-[#567C8D] mt-1">
               Real-time safety telemetry and emergency dispatch updates for your registered household.
             </p>
           </div>
@@ -279,7 +279,7 @@ export const RescueOperationsView: React.FC<RescueOperationsViewProps> = ({
           <button
             type="button"
             onClick={() => onNavigateTab('safe')}
-            className="px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition flex items-center gap-2 shadow-md cursor-pointer"
+            className="w-full sm:w-auto px-4 py-3 min-h-[48px] rounded-2xl lg:rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition flex items-center justify-center gap-2 shadow-md cursor-pointer"
           >
             <LifeBuoy className="w-4 h-4 text-white" />
             <span>{ownActiveRequest ? 'Update Status in "Are You Safe?"' : 'Are You Safe? / Request SOS'}</span>
@@ -292,8 +292,8 @@ export const RescueOperationsView: React.FC<RescueOperationsViewProps> = ({
         <div className="space-y-6">
           {ownActiveRequest ? (
             /* Single Household Active Distress Signal */
-            <div className="bg-white rounded-3xl p-6 sm:p-8 border border-red-200 shadow-sm space-y-6">
-              <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 pb-5 border-b border-red-100">
+            <div className="bg-white rounded-3xl p-4 sm:p-6 lg:p-8 border border-red-200 shadow-sm space-y-5 lg:space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 sm:gap-4 pb-4 sm:pb-5 border-b border-red-100">
                 <div className="space-y-1">
                   <div className="flex items-center gap-2.5">
                     <span className="px-2.5 py-0.5 rounded-md text-[10px] font-extrabold uppercase bg-red-100 text-red-700">
@@ -303,7 +303,7 @@ export const RescueOperationsView: React.FC<RescueOperationsViewProps> = ({
                       #{ownActiveRequest.id.slice(0, 8)}
                     </span>
                   </div>
-                  <h2 className="text-xl sm:text-2xl font-bold font-['Space_Grotesk',sans-serif] text-[#2F4156]">
+                  <h2 className="text-lg sm:text-xl lg:text-2xl font-bold font-['Space_Grotesk',sans-serif] text-[#2F4156]">
                     Household Rescue Dispatch Status
                   </h2>
                   <p className="text-xs text-[#567C8D]">
@@ -366,11 +366,11 @@ export const RescueOperationsView: React.FC<RescueOperationsViewProps> = ({
               </div>
 
               {/* Actions for Own Active Request */}
-              <div className="pt-2 flex flex-wrap items-center justify-between gap-3 border-t border-red-100">
+              <div className="pt-2 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 border-t border-red-100">
                 <button
                   type="button"
                   onClick={() => onNavigateTab('safe')}
-                  className="px-4 py-2 rounded-xl bg-[#2F4156] hover:bg-[#1f2c3a] text-white text-xs font-bold transition flex items-center gap-2 cursor-pointer shadow-sm"
+                  className="w-full sm:w-auto px-4 py-3 min-h-[48px] sm:min-h-0 sm:py-2 rounded-xl bg-[#2F4156] hover:bg-[#1f2c3a] text-white text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer shadow-sm"
                 >
                   <Activity className="w-3.5 h-3.5" />
                   <span>Update Status in "Are You Safe?"</span>
@@ -380,7 +380,7 @@ export const RescueOperationsView: React.FC<RescueOperationsViewProps> = ({
                   <button
                     type="button"
                     onClick={() => handleCancelOwnRequest(ownActiveRequest.id)}
-                    className="px-3.5 py-2 rounded-xl border border-red-300 text-red-600 hover:bg-red-50 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+                    className="w-full sm:w-auto px-4 py-3 min-h-[48px] sm:min-h-0 sm:py-2 rounded-xl border border-red-300 text-red-600 hover:bg-red-50 text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
                   >
                     <Ban className="w-3.5 h-3.5" />
                     <span>Cancel Distress Call</span>
@@ -390,12 +390,12 @@ export const RescueOperationsView: React.FC<RescueOperationsViewProps> = ({
             </div>
           ) : (
             /* Reassuring Safe Card */
-            <div className="p-8 sm:p-10 rounded-3xl bg-white border border-[#C8D9E6] shadow-sm text-center space-y-4">
+            <div className="p-5 sm:p-8 lg:p-10 rounded-3xl bg-white border border-[#C8D9E6] shadow-sm text-center space-y-4">
               <div className="w-16 h-16 rounded-3xl bg-emerald-50 border border-emerald-200 text-emerald-600 flex items-center justify-center mx-auto shadow-sm">
                 <ShieldCheck className="w-8 h-8" />
               </div>
               <div className="space-y-1 max-w-md mx-auto">
-                <h2 className="text-xl sm:text-2xl font-bold font-['Space_Grotesk',sans-serif] text-[#2F4156]">
+                <h2 className="text-lg sm:text-xl lg:text-2xl font-bold font-['Space_Grotesk',sans-serif] text-[#2F4156]">
                   No Active Emergency Distress Calls
                 </h2>
                 <p className="text-xs sm:text-sm text-[#567C8D]">
@@ -409,7 +409,7 @@ export const RescueOperationsView: React.FC<RescueOperationsViewProps> = ({
                 <button
                   type="button"
                   onClick={() => onNavigateTab('safe')}
-                  className="px-6 py-3 rounded-2xl bg-red-600 hover:bg-red-700 text-white text-xs sm:text-sm font-bold transition inline-flex items-center gap-2 shadow-md cursor-pointer"
+                  className="w-full sm:w-auto px-6 py-3.5 min-h-[48px] rounded-2xl bg-red-600 hover:bg-red-700 text-white text-xs sm:text-sm font-bold transition inline-flex items-center justify-center gap-2 shadow-md cursor-pointer"
                 >
                   <LifeBuoy className="w-4 h-4 text-white" />
                   <span>Are You Safe? / Request SOS</span>
@@ -419,7 +419,7 @@ export const RescueOperationsView: React.FC<RescueOperationsViewProps> = ({
           )}
 
           {/* Emergency Helplines & Disaster Response Hotlines */}
-          <div className="bg-white rounded-3xl p-6 sm:p-8 border border-[#C8D9E6] shadow-sm space-y-5">
+          <div className="bg-white rounded-3xl p-4 sm:p-6 lg:p-8 border border-[#C8D9E6] shadow-sm space-y-4 sm:space-y-5">
             <div>
               <div className="flex items-center gap-2">
                 <Phone className="w-4 h-4 text-red-600" />
@@ -435,7 +435,7 @@ export const RescueOperationsView: React.FC<RescueOperationsViewProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
               <a
                 href="tel:112"
-                className="p-4 rounded-2xl bg-[#F5EFEB]/60 hover:bg-red-50/60 border border-[#C8D9E6]/80 hover:border-red-300 transition group flex items-start gap-3"
+                className="p-3.5 sm:p-4 min-h-[64px] rounded-2xl bg-[#F5EFEB]/60 hover:bg-red-50/60 border border-[#C8D9E6]/80 hover:border-red-300 transition group flex items-start gap-3"
               >
                 <div className="w-10 h-10 rounded-xl bg-red-600 text-white flex items-center justify-center font-bold text-sm flex-shrink-0 shadow-sm">
                   112

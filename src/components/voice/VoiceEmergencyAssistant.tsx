@@ -617,15 +617,18 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+    <div className="fixed inset-0 z-50 flex items-end lg:items-center justify-center p-0 lg:p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
       <div
         data-voice-assistant-modal
         data-voice-provider={providerName.toLowerCase()}
         data-provider={providerName.toLowerCase()}
-        className="bg-white rounded-3xl border border-[#C8D9E6] shadow-2xl w-full max-w-2xl max-h-[92vh] flex flex-col overflow-hidden relative"
+        className="bg-white rounded-t-3xl lg:rounded-3xl border-t lg:border border-[#C8D9E6] shadow-2xl w-full lg:max-w-2xl h-[92vh] sm:h-[88vh] lg:h-auto lg:max-h-[92vh] flex flex-col overflow-hidden relative"
       >
+        {/* Mobile Drag Handle */}
+        <div className="lg:hidden w-12 h-1.5 bg-[#C8D9E6] rounded-full mx-auto my-2.5 shrink-0" />
+
         {/* Header */}
-        <div className="px-6 py-4 border-b border-[#C8D9E6]/80 flex items-center justify-between bg-[#F5EFEB]/50">
+        <div className="px-4 sm:px-6 py-3.5 sm:py-4 border-b border-[#C8D9E6]/80 flex items-center justify-between bg-[#F5EFEB]/50">
           <div className="flex items-center gap-3">
             <div
               className={`w-10 h-10 rounded-2xl flex items-center justify-center shadow-sm shrink-0 ${
@@ -666,7 +669,7 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
               type="button"
               onClick={resetSession}
               title="Start a fresh conversation"
-              className="p-2 rounded-xl border border-[#C8D9E6] hover:bg-[#F5EFEB] text-[#2F4156] transition cursor-pointer flex items-center gap-1.5 text-xs"
+              className="p-2 min-h-[44px] sm:min-h-0 rounded-xl border border-[#C8D9E6] hover:bg-[#F5EFEB] text-[#2F4156] transition cursor-pointer flex items-center gap-1.5 text-xs"
             >
               <RotateCcw className="w-3.5 h-3.5" />
               <span className="hidden sm:inline font-medium">New Session</span>
@@ -682,7 +685,7 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
                 }
               }}
               title={isMuted ? 'Unmute voice' : 'Mute voice'}
-              className="p-2 rounded-xl border border-[#C8D9E6] hover:bg-[#F5EFEB] text-[#2F4156] transition cursor-pointer"
+              className="p-2 min-h-[44px] min-w-[44px] rounded-xl border border-[#C8D9E6] hover:bg-[#F5EFEB] text-[#2F4156] transition cursor-pointer flex items-center justify-center"
             >
               {isMuted ? <VolumeX className="w-4 h-4 text-gray-500" /> : <Volume2 className="w-4 h-4 text-blue-600" />}
             </button>
@@ -690,12 +693,29 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
               id="voice-assistant-close-btn"
               type="button"
               onClick={onClose}
-              className="p-2 rounded-xl border border-[#C8D9E6] hover:bg-red-50 text-[#567C8D] hover:text-red-600 transition cursor-pointer"
+              className="p-2 min-h-[44px] min-w-[44px] rounded-xl border border-[#C8D9E6] hover:bg-red-50 text-[#567C8D] hover:text-red-600 transition cursor-pointer flex items-center justify-center"
             >
               <X className="w-4 h-4" />
             </button>
           </div>
         </div>
+
+        {/* Offline Notice if Disconnected */}
+        {typeof navigator !== 'undefined' && !navigator.onLine && (
+          <div className="bg-amber-50 px-4 sm:px-6 py-2.5 border-b border-amber-200 text-xs text-amber-900 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+              <span>Device is offline. Voice assistant requires an internet connection for processing.</span>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="text-amber-800 font-bold underline cursor-pointer text-left sm:text-right"
+            >
+              Use Manual Offline SOS Form
+            </button>
+          </div>
+        )}
 
         {/* Active Emergency Beacon Banner */}
         {activeRequest && activeRequest.status !== 'CANCELLED' && (
@@ -926,70 +946,88 @@ export const VoiceEmergencyAssistant: React.FC<VoiceEmergencyAssistantProps> = (
         </div>
 
         {/* Input & Mic Controls */}
-        <div className="p-4 sm:p-5 border-t border-[#C8D9E6] bg-white">
-          <form onSubmit={handleFormSubmit} className="flex items-center gap-2.5">
-            {/* Mic Button */}
-            <button
-              id="voice-assistant-mic-btn"
-              data-testid="voice-mic-btn"
-              type="button"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                toggleRecording();
-              }}
-              disabled={currentStatus === 'PROCESSING' || isSubmittingTurnRef.current}
-              className={`w-12 h-12 rounded-2xl flex items-center justify-center text-white transition shadow-md cursor-pointer flex-shrink-0 disabled:opacity-50 ${
-                currentStatus === 'LISTENING'
-                  ? 'bg-red-600 animate-pulse ring-4 ring-red-200'
-                  : currentStatus === 'PROCESSING'
-                  ? 'bg-amber-600'
-                  : currentStatus === 'ERROR'
-                  ? 'bg-gray-600 hover:bg-gray-700'
-                  : 'bg-red-600 hover:bg-red-700'
-              }`}
-              title={
-                currentStatus === 'LISTENING'
-                  ? `Stop & Send (${30 - recordingSeconds}s remaining)`
+        <div className="p-3 sm:p-4 lg:p-5 border-t border-[#C8D9E6] bg-white">
+          <form onSubmit={handleFormSubmit} className="flex flex-col lg:flex-row items-center gap-3 lg:gap-2.5">
+            {/* Mic Push-to-Talk Button (80px on Mobile, 48px on Desktop) */}
+            <div className="flex flex-col items-center">
+              <button
+                id="voice-assistant-mic-btn"
+                data-testid="voice-mic-btn"
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (currentStatus === 'ERROR') {
+                    handleRetry();
+                  } else {
+                    toggleRecording();
+                  }
+                }}
+                disabled={currentStatus === 'PROCESSING' || isSubmittingTurnRef.current}
+                className={`w-20 h-20 lg:w-12 lg:h-12 rounded-full lg:rounded-2xl flex items-center justify-center text-white transition-all shadow-lg lg:shadow-md cursor-pointer flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed select-none active:scale-95 ${
+                  currentStatus === 'LISTENING'
+                    ? 'bg-red-600 animate-pulse ring-4 ring-red-200'
+                    : currentStatus === 'PROCESSING'
+                    ? 'bg-amber-600'
+                    : currentStatus === 'ERROR'
+                    ? 'bg-gray-600 hover:bg-gray-700'
+                    : 'bg-red-600 hover:bg-red-700'
+                }`}
+                title={
+                  currentStatus === 'LISTENING'
+                    ? `Stop & Send (${30 - recordingSeconds}s remaining)`
+                    : currentStatus === 'PROCESSING'
+                    ? 'Processing audio...'
+                    : currentStatus === 'ERROR'
+                    ? 'Retry microphone connection'
+                    : 'Start live voice stream'
+                }
+              >
+                {currentStatus === 'LISTENING' ? (
+                  <Square className="w-8 h-8 lg:w-5 lg:h-5 fill-current" />
+                ) : currentStatus === 'PROCESSING' ? (
+                  <Loader2 className="w-8 h-8 lg:w-5 lg:h-5 animate-spin" />
+                ) : currentStatus === 'ERROR' ? (
+                  <RotateCcw className="w-8 h-8 lg:w-5 lg:h-5" />
+                ) : (
+                  <Mic className="w-8 h-8 lg:w-5 lg:h-5" />
+                )}
+              </button>
+              {/* Mobile State Label underneath 80px Button */}
+              <span className="lg:hidden text-xs font-bold text-[#2F4156] mt-1.5">
+                {currentStatus === 'LISTENING'
+                  ? `Tap to stop (${30 - recordingSeconds}s)`
                   : currentStatus === 'PROCESSING'
                   ? 'Processing audio...'
-                  : 'Start live voice stream'
-              }
-            >
-              {currentStatus === 'LISTENING' ? (
-                <Square className="w-5 h-5 fill-current" />
-              ) : currentStatus === 'PROCESSING' ? (
-                <Loader2 className="w-5 h-5 animate-spin" />
-              ) : (
-                <Mic className="w-5 h-5" />
-              )}
-            </button>
+                  : currentStatus === 'ERROR'
+                  ? 'Tap to retry'
+                  : 'Tap to speak'}
+              </span>
+            </div>
 
-            {/* Text Input Fallback */}
-            <div className="flex-1 relative">
+            {/* Text Input Row */}
+            <div className="w-full lg:flex-1 flex items-center gap-2">
               <input
                 type="text"
                 value={inputVal}
                 onChange={(e) => setInputVal(e.target.value)}
                 placeholder={
                   currentStatus === 'LISTENING'
-                    ? 'Listening to your voice... tap square button to finish.'
+                    ? 'Listening to your voice... tap button to finish.'
                     : "Speak or type your message (e.g., We're trapped upstairs)..."
                 }
                 disabled={currentStatus === 'PROCESSING' || currentStatus === 'LISTENING'}
-                className="w-full pl-4 pr-10 py-3 rounded-2xl border border-[#C8D9E6] focus:border-red-500 focus:ring-2 focus:ring-red-100 outline-none text-xs text-[#2F4156] placeholder-[#567C8D] transition disabled:bg-gray-50"
+                className="flex-1 px-4 py-3 min-h-[48px] rounded-2xl border border-[#C8D9E6] focus:border-red-500 focus:ring-2 focus:ring-red-100 outline-none text-xs text-[#2F4156] placeholder-[#567C8D] transition disabled:bg-gray-50"
               />
+              <button
+                type="submit"
+                disabled={!inputVal.trim() || currentStatus === 'PROCESSING' || currentStatus === 'LISTENING'}
+                className="w-12 h-12 min-h-[48px] rounded-2xl bg-[#2F4156] hover:bg-[#1f2c3a] disabled:opacity-40 text-white flex items-center justify-center transition shadow-sm cursor-pointer flex-shrink-0"
+                title="Send text message"
+              >
+                <Send className="w-4 h-4" />
+              </button>
             </div>
-
-            {/* Send Button */}
-            <button
-              type="submit"
-              disabled={!inputVal.trim() || currentStatus === 'PROCESSING' || currentStatus === 'LISTENING'}
-              className="w-12 h-12 rounded-2xl bg-[#2F4156] hover:bg-[#1f2c3a] disabled:opacity-40 text-white flex items-center justify-center transition shadow-sm cursor-pointer flex-shrink-0"
-              title="Send text message"
-            >
-              <Send className="w-4 h-4" />
-            </button>
           </form>
         </div>
       </div>
