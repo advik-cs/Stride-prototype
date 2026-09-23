@@ -133,6 +133,10 @@ export interface ShelterOccupancy extends Shelter {
   remainingCapacity: number;
   occupancyPercentage: number;
   status: 'AVAILABLE' | 'NEAR_CAPACITY' | 'FULL' | 'OVER_CAPACITY' | 'ACTIVE' | 'CLOSED';
+  hasOccupancyData?: boolean;
+  occupancyUnavailable?: boolean;
+  lastSyncedAt?: string;
+  isStale?: boolean;
 }
 
 export interface BuildingIntelligence {

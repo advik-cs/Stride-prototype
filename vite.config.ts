@@ -143,6 +143,36 @@ export default defineConfig(() => {
                 },
               },
             },
+            {
+              urlPattern: /^https:\/\/(?:[abc]\.)?tile\.openstreetmap\.org\/.*/i,
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'openstreetmap-tiles',
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
+                expiration: {
+                  maxEntries: 500,
+                  maxAgeSeconds: 60 * 60 * 24 * 30, // 30 days
+                  purgeOnQuotaError: true,
+                },
+              },
+            },
+            {
+              urlPattern: /^https:\/\/server\.arcgisonline\.com\/ArcGIS\/rest\/services\/World_Imagery\/MapServer\/tile\/.*/i,
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'arcgis-satellite-tiles',
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
+                expiration: {
+                  maxEntries: 300,
+                  maxAgeSeconds: 60 * 60 * 24 * 30, // 30 days
+                  purgeOnQuotaError: true,
+                },
+              },
+            },
           ],
         },
       }),

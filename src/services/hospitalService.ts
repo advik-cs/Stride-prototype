@@ -39,6 +39,9 @@ export interface HospitalListResponse {
   totalCount: number;
   disclaimer: string;
   hospitals: Hospital[];
+  source?: 'server' | 'cache' | 'none';
+  lastSyncedAt?: string;
+  isStale?: boolean;
 }
 
 export const hospitalService = {
@@ -52,14 +55,7 @@ export const hospitalService = {
     if (res.ok) {
       return res.data.data;
     }
-    const params = new URLSearchParams();
-    if (options?.lat !== undefined) params.set('lat', String(options.lat));
-    if (options?.lng !== undefined) params.set('lng', String(options.lng));
-    if (options?.radiusKm !== undefined) params.set('radiusKm', String(options.radiusKm));
-    if (options?.scope) params.set('scope', options.scope);
-
-    const qs = params.toString();
-    return request<HospitalListResponse>(`/hospitals${qs ? `?${qs}` : ''}`);
+    throw new Error(res.error.message);
   },
 
   async getHospitalById(

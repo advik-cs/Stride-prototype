@@ -281,6 +281,12 @@ export const offlineStorageService = {
     });
   },
 
+  async getAllMapData(): Promise<StorageResult<MapDataRecord[]>> {
+    return withDB(async (db) => {
+      return db.getAll('mapData');
+    });
+  },
+
   async putMapData(data: MapDataRecord): Promise<StorageResult<string>> {
     return withDB(async (db) => {
       await db.put('mapData', data);

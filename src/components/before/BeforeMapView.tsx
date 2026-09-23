@@ -21,7 +21,9 @@ import {
   Loader2,
   RefreshCw,
   LocateFixed,
+  Clock,
 } from 'lucide-react';
+import { formatLastUpdated } from '../../offline/offlineDateUtils.ts';
 
 interface BeforeMapViewProps {
   user: User;
@@ -836,6 +838,25 @@ function isValidCoordinate(lat: any, lng: any): boolean {
               <span>OpenStreetMap live facilities temporarily unavailable ({citizenData.osmStatus.error})</span>
             </div>
           )}
+          {(() => {
+            const data = user.role === 'CITIZEN' ? citizenData : rescuerData;
+            if (!data?.lastSyncedAt) return null;
+            if (data.source === 'cache') {
+              return (
+                <div className="mt-2 inline-flex items-center gap-2 px-3 py-1 bg-amber-50 border border-amber-200 text-amber-900 rounded-full text-xs font-medium">
+                  <Clock className="w-3.5 h-3.5 text-amber-700 flex-shrink-0" />
+                  <span>{formatLastUpdated(data.lastSyncedAt, data.isStale, true)}</span>
+                  <span className="text-amber-600">· Hazard information reflects the last saved snapshot.</span>
+                </div>
+              );
+            }
+            return (
+              <p className="text-xs text-[#567C8D] mt-1.5 font-medium flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5 text-[#567C8D]" />
+                <span>{formatLastUpdated(data.lastSyncedAt, false, false)}</span>
+              </p>
+            );
+          })()}
         </div>
 
         {/* Complete Legend Pills matching all facility types */}
@@ -1030,6 +1051,17 @@ function isValidCoordinate(lat: any, lng: any): boolean {
               <RefreshCw className="w-3 h-3" />
               <span>Retry</span>
             </button>
+          </div>
+        )}
+
+        {/* No Map Data Offline Empty State */}
+        {typeof navigator !== 'undefined' && !navigator.onLine && (user.role === 'CITIZEN' ? citizenData?.source : rescuerData?.source) === 'none' && (
+          <div className="absolute inset-0 z-[500] bg-white/95 backdrop-blur-xs flex flex-col items-center justify-center p-8 text-center">
+            <MapPin className="w-12 h-12 text-[#567C8D] mx-auto mb-3 opacity-40" />
+            <h3 className="text-lg font-bold text-[#2F4156]">No Saved Map Data Available</h3>
+            <p className="text-xs text-[#567C8D] mt-1 max-w-md">
+              No saved map data is available on this device yet. Connect to the internet to load and cache disaster map intelligence.
+            </p>
           </div>
         )}
 

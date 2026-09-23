@@ -129,7 +129,7 @@ export const HospitalList: React.FC<HospitalListProps> = ({
             </h4>
             <p className="text-xs text-[#567C8D] mt-1">
               {typeof navigator !== 'undefined' && !navigator.onLine
-                ? 'Connect to the internet to load registered hospital facilities.'
+                ? 'No saved hospital data is available on this device yet. Connect to the internet to load registered hospital facilities.'
                 : 'Try adjusting your search keywords or filter criteria.'}
             </p>
           </div>

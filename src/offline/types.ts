@@ -132,8 +132,12 @@ export interface ShelterRecord {
   longitude: number;
   capacity: number;
   contactNumber: string;
-  status: 'ACTIVE' | 'NEAR_CAPACITY' | 'FULL' | 'CLOSED';
+  status: 'ACTIVE' | 'NEAR_CAPACITY' | 'FULL' | 'CLOSED' | string;
   lastSyncedAt?: string;
+  expectedArrivals?: number | null;
+  remainingCapacity?: number | null;
+  occupancyPercentage?: number | null;
+  hasOccupancyData?: boolean;
 }
 
 /**

@@ -1,9 +1,10 @@
-import { beforeApi, type Household, type HouseholdMember, type Shelter, type DisasterEvent } from '../api/beforeApi';
+import { beforeApi, type Household, type HouseholdMember, type Shelter, type ShelterOccupancy, type DisasterEvent } from '../api/beforeApi';
 import { request } from '../services/apiClient';
 import type { Hospital, HospitalListResponse } from '../services/hospitalService';
 import type { LiveWeatherData } from '../components/common/LiveWeatherCard';
 import { getFloodRiskAssessment, getWindCompass } from '../components/common/LiveWeatherCard';
 import { offlineStorageService } from './offlineStorageService';
+import { isSnapshotStale } from './offlineDateUtils';
 import {
   storageOk,
   storageErr,
@@ -182,22 +183,51 @@ export const offlineCacheService = {
   // 2. Shelters
   // ==========================================================================
 
-  async persistShelters(shelters: Shelter[]): Promise<StorageResult<void>> {
+  async persistShelters(shelters: (Shelter | ShelterOccupancy)[], disasterId?: string): Promise<StorageResult<void>> {
     const now = new Date().toISOString();
-    const records: ShelterRecord[] = shelters.map((s) => ({
-      id: s.id,
-      name: s.name,
-      address: s.address,
-      latitude: s.latitude,
-      longitude: s.longitude,
-      capacity: s.capacity,
-      contactNumber: s.contactNumber,
-      status: (s.status as any) || 'ACTIVE',
-      lastSyncedAt: now,
-    }));
+    const records: ShelterRecord[] = shelters.map((s) => {
+      const anyS = s as any;
+      const hasOcc = anyS.hasOccupancyData === true || typeof anyS.expectedArrivals === 'number' || typeof anyS.remainingCapacity === 'number';
+      return {
+        id: s.id,
+        name: s.name,
+        address: s.address,
+        latitude: s.latitude,
+        longitude: s.longitude,
+        capacity: s.capacity,
+        contactNumber: s.contactNumber,
+        status: (s.status as any) || 'ACTIVE',
+        lastSyncedAt: now,
+        expectedArrivals: hasOcc && typeof anyS.expectedArrivals === 'number' ? anyS.expectedArrivals : undefined,
+        remainingCapacity: hasOcc && typeof anyS.remainingCapacity === 'number' ? anyS.remainingCapacity : undefined,
+        occupancyPercentage: hasOcc && typeof anyS.occupancyPercentage === 'number' ? anyS.occupancyPercentage : undefined,
+        hasOccupancyData: hasOcc,
+      };
+    });
 
     const putRes = await offlineStorageService.putShelters(records);
     if (!putRes.ok) return putRes;
+
+    // Persist full snapshot to appMetadata for disaster and latest fallback
+    await offlineStorageService.putAppMetadata({
+      key: 'latest_shelter_occupancy',
+      value: {
+        timestamp: now,
+        disasterId: disasterId || null,
+        occupancies: shelters,
+      },
+      updatedAt: now,
+    });
+    if (disasterId) {
+      await offlineStorageService.putAppMetadata({
+        key: `shelter_occupancy_${disasterId}`,
+        value: {
+          timestamp: now,
+          occupancies: shelters,
+        },
+        updatedAt: now,
+      });
+    }
 
     await offlineStorageService.putSyncMetadata({
       entityName: 'shelters',
@@ -209,20 +239,47 @@ export const offlineCacheService = {
     return storageOk(undefined);
   },
 
-  async getSheltersWithFallback(): Promise<FallbackResult<Shelter[]>> {
+  async getSheltersWithFallback(disasterId?: string): Promise<FallbackResult<ShelterOccupancy[]>> {
     const now = new Date().toISOString();
 
     // 1. ONLINE ATTEMPT
     try {
-      const serverShelters = await beforeApi.getShelters();
-      if (Array.isArray(serverShelters) && serverShelters.length > 0) {
-        await this.persistShelters(serverShelters);
-        return storageOk({
-          data: serverShelters,
-          source: 'server',
-          lastSyncedAt: now,
-          isStale: false,
-        });
+      if (disasterId) {
+        const liveOccupancy = await beforeApi.getShelterOccupancy(disasterId);
+        if (Array.isArray(liveOccupancy) && liveOccupancy.length > 0) {
+          const tagged: ShelterOccupancy[] = liveOccupancy.map((s) => ({
+            ...s,
+            hasOccupancyData: true,
+            occupancyUnavailable: false,
+          }));
+          await this.persistShelters(tagged, disasterId);
+          return storageOk({
+            data: tagged,
+            source: 'server',
+            lastSyncedAt: now,
+            isStale: false,
+          });
+        }
+      } else {
+        const serverShelters = await beforeApi.getShelters();
+        if (Array.isArray(serverShelters) && serverShelters.length > 0) {
+          await this.persistShelters(serverShelters);
+          const mapped: ShelterOccupancy[] = serverShelters.map((s) => ({
+            ...s,
+            expectedArrivals: 0,
+            remainingCapacity: s.capacity,
+            occupancyPercentage: 0,
+            hasOccupancyData: false,
+            occupancyUnavailable: true,
+            status: (s.status as any) || 'AVAILABLE',
+          }));
+          return storageOk({
+            data: mapped,
+            source: 'server',
+            lastSyncedAt: now,
+            isStale: false,
+          });
+        }
       }
     } catch (networkErr) {
       console.info('[offlineCacheService] Network fetch failed for shelters, attempting cache fallback:', networkErr);
@@ -242,22 +299,86 @@ export const offlineCacheService = {
       });
     }
 
-    const shelters: Shelter[] = cachedShelters.map((s) => ({
-      id: s.id,
-      name: s.name,
-      address: s.address,
-      latitude: s.latitude,
-      longitude: s.longitude,
-      capacity: s.capacity,
-      contactNumber: s.contactNumber,
-      status: s.status,
-    }));
+    // Retrieve full snapshot from metadata if available
+    let metadataOccupancyMap: Record<string, any> | null = null;
+    if (disasterId) {
+      const metaDisaster = await offlineStorageService.getAppMetadata(`shelter_occupancy_${disasterId}`);
+      const occupancies = (metaDisaster.data?.value as any)?.occupancies;
+      if (metaDisaster.ok && Array.isArray(occupancies)) {
+        metadataOccupancyMap = {};
+        for (const occ of occupancies) {
+          metadataOccupancyMap[occ.id] = occ;
+        }
+      }
+    }
+    if (!metadataOccupancyMap) {
+      const metaLatest = await offlineStorageService.getAppMetadata('latest_shelter_occupancy');
+      const occupancies = (metaLatest.data?.value as any)?.occupancies;
+      if (metaLatest.ok && Array.isArray(occupancies)) {
+        metadataOccupancyMap = {};
+        for (const occ of occupancies) {
+          metadataOccupancyMap[occ.id] = occ;
+        }
+      }
+    }
+
+    const shelters: ShelterOccupancy[] = cachedShelters.map((s) => {
+      const metaOcc = metadataOccupancyMap ? metadataOccupancyMap[s.id] : null;
+      const hasOcc = s.hasOccupancyData === true || (metaOcc && (metaOcc.hasOccupancyData === true || typeof metaOcc.expectedArrivals === 'number'));
+
+      if (hasOcc) {
+        const exp = typeof s.expectedArrivals === 'number'
+          ? s.expectedArrivals
+          : (typeof metaOcc?.expectedArrivals === 'number' ? metaOcc.expectedArrivals : 0);
+        const rem = typeof s.remainingCapacity === 'number'
+          ? s.remainingCapacity
+          : (typeof metaOcc?.remainingCapacity === 'number' ? metaOcc.remainingCapacity : (s.capacity - exp));
+        const pct = typeof s.occupancyPercentage === 'number'
+          ? s.occupancyPercentage
+          : (typeof metaOcc?.occupancyPercentage === 'number' ? metaOcc.occupancyPercentage : 0);
+        const status = s.status || metaOcc?.status || 'AVAILABLE';
+
+        return {
+          id: s.id,
+          name: s.name,
+          address: s.address,
+          latitude: s.latitude,
+          longitude: s.longitude,
+          capacity: s.capacity,
+          contactNumber: s.contactNumber,
+          status: status as any,
+          expectedArrivals: exp,
+          remainingCapacity: rem,
+          occupancyPercentage: pct,
+          hasOccupancyData: true,
+          occupancyUnavailable: false,
+        };
+      }
+
+      return {
+        id: s.id,
+        name: s.name,
+        address: s.address,
+        latitude: s.latitude,
+        longitude: s.longitude,
+        capacity: s.capacity,
+        contactNumber: s.contactNumber,
+        status: (s.status as any) || 'AVAILABLE',
+        expectedArrivals: 0,
+        remainingCapacity: s.capacity,
+        occupancyPercentage: 0,
+        hasOccupancyData: false,
+        occupancyUnavailable: true,
+      };
+    });
+
+    const isStale = isSnapshotStale(cachedShelters[0]?.lastSyncedAt);
 
     return storageOk({
       data: shelters,
       source: 'cache',
       lastSyncedAt: cachedShelters[0]?.lastSyncedAt,
-      isStale: true,
+      isStale,
     });
   },
 
@@ -317,8 +438,14 @@ export const offlineCacheService = {
 
       if (serverRes && Array.isArray(serverRes.hospitals) && serverRes.hospitals.length > 0) {
         await this.persistHospitals(serverRes.hospitals);
+        const serverResWithMeta: HospitalListResponse = {
+          ...serverRes,
+          source: 'server',
+          lastSyncedAt: now,
+          isStale: false,
+        };
         return storageOk({
-          data: serverRes,
+          data: serverResWithMeta,
           source: 'server',
           lastSyncedAt: now,
           isStale: false,
@@ -343,6 +470,7 @@ export const offlineCacheService = {
         totalCount: 0,
         disclaimer: '⚠️ DEMO DATA',
         hospitals: [],
+        source: 'none',
       };
       return storageOk({
         data: emptyResponse,
@@ -369,6 +497,8 @@ export const offlineCacheService = {
       disclaimer: r.disclaimer,
     }));
 
+    const isStale = isSnapshotStale(cachedRecords[0]?.lastSyncedAt);
+
     const cachedResponse: HospitalListResponse = {
       role: 'CITIZEN',
       userLocation: options?.lat && options?.lng ? { latitude: options.lat, longitude: options.lng } : null,
@@ -376,13 +506,16 @@ export const offlineCacheService = {
       totalCount: hospitals.length,
       disclaimer: cachedRecords[0]?.disclaimer || '⚠️ DEMO DATA',
       hospitals,
+      source: 'cache',
+      lastSyncedAt: cachedRecords[0]?.lastSyncedAt,
+      isStale,
     };
 
     return storageOk({
       data: cachedResponse,
       source: 'cache',
       lastSyncedAt: cachedRecords[0]?.lastSyncedAt,
-      isStale: true,
+      isStale,
     });
   },
 
@@ -470,12 +603,21 @@ export const offlineCacheService = {
     }
 
     // 2. OFFLINE CACHE FALLBACK
-    const cachedResult = await offlineStorageService.getMapDataByDisasterId(disasterId);
-    if (!cachedResult.ok) {
-      return storageErr(cachedResult.error.code, cachedResult.error.message, cachedResult.error.cause);
+    let cachedZones: MapDataRecord[] = [];
+    if (disasterId) {
+      const cachedResult = await offlineStorageService.getMapDataByDisasterId(disasterId);
+      if (!cachedResult.ok) {
+        return storageErr(cachedResult.error.code, cachedResult.error.message, cachedResult.error.cause);
+      }
+      cachedZones = cachedResult.data || [];
+    } else {
+      const allResult = await offlineStorageService.getAllMapData();
+      if (!allResult.ok) {
+        return storageErr(allResult.error.code, allResult.error.message, allResult.error.cause);
+      }
+      cachedZones = allResult.data || [];
     }
 
-    const cachedZones = cachedResult.data || [];
     if (cachedZones.length === 0) {
       return storageOk({
         data: [],
@@ -492,11 +634,13 @@ export const offlineCacheService = {
       radiusKm: z.radiusKm || 5.0,
     }));
 
+    const isStale = isSnapshotStale(cachedZones[0]?.lastSyncedAt);
+
     return storageOk({
       data: mapped,
       source: 'cache',
       lastSyncedAt: cachedZones[0]?.lastSyncedAt,
-      isStale: true,
+      isStale,
     });
   },
 
@@ -664,5 +808,150 @@ export const offlineCacheService = {
 
   async getCachedUserSession(userId: string): Promise<StorageResult<UserSessionRecord | null>> {
     return offlineStorageService.getUserSession(userId);
+  },
+
+  // ==========================================================================
+  // 7. Disaster Events Reference Data
+  // ==========================================================================
+
+  async persistDisasters(disasters: DisasterEvent[]): Promise<StorageResult<void>> {
+    const now = new Date().toISOString();
+    const putRes = await offlineStorageService.putAppMetadata({
+      key: 'cached_disasters',
+      value: disasters,
+      updatedAt: now,
+    });
+    if (!putRes.ok) return storageErr(putRes.error.code, putRes.error.message, putRes.error.cause);
+    return storageOk(undefined);
+  },
+
+  async getDisastersWithFallback(): Promise<FallbackResult<DisasterEvent[]>> {
+    const now = new Date().toISOString();
+
+    // 1. ONLINE ATTEMPT
+    try {
+      const serverDisasters = await beforeApi.getDisasters();
+      if (Array.isArray(serverDisasters) && serverDisasters.length > 0) {
+        await this.persistDisasters(serverDisasters);
+        return storageOk({
+          data: serverDisasters,
+          source: 'server',
+          lastSyncedAt: now,
+          isStale: false,
+        });
+      }
+    } catch (networkErr) {
+      console.info('[offlineCacheService] Network fetch failed for disasters, attempting cache fallback:', networkErr);
+    }
+
+    // 2. OFFLINE CACHE FALLBACK
+    const metaRes = await offlineStorageService.getAppMetadata('cached_disasters');
+    if (!metaRes.ok) {
+      return storageErr(metaRes.error.code, metaRes.error.message, metaRes.error.cause);
+    }
+
+    const meta = metaRes.data;
+    if (!meta || !Array.isArray(meta.value) || meta.value.length === 0) {
+      return storageOk({
+        data: [],
+        source: 'none',
+      });
+    }
+
+    const disasters = meta.value as DisasterEvent[];
+    const isStale = isSnapshotStale(meta.updatedAt);
+
+    return storageOk({
+      data: disasters,
+      source: 'cache',
+      lastSyncedAt: meta.updatedAt,
+      isStale,
+    });
+  },
+
+  // ==========================================================================
+  // 8. User-Scoped Citizen Map Cache (Strict Multi-User Isolation)
+  // ==========================================================================
+
+  async persistCitizenMap(userId: string, mapData: any): Promise<StorageResult<void>> {
+    if (!userId || typeof userId !== 'string') {
+      return storageErr('OPERATION_FAILED', 'userId is required for citizen map persistence');
+    }
+    const now = new Date().toISOString();
+    const putRes = await offlineStorageService.putAppMetadata({
+      key: `latest_citizen_map_${userId}`,
+      value: mapData,
+      updatedAt: now,
+    });
+    if (!putRes.ok) return storageErr(putRes.error.code, putRes.error.message, putRes.error.cause);
+    return storageOk(undefined);
+  },
+
+  async getCitizenMapWithFallback(userId?: string | null): Promise<FallbackResult<any>> {
+    if (!userId || typeof userId !== 'string') {
+      return storageOk({
+        data: null,
+        source: 'none',
+      });
+    }
+
+    const metaRes = await offlineStorageService.getAppMetadata(`latest_citizen_map_${userId}`);
+    if (!metaRes.ok) {
+      return storageErr(metaRes.error.code, metaRes.error.message, metaRes.error.cause);
+    }
+
+    const meta = metaRes.data;
+    if (!meta || !meta.value) {
+      return storageOk({
+        data: null,
+        source: 'none',
+      });
+    }
+
+    const isStale = isSnapshotStale(meta.updatedAt);
+    return storageOk({
+      data: meta.value,
+      source: 'cache',
+      lastSyncedAt: meta.updatedAt,
+      isStale,
+    });
+  },
+
+  // ==========================================================================
+  // 9. Command & Rescuer Map Cache
+  // ==========================================================================
+
+  async persistRescuerMap(mapData: any): Promise<StorageResult<void>> {
+    const now = new Date().toISOString();
+    const putRes = await offlineStorageService.putAppMetadata({
+      key: 'latest_rescuer_map',
+      value: mapData,
+      updatedAt: now,
+    });
+    if (!putRes.ok) return storageErr(putRes.error.code, putRes.error.message, putRes.error.cause);
+    return storageOk(undefined);
+  },
+
+  async getRescuerMapWithFallback(): Promise<FallbackResult<any>> {
+    const metaRes = await offlineStorageService.getAppMetadata('latest_rescuer_map');
+    if (!metaRes.ok) {
+      return storageErr(metaRes.error.code, metaRes.error.message, metaRes.error.cause);
+    }
+
+    const meta = metaRes.data;
+    if (!meta || !meta.value) {
+      return storageOk({
+        data: null,
+        source: 'none',
+      });
+    }
+
+    const isStale = isSnapshotStale(meta.updatedAt);
+    return storageOk({
+      data: meta.value,
+      source: 'cache',
+      lastSyncedAt: meta.updatedAt,
+      isStale,
+    });
   },
 };

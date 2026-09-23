@@ -7,6 +7,7 @@ import { duringApi } from '../../api/duringApi.ts';
 import { DisasterEvent } from '../../services/disasterService.ts';
 import { User } from '../../services/authService.ts';
 import { DuringTab } from '../layout/DashboardLayout.tsx';
+import { formatLastUpdated } from '../../offline/offlineDateUtils.ts';
 import {
   Layers,
   LifeBuoy,
@@ -1450,6 +1451,25 @@ export const DuringMapView: React.FC<DuringMapViewProps> = ({
               ? 'Geospatial disaster awareness: active danger zones, designated safe shelters, and nearby emergency services.'
               : 'Real-time geospatial tactical feed. Beacons display calculated Priority Scores.'}
           </p>
+          {(() => {
+            const data = isCitizen ? citizenMapData : mapData;
+            if (!data?.lastSyncedAt) return null;
+            if (data.source === 'cache') {
+              return (
+                <div className="mt-2 inline-flex items-center gap-2 px-3 py-1 bg-amber-50 border border-amber-200 text-amber-900 rounded-full text-xs font-medium">
+                  <Clock className="w-3.5 h-3.5 text-amber-700 flex-shrink-0" />
+                  <span>{formatLastUpdated(data.lastSyncedAt, data.isStale, true)}</span>
+                  <span className="text-amber-600">· Hazard information reflects the last saved snapshot.</span>
+                </div>
+              );
+            }
+            return (
+              <p className="text-xs text-[#567C8D] mt-1.5 font-medium flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5 text-[#567C8D]" />
+                <span>{formatLastUpdated(data.lastSyncedAt, false, false)}</span>
+              </p>
+            );
+          })()}
         </div>
 
         {/* Legend */}
@@ -1668,6 +1688,17 @@ export const DuringMapView: React.FC<DuringMapViewProps> = ({
               <Loader2 className="w-5 h-5 animate-spin text-[#2F4156]" />
               <span className="text-xs font-bold text-[#2F4156]">Loading emergency incident map...</span>
             </div>
+          </div>
+        )}
+
+        {/* No Map Data Offline Empty State */}
+        {typeof navigator !== 'undefined' && !navigator.onLine && (isCitizen ? citizenMapData?.source : mapData?.source) === 'none' && (
+          <div className="absolute inset-0 z-[500] bg-white/95 backdrop-blur-xs flex flex-col items-center justify-center p-8 text-center">
+            <MapPin className="w-12 h-12 text-[#567C8D] mx-auto mb-3 opacity-40" />
+            <h3 className="text-lg font-bold text-[#2F4156]">No Saved Map Data Available</h3>
+            <p className="text-xs text-[#567C8D] mt-1 max-w-md">
+              No saved map data is available on this device yet. Connect to the internet to load and cache disaster map intelligence.
+            </p>
           </div>
         )}
 

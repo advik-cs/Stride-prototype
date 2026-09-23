@@ -12,9 +12,20 @@ export interface AffectedZone {
   radiusKm: number;
 }
 
+export interface AffectedZonesWithMetaResponse {
+  zones: AffectedZone[];
+  source: 'server' | 'cache' | 'none';
+  lastSyncedAt?: string;
+  isStale?: boolean;
+}
+
 export const disasterService = {
   async getDisasters(): Promise<DisasterEvent[]> {
-    return beforeApi.getDisasters();
+    const res = await offlineCacheService.getDisastersWithFallback();
+    if (res.ok) {
+      return res.data.data;
+    }
+    throw new Error(res.error.message);
   },
 
   async getDisasterById(id: string): Promise<DisasterEvent> {
@@ -31,23 +42,23 @@ export const disasterService = {
 
   async getAffectedZones(disasterId: string): Promise<AffectedZone[]> {
     const cachedRes = await offlineCacheService.getMapDataWithFallback(disasterId);
-    if (cachedRes.ok && cachedRes.data.data.length > 0) {
+    if (cachedRes.ok) {
       return cachedRes.data.data;
     }
-    const list = await beforeApi.getZones(disasterId);
-    return (list || []).map((z: any) => ({
-      id: z.id,
-      disasterId: z.disasterId || z.disasterEventId || disasterId,
-      name: z.name,
-      riskLevel: z.riskLevel || z.alertLevel || 'HIGH',
-      polygonGeoJson:
-        typeof z.polygonGeoJson === 'string'
-          ? z.polygonGeoJson
-          : typeof z.boundaryCoordinates === 'string'
-          ? z.boundaryCoordinates
-          : JSON.stringify(z.polygonGeoJson || z.boundaryCoordinates || []),
-      radiusKm: z.radiusKm || 5.0,
-    }));
+    throw new Error(cachedRes.error.message);
+  },
+
+  async getAffectedZonesWithMeta(disasterId: string): Promise<AffectedZonesWithMetaResponse> {
+    const cachedRes = await offlineCacheService.getMapDataWithFallback(disasterId);
+    if (!cachedRes.ok) {
+      throw new Error(cachedRes.error.message);
+    }
+    return {
+      zones: cachedRes.data.data,
+      source: cachedRes.data.source,
+      lastSyncedAt: cachedRes.data.lastSyncedAt,
+      isStale: cachedRes.data.isStale,
+    };
   },
 
   async addAffectedZone(disasterId: string, data: Partial<AffectedZone>): Promise<AffectedZone> {
