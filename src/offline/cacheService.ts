@@ -185,9 +185,61 @@ export const offlineCacheService = {
 
   async persistShelters(shelters: (Shelter | ShelterOccupancy)[], disasterId?: string): Promise<StorageResult<void>> {
     const now = new Date().toISOString();
+
+    // Check if incoming batch contains genuine occupancy data
+    const batchHasOcc = shelters.some((s) => {
+      const anyS = s as any;
+      return (
+        anyS.hasOccupancyData === true ||
+        typeof anyS.expectedArrivals === 'number' ||
+        typeof anyS.remainingCapacity === 'number'
+      );
+    });
+
+    // Retrieve existing shelters from IndexedDB to safely merge and preserve occupancy
+    const existingResult = await offlineStorageService.getAllShelters();
+    const existingMap = new Map<string, ShelterRecord>();
+    if (existingResult.ok && Array.isArray(existingResult.data)) {
+      for (const ex of existingResult.data) {
+        existingMap.set(ex.id, ex);
+      }
+    }
+
     const records: ShelterRecord[] = shelters.map((s) => {
       const anyS = s as any;
-      const hasOcc = anyS.hasOccupancyData === true || typeof anyS.expectedArrivals === 'number' || typeof anyS.remainingCapacity === 'number';
+      const existing = existingMap.get(s.id);
+      const incomingHasOcc =
+        anyS.hasOccupancyData === true ||
+        typeof anyS.expectedArrivals === 'number' ||
+        typeof anyS.remainingCapacity === 'number';
+
+      const expectedArrivals =
+        incomingHasOcc && typeof anyS.expectedArrivals === 'number'
+          ? anyS.expectedArrivals
+          : typeof existing?.expectedArrivals === 'number'
+          ? existing.expectedArrivals
+          : undefined;
+
+      const remainingCapacity =
+        incomingHasOcc && typeof anyS.remainingCapacity === 'number'
+          ? anyS.remainingCapacity
+          : typeof existing?.remainingCapacity === 'number'
+          ? existing.remainingCapacity
+          : undefined;
+
+      const occupancyPercentage =
+        incomingHasOcc && typeof anyS.occupancyPercentage === 'number'
+          ? anyS.occupancyPercentage
+          : typeof existing?.occupancyPercentage === 'number'
+          ? existing.occupancyPercentage
+          : undefined;
+
+      const hasOcc =
+        typeof expectedArrivals === 'number' ||
+        typeof remainingCapacity === 'number' ||
+        incomingHasOcc ||
+        existing?.hasOccupancyData === true;
+
       return {
         id: s.id,
         name: s.name,
@@ -196,11 +248,11 @@ export const offlineCacheService = {
         longitude: s.longitude,
         capacity: s.capacity,
         contactNumber: s.contactNumber,
-        status: (s.status as any) || 'ACTIVE',
+        status: (s.status as any) || existing?.status || 'ACTIVE',
         lastSyncedAt: now,
-        expectedArrivals: hasOcc && typeof anyS.expectedArrivals === 'number' ? anyS.expectedArrivals : undefined,
-        remainingCapacity: hasOcc && typeof anyS.remainingCapacity === 'number' ? anyS.remainingCapacity : undefined,
-        occupancyPercentage: hasOcc && typeof anyS.occupancyPercentage === 'number' ? anyS.occupancyPercentage : undefined,
+        expectedArrivals,
+        remainingCapacity,
+        occupancyPercentage,
         hasOccupancyData: hasOcc,
       };
     });
@@ -208,22 +260,25 @@ export const offlineCacheService = {
     const putRes = await offlineStorageService.putShelters(records);
     if (!putRes.ok) return putRes;
 
-    // Persist full snapshot to appMetadata for disaster and latest fallback
-    await offlineStorageService.putAppMetadata({
-      key: 'latest_shelter_occupancy',
-      value: {
-        timestamp: now,
-        disasterId: disasterId || null,
-        occupancies: shelters,
-      },
-      updatedAt: now,
-    });
+    // Only overwrite latest_shelter_occupancy if this batch has genuine occupancy, or if disasterId is specified
+    if (batchHasOcc || disasterId) {
+      await offlineStorageService.putAppMetadata({
+        key: 'latest_shelter_occupancy',
+        value: {
+          timestamp: now,
+          disasterId: disasterId || null,
+          occupancies: records,
+        },
+        updatedAt: now,
+      });
+    }
+
     if (disasterId) {
       await offlineStorageService.putAppMetadata({
         key: `shelter_occupancy_${disasterId}`,
         value: {
           timestamp: now,
-          occupancies: shelters,
+          occupancies: records,
         },
         updatedAt: now,
       });
@@ -324,18 +379,26 @@ export const offlineCacheService = {
 
     const shelters: ShelterOccupancy[] = cachedShelters.map((s) => {
       const metaOcc = metadataOccupancyMap ? metadataOccupancyMap[s.id] : null;
-      const hasOcc = s.hasOccupancyData === true || (metaOcc && (metaOcc.hasOccupancyData === true || typeof metaOcc.expectedArrivals === 'number'));
 
-      if (hasOcc) {
-        const exp = typeof s.expectedArrivals === 'number'
-          ? s.expectedArrivals
-          : (typeof metaOcc?.expectedArrivals === 'number' ? metaOcc.expectedArrivals : 0);
-        const rem = typeof s.remainingCapacity === 'number'
-          ? s.remainingCapacity
-          : (typeof metaOcc?.remainingCapacity === 'number' ? metaOcc.remainingCapacity : (s.capacity - exp));
-        const pct = typeof s.occupancyPercentage === 'number'
-          ? s.occupancyPercentage
-          : (typeof metaOcc?.occupancyPercentage === 'number' ? metaOcc.occupancyPercentage : 0);
+      const sExp = typeof s.expectedArrivals === 'number' ? s.expectedArrivals : undefined;
+      const mExp = typeof metaOcc?.expectedArrivals === 'number' ? metaOcc.expectedArrivals : undefined;
+      const sRem = typeof s.remainingCapacity === 'number' ? s.remainingCapacity : undefined;
+      const mRem = typeof metaOcc?.remainingCapacity === 'number' ? metaOcc.remainingCapacity : undefined;
+      const sPct = typeof s.occupancyPercentage === 'number' ? s.occupancyPercentage : undefined;
+      const mPct = typeof metaOcc?.occupancyPercentage === 'number' ? metaOcc.occupancyPercentage : undefined;
+
+      const hasGenuineOcc =
+        sExp !== undefined ||
+        mExp !== undefined ||
+        sRem !== undefined ||
+        mRem !== undefined ||
+        s.hasOccupancyData === true ||
+        metaOcc?.hasOccupancyData === true;
+
+      if (hasGenuineOcc) {
+        const exp = sExp !== undefined ? sExp : (mExp !== undefined ? mExp : 0);
+        const rem = sRem !== undefined ? sRem : (mRem !== undefined ? mRem : (s.capacity - exp));
+        const pct = sPct !== undefined ? sPct : (mPct !== undefined ? mPct : (s.capacity > 0 ? Math.round((exp / s.capacity) * 100) : 0));
         const status = s.status || metaOcc?.status || 'AVAILABLE';
 
         return {
