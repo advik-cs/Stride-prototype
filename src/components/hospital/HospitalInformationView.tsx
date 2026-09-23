@@ -20,6 +20,7 @@ import {
   Clock,
 } from 'lucide-react';
 import { formatLastUpdated } from '../../offline/offlineDateUtils.ts';
+import { useConnectivityStatus } from '../../offline/useConnectivityStatus.ts';
 
 interface HospitalInformationViewProps {
   user: User;
@@ -34,8 +35,10 @@ export const HospitalInformationView: React.FC<HospitalInformationViewProps> = (
   mode = 'BEFORE',
   onNavigateTab,
 }) => {
+  const { isOffline: hookOffline } = useConnectivityStatus();
   const [hospitals, setHospitals] = useState<Hospital[]>([]);
   const [meta, setMeta] = useState<{ source?: 'server' | 'cache' | 'none'; lastSyncedAt?: string; isStale?: boolean }>({});
+  const isOffline = hookOffline || (typeof navigator !== 'undefined' && !navigator.onLine) || meta.source === 'cache';
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedHospital, setSelectedHospital] = useState<Hospital | null>(null);
@@ -91,19 +94,12 @@ export const HospitalInformationView: React.FC<HospitalInformationViewProps> = (
               ? 'Locate nearby medical centers, emergency trauma facilities, and bed availability before and during emergencies.'
               : 'Jurisdiction-wide hospital capacity, emergency readiness, and specialized medical resource intelligence.'}
           </p>
-          {meta.lastSyncedAt && (
-            meta.source === 'cache' ? (
-              <div className="mt-2 inline-flex items-center gap-2 px-3 py-1 bg-amber-50 border border-amber-200 text-amber-900 rounded-full text-xs font-medium">
-                <Clock className="w-3.5 h-3.5 text-amber-700 flex-shrink-0" />
-                <span>{formatLastUpdated(meta.lastSyncedAt, meta.isStale, true)}</span>
-                <span className="text-amber-600">· Availability reflects the last saved update and may have changed.</span>
-              </div>
-            ) : (
-              <p className="text-xs text-[#567C8D] mt-1.5 font-medium flex items-center gap-1.5">
-                <Clock className="w-3.5 h-3.5 text-[#567C8D]" />
-                <span>{formatLastUpdated(meta.lastSyncedAt, false, false)}</span>
-              </p>
-            )
+          {isOffline && meta.lastSyncedAt && (
+            <div className="mt-2 inline-flex items-center gap-2 px-3 py-1 bg-amber-50 border border-amber-200 text-amber-900 rounded-full text-xs font-medium">
+              <Clock className="w-3.5 h-3.5 text-amber-700 flex-shrink-0" />
+              <span>{formatLastUpdated(meta.lastSyncedAt, meta.isStale, true)}</span>
+              <span className="text-amber-600">· Availability reflects the last saved update and may have changed.</span>
+            </div>
           )}
         </div>
 

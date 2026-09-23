@@ -8,6 +8,7 @@ import { DisasterEvent } from '../../services/disasterService.ts';
 import { User } from '../../services/authService.ts';
 import { DuringTab } from '../layout/DashboardLayout.tsx';
 import { formatLastUpdated } from '../../offline/offlineDateUtils.ts';
+import { useConnectivityStatus } from '../../offline/useConnectivityStatus.ts';
 import {
   Layers,
   LifeBuoy,
@@ -372,6 +373,7 @@ export const DuringMapView: React.FC<DuringMapViewProps> = ({
   onSelectRequest,
   onNavigateTab,
 }) => {
+  const { isOffline: hookOffline } = useConnectivityStatus();
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
   const layerGroupRef = useRef<L.LayerGroup | null>(null);
@@ -1454,7 +1456,8 @@ export const DuringMapView: React.FC<DuringMapViewProps> = ({
           {(() => {
             const data = isCitizen ? citizenMapData : mapData;
             if (!data?.lastSyncedAt) return null;
-            if (data.source === 'cache') {
+            const isOffline = hookOffline || (typeof navigator !== 'undefined' && !navigator.onLine) || data.source === 'cache';
+            if (isOffline) {
               return (
                 <div className="mt-2 inline-flex items-center gap-2 px-3 py-1 bg-amber-50 border border-amber-200 text-amber-900 rounded-full text-xs font-medium">
                   <Clock className="w-3.5 h-3.5 text-amber-700 flex-shrink-0" />
@@ -1463,12 +1466,7 @@ export const DuringMapView: React.FC<DuringMapViewProps> = ({
                 </div>
               );
             }
-            return (
-              <p className="text-xs text-[#567C8D] mt-1.5 font-medium flex items-center gap-1.5">
-                <Clock className="w-3.5 h-3.5 text-[#567C8D]" />
-                <span>{formatLastUpdated(data.lastSyncedAt, false, false)}</span>
-              </p>
-            );
+            return null;
           })()}
         </div>
 

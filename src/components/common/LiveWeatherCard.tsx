@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useLanguage } from '../../i18n/LanguageContext';
 import { offlineCacheService } from '../../offline/cacheService';
 import { formatWeatherTelemetryLabel, formatLastUpdated } from '../../offline/offlineDateUtils';
+import { useConnectivityStatus } from '../../offline/useConnectivityStatus';
 import {
   Sun,
   Cloud,
@@ -118,6 +119,7 @@ export const LiveWeatherCard: React.FC<LiveWeatherCardProps> = ({
   className = '',
 }) => {
   const { t } = useLanguage();
+  const { isOffline: hookOffline } = useConnectivityStatus();
   const [coords, setCoords] = useState<{ lat: number; lon: number } | null>(null);
   const [locationStatus, setLocationStatus] = useState<'detecting' | 'detected' | 'denied' | 'unavailable'>('detecting');
   const [isFallbackCoords, setIsFallbackCoords] = useState(false);
@@ -127,6 +129,7 @@ export const LiveWeatherCard: React.FC<LiveWeatherCardProps> = ({
   const [isOfflineData, setIsOfflineData] = useState(false);
   const [isDataStale, setIsDataStale] = useState(false);
   const [cachedTimestamp, setCachedTimestamp] = useState<string | null>(null);
+  const isEffectiveOffline = hookOffline || (typeof navigator !== 'undefined' && !navigator.onLine) || isOfflineData;
 
   useEffect(() => {
     detectLocationAndFetchWeather();
@@ -224,7 +227,7 @@ export const LiveWeatherCard: React.FC<LiveWeatherCardProps> = ({
                     Bengaluru (Default): 12.9716° N, 77.5946° E
                   </span>
                 )}
-                {isOfflineData && (
+                {isEffectiveOffline && (
                   <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-300 flex items-center gap-1.5">
                     <Clock className="w-3 h-3 text-amber-600" />
                     {formatWeatherTelemetryLabel(cachedTimestamp, isDataStale)}
@@ -232,10 +235,10 @@ export const LiveWeatherCard: React.FC<LiveWeatherCardProps> = ({
                 )}
               </div>
             </div>
-            {cachedTimestamp && (
+            {isEffectiveOffline && cachedTimestamp && (
               <p className="text-xs text-[#567C8D] mt-1.5 font-medium flex items-center gap-1.5">
                 <Clock className="w-3.5 h-3.5 text-[#567C8D]" />
-                <span>{formatLastUpdated(cachedTimestamp, isDataStale, isOfflineData)}</span>
+                <span>{formatLastUpdated(cachedTimestamp, isDataStale, true)}</span>
               </p>
             )}
           </div>

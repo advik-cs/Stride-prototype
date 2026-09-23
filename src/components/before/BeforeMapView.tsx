@@ -24,6 +24,7 @@ import {
   Clock,
 } from 'lucide-react';
 import { formatLastUpdated } from '../../offline/offlineDateUtils.ts';
+import { useConnectivityStatus } from '../../offline/useConnectivityStatus.ts';
 
 interface BeforeMapViewProps {
   user: User;
@@ -31,6 +32,7 @@ interface BeforeMapViewProps {
 }
 
 export const BeforeMapView: React.FC<BeforeMapViewProps> = ({ user, activeDisaster }) => {
+  const { isOffline: hookOffline } = useConnectivityStatus();
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
   const layerGroupRef = useRef<L.LayerGroup | null>(null);
@@ -841,7 +843,8 @@ function isValidCoordinate(lat: any, lng: any): boolean {
           {(() => {
             const data = user.role === 'CITIZEN' ? citizenData : rescuerData;
             if (!data?.lastSyncedAt) return null;
-            if (data.source === 'cache') {
+            const isOffline = hookOffline || (typeof navigator !== 'undefined' && !navigator.onLine) || data.source === 'cache';
+            if (isOffline) {
               return (
                 <div className="mt-2 inline-flex items-center gap-2 px-3 py-1 bg-amber-50 border border-amber-200 text-amber-900 rounded-full text-xs font-medium">
                   <Clock className="w-3.5 h-3.5 text-amber-700 flex-shrink-0" />
@@ -850,12 +853,7 @@ function isValidCoordinate(lat: any, lng: any): boolean {
                 </div>
               );
             }
-            return (
-              <p className="text-xs text-[#567C8D] mt-1.5 font-medium flex items-center gap-1.5">
-                <Clock className="w-3.5 h-3.5 text-[#567C8D]" />
-                <span>{formatLastUpdated(data.lastSyncedAt, false, false)}</span>
-              </p>
-            );
+            return null;
           })()}
         </div>
 

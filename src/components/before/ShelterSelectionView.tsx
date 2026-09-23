@@ -186,19 +186,12 @@ export const ShelterSelectionView: React.FC<ShelterSelectionViewProps> = ({
               ? 'Real-time shelter capacities, operational status, and remaining capacity calculations.'
               : 'Designated relief centers, address details, and operational status directory.'}
           </p>
-          {shelterMeta.lastSyncedAt && (
-            shelterMeta.source === 'cache' ? (
-              <div className="mt-2 inline-flex items-center gap-2 px-3 py-1 bg-amber-50 border border-amber-200 text-amber-900 rounded-full text-xs font-medium">
-                <Clock className="w-3.5 h-3.5 text-amber-700 flex-shrink-0" />
-                <span>{formatLastUpdated(shelterMeta.lastSyncedAt, shelterMeta.isStale, true)}</span>
-                <span className="text-amber-600">· Occupancy reflects the last saved update and may have changed.</span>
-              </div>
-            ) : (
-              <p className="text-xs text-[#567C8D] mt-1.5 font-medium flex items-center gap-1.5">
-                <Clock className="w-3.5 h-3.5 text-[#567C8D]" />
-                <span>{formatLastUpdated(shelterMeta.lastSyncedAt, false, false)}</span>
-              </p>
-            )
+          {isOffline && shelterMeta.lastSyncedAt && (
+            <div className="mt-2 inline-flex items-center gap-2 px-3 py-1 bg-amber-50 border border-amber-200 text-amber-900 rounded-full text-xs font-medium">
+              <Clock className="w-3.5 h-3.5 text-amber-700 flex-shrink-0" />
+              <span>{formatLastUpdated(shelterMeta.lastSyncedAt, shelterMeta.isStale, true)}</span>
+              <span className="text-amber-600">· Occupancy reflects the last saved update and may have changed.</span>
+            </div>
           )}
         </div>
 
@@ -376,7 +369,7 @@ export const ShelterSelectionView: React.FC<ShelterSelectionViewProps> = ({
                       className="mt-3 px-3 py-2 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-950 flex items-center justify-center gap-2 text-xs font-semibold shadow-sm"
                     >
                       <AlertTriangle className="w-3.5 h-3.5 text-amber-700 flex-shrink-0" />
-                      <span>Offline! Unable to display Shelter Capacity</span>
+                      <span>Offline! Unable to update Shelter Capacity</span>
                     </div>
                   )}
                 </div>

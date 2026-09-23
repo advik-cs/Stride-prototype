@@ -13,7 +13,7 @@ interface TestResult {
 
 async function runOfflineShelterCapacityWarningSuite() {
   console.log('================================================================');
-  console.log('STRIDE OFFLINE SHELTER CAPACITY WARNING FOCUSED TEST SUITE');
+  console.log('STRIDE OFFLINE SHELTER WARNING & LAST-UPDATED VISIBILITY SUITE');
   console.log('================================================================\n');
 
   let passed = 0;
@@ -35,9 +35,22 @@ async function runOfflineShelterCapacityWarningSuite() {
   console.log('--- SUITE 1: STATIC ARCHITECTURAL & COMPONENT INVARIANTS ---');
 
   const shelterViewPath = path.resolve(process.cwd(), 'src/components/before/ShelterSelectionView.tsx');
+  const hospitalViewPath = path.resolve(process.cwd(), 'src/components/hospital/HospitalInformationView.tsx');
+  const beforeMapPath = path.resolve(process.cwd(), 'src/components/before/BeforeMapView.tsx');
+  const duringMapPath = path.resolve(process.cwd(), 'src/components/during/DuringMapView.tsx');
+  const liveWeatherPath = path.resolve(process.cwd(), 'src/components/common/LiveWeatherCard.tsx');
+
   assert(fs.existsSync(shelterViewPath), 'ShelterSelectionView.tsx exists');
+  assert(fs.existsSync(hospitalViewPath), 'HospitalInformationView.tsx exists');
+  assert(fs.existsSync(beforeMapPath), 'BeforeMapView.tsx exists');
+  assert(fs.existsSync(duringMapPath), 'DuringMapView.tsx exists');
+  assert(fs.existsSync(liveWeatherPath), 'LiveWeatherCard.tsx exists');
 
   const shelterViewContent = fs.readFileSync(shelterViewPath, 'utf-8');
+  const hospitalViewContent = fs.readFileSync(hospitalViewPath, 'utf-8');
+  const beforeMapContent = fs.readFileSync(beforeMapPath, 'utf-8');
+  const duringMapContent = fs.readFileSync(duringMapPath, 'utf-8');
+  const liveWeatherContent = fs.readFileSync(liveWeatherPath, 'utf-8');
 
   // Invariant 1: Connectivity hook integration
   assert(
@@ -57,10 +70,14 @@ async function runOfflineShelterCapacityWarningSuite() {
     'Shelter card contains data-testid="offline-shelter-capacity-warning"'
   );
 
-  // Invariant 4: Exact required wording
+  // Invariant 4: Exact required wording: "Offline! Unable to update Shelter Capacity"
   assert(
-    shelterViewContent.includes('Offline! Unable to display Shelter Capacity'),
-    'Warning uses exact required text: "Offline! Unable to display Shelter Capacity"'
+    shelterViewContent.includes('Offline! Unable to update Shelter Capacity'),
+    'Warning uses exact required text: "Offline! Unable to update Shelter Capacity"'
+  );
+  assert(
+    !shelterViewContent.includes('Offline! Unable to display Shelter Capacity'),
+    'Old warning text "Offline! Unable to display Shelter Capacity" is completely removed'
   );
 
   // Invariant 5: Amber/yellow styling & AlertTriangle icon
@@ -87,10 +104,42 @@ async function runOfflineShelterCapacityWarningSuite() {
     'Existing shelter card data/UI (Total Cap, Expected, Remaining, Occupancy Trend) remains completely intact'
   );
 
+  // Invariant 8: Section last-updated timestamps are rendered ONLY when offline
+  assert(
+    shelterViewContent.includes('{isOffline && shelterMeta.lastSyncedAt && ('),
+    'ShelterSelectionView: Section last-updated timestamp is guarded by {isOffline && ...}'
+  );
+  assert(
+    hospitalViewContent.includes('{isOffline && meta.lastSyncedAt && ('),
+    'HospitalInformationView: Section last-updated timestamp is guarded by {isOffline && ...}'
+  );
+  assert(
+    beforeMapContent.includes('const isOffline =') && beforeMapContent.includes('if (isOffline) {') && beforeMapContent.includes('return null;'),
+    'BeforeMapView: Section last-updated timestamp returns null when online'
+  );
+  assert(
+    duringMapContent.includes('const isOffline =') && duringMapContent.includes('if (isOffline) {') && duringMapContent.includes('return null;'),
+    'DuringMapView: Section last-updated timestamp returns null when online'
+  );
+  assert(
+    liveWeatherContent.includes('{isEffectiveOffline && cachedTimestamp && ('),
+    'LiveWeatherCard: Section last-updated timestamp is guarded by {isEffectiveOffline && ...}'
+  );
+
+  // Invariant 9: Standardized timestamp format function preserved
+  assert(
+    shelterViewContent.includes('formatLastUpdated') &&
+    hospitalViewContent.includes('formatLastUpdated') &&
+    beforeMapContent.includes('formatLastUpdated') &&
+    duringMapContent.includes('formatLastUpdated') &&
+    liveWeatherContent.includes('formatLastUpdated'),
+    'All sections retain formatLastUpdated for standardized timestamp rendering'
+  );
+
   // ============================================================================
-  // SUITE 2: REAL BROWSER HYDRATION & CONNECTIVITY TOGGLE (PLAYWRIGHT)
+  // SUITE 2: REAL BROWSER HYDRATION & OFFLINE TOGGLE TESTS (PLAYWRIGHT)
   // ============================================================================
-  console.log('\n--- SUITE 2: REAL BROWSER (PLAYWRIGHT) SHELTER CAPACITY WARNING TESTS ---');
+  console.log('\n--- SUITE 2: REAL BROWSER (PLAYWRIGHT) WARNING & TIMESTAMP TESTS ---');
 
   const testAppSource = `
     import React, { useState } from 'react';
@@ -99,7 +148,6 @@ async function runOfflineShelterCapacityWarningSuite() {
     import { LanguageProvider } from './src/i18n/LanguageContext';
     import { shelterService } from './src/services/shelterService';
 
-    // Mock shelters representing real Bengaluru relief outposts
     const sampleShelters = [
       {
         id: 'sh-1',
@@ -133,19 +181,18 @@ async function runOfflineShelterCapacityWarningSuite() {
         id: 'sh-3',
         name: 'M. Chinnaswamy Stadium Outpost',
         address: 'MG Road, Bengaluru',
-        latitude: 12.9788,
+        latitude: 12.9784,
         longitude: 77.5996,
-        capacity: 2000,
-        expectedArrivals: 540,
-        remainingCapacity: 1460,
-        occupancyPercentage: 27,
+        capacity: 120,
+        expectedArrivals: 35,
+        remainingCapacity: 85,
+        occupancyPercentage: 29,
         contactNumber: '+91 80 2286 0003',
         status: 'AVAILABLE',
         hasOccupancyData: true
       }
     ];
 
-    // Intercept shelterService to return our 3 sample shelters
     shelterService.getSheltersWithMeta = async () => {
       return {
         shelters: sampleShelters,
@@ -228,7 +275,7 @@ async function runOfflineShelterCapacityWarningSuite() {
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>STRIDE Shelter Capacity Warning Test</title>
+  <title>STRIDE Shelter Capacity Warning & Timestamp Test</title>
 </head>
 <body>
   <div id="root"></div>
@@ -260,13 +307,20 @@ async function runOfflineShelterCapacityWarningSuite() {
     assert(cardHeadings === 3, 'Rendered all 3 designated test shelter cards');
 
     // ------------------------------------------------------------------------
-    // Test 1: ONLINE MODE — Warning must NOT be shown
+    // Test 1: ONLINE MODE — Warning must NOT be shown, timestamp must NOT be shown
     // ------------------------------------------------------------------------
     const onlineWarnings = await page.locator('[data-testid="offline-shelter-capacity-warning"]').count();
     assert(onlineWarnings === 0, '1. Online shelter cards do NOT display the warning (count: 0)');
 
-    const onlineWarningTextCount = await page.locator('text="Offline! Unable to display Shelter Capacity"').count();
-    assert(onlineWarningTextCount === 0, 'Online DOM does not contain warning text');
+    const onlineWarningTextCount = await page.locator('text="Offline! Unable to update Shelter Capacity"').count();
+    assert(onlineWarningTextCount === 0, 'Online DOM does not contain new warning text');
+
+    const onlineOldWarningTextCount = await page.locator('text="Offline! Unable to display Shelter Capacity"').count();
+    assert(onlineOldWarningTextCount === 0, 'Online DOM does not contain old warning text');
+
+    // Section heading timestamp must NOT be rendered online
+    const onlineHeadingTimestamp = await page.locator('text=/Last updated:/').count();
+    assert(onlineHeadingTimestamp === 0, 'Online shelter section does NOT display "Last updated" timestamp');
 
     // Verify existing capacity metrics are rendered online
     const onlineTotalCap = await page.locator('text=Total Cap').count();
@@ -290,12 +344,12 @@ async function runOfflineShelterCapacityWarningSuite() {
     assert(offlineWarnings === 3, '3. Every rendered shelter card receives the warning while offline (3 cards -> 3 warnings)');
 
     // ------------------------------------------------------------------------
-    // Test 4: EXACT REQUIRED WORDING
+    // Test 4: EXACT REQUIRED WORDING: "Offline! Unable to update Shelter Capacity"
     // ------------------------------------------------------------------------
     const warningElements = page.locator('[data-testid="offline-shelter-capacity-warning"]');
     const warningTexts = await warningElements.allInnerTexts();
-    const allTextMatches = warningTexts.every((t) => t.trim() === 'Offline! Unable to display Shelter Capacity');
-    assert(allTextMatches, '4. Exact text on every card is: "Offline! Unable to display Shelter Capacity"');
+    const allTextMatches = warningTexts.every((t) => t.trim() === 'Offline! Unable to update Shelter Capacity');
+    assert(allTextMatches, '4. Exact text on every card is: "Offline! Unable to update Shelter Capacity"');
 
     // Verify amber background and border styling
     const firstWarningClass = await warningElements.first().getAttribute('class');
@@ -303,6 +357,10 @@ async function runOfflineShelterCapacityWarningSuite() {
       firstWarningClass?.includes('bg-amber-500/15') && firstWarningClass?.includes('border-amber-500/30'),
       'Warning element has clear yellow/amber background and border classes'
     );
+
+    // Section heading timestamp MUST be rendered offline
+    const offlineHeadingTimestamp = await page.locator('text=/Last updated:/').count();
+    assert(offlineHeadingTimestamp > 0, 'Offline shelter section displays "Last updated" timestamp');
 
     // ------------------------------------------------------------------------
     // Test 5: Existing shelter card data/UI remains unchanged apart from warning
@@ -319,7 +377,7 @@ async function runOfflineShelterCapacityWarningSuite() {
     assert(phoneCount === 3, '5. Shelter contact numbers remain intact on all cards');
 
     // ------------------------------------------------------------------------
-    // Test 6: Reconnection removes warning cleanly
+    // Test 6: Reconnection removes warning and timestamp cleanly
     // ------------------------------------------------------------------------
     await page.evaluate(() => {
       (window as any).__setOfflineOverride(false);
@@ -332,6 +390,9 @@ async function runOfflineShelterCapacityWarningSuite() {
     const reconnectedWarnings = await page.locator('[data-testid="offline-shelter-capacity-warning"]').count();
     assert(reconnectedWarnings === 0, '6. Reconnection removes warning cleanly from all shelter cards');
 
+    const reconnectedTimestamp = await page.locator('text=/Last updated:/').count();
+    assert(reconnectedTimestamp === 0, '6. Reconnection hides section "Last updated" timestamp cleanly');
+
   } finally {
     await browser.close();
     server.close();
@@ -341,7 +402,7 @@ async function runOfflineShelterCapacityWarningSuite() {
   // SUMMARY
   // ============================================================================
   console.log('\n================================================================');
-  console.log(`OFFLINE SHELTER CAPACITY WARNING SUITE: ${passed} PASSED, ${failed} FAILED`);
+  console.log(`OFFLINE SHELTER CAPACITY WARNING & TIMESTAMP SUITE: ${passed} PASSED, ${failed} FAILED`);
   console.log('================================================================\n');
 
   if (failed > 0) {
