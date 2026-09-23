@@ -7,6 +7,7 @@ import { registerSW } from 'virtual:pwa-register';
 import { initStrideDB } from './offline/db';
 import { connectivityService } from './offline/connectivityService';
 import { sosSyncManager } from './offline/sosSyncManager';
+import { backgroundSyncService } from './offline/backgroundSyncService';
 import './index.css';
 
 registerSW({ immediate: true });
@@ -21,6 +22,9 @@ connectivityService.init();
 
 // 3. Initialize offline SOS outbox reconnect synchronization & recover stale syncing records
 sosSyncManager.init();
+
+// 4. Initialize background sync service (SW message listener & periodic sync registration)
+backgroundSyncService.init();
 
 // 4. If connectivity is available on startup, attempt non-blocking sync of pending mutations
 if (typeof navigator !== 'undefined' && navigator.onLine) {

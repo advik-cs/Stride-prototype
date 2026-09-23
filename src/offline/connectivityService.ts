@@ -11,6 +11,10 @@ class ConnectivityService {
   private hasPending = false;
   private serverReachable = true;
   private initialized = false;
+  private inFlightProbe: Promise<boolean> | null = null;
+  private lastProbeTime = 0;
+  private lastProbeResult = true;
+  private probeCooldownMs = 5000;
 
   constructor() {
     if (typeof window !== 'undefined') {
@@ -127,6 +131,97 @@ class ConnectivityService {
   recordApiFailure(_error?: unknown): void {
     this.serverReachable = false;
     this.recomputeState();
+  }
+
+  /**
+   * User-scoped check for pending SOS outbox records.
+   * Strictly evaluates mutations for the specified or currently authenticated user.
+   */
+  async hasPendingSos(userId?: string): Promise<boolean> {
+    const targetUserId = userId || authApi.getStoredUser()?.id;
+    if (!targetUserId) return false;
+
+    try {
+      const outboxRes = await offlineStorageService.getOutboxItemsByStatus('PENDING');
+      if (outboxRes.ok && outboxRes.data) {
+        return outboxRes.data.some(
+          (item) => item.userId === targetUserId && item.actionType === 'CREATE_SOS'
+        );
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Actively probes STRIDE backend reachability via lightweight /api/health check.
+   * - If navigator.onLine === false, immediately returns false without network request.
+   * - Deduplicates simultaneous in-flight calls.
+   * - Enforces a 5-second cooldown between non-forced probes to protect battery/network.
+   * - Uses AbortController with short timeout (default 4000ms).
+   * - Reachability probing MUST NOT mutate SOS outbox state or retry/backoff schedules.
+   */
+  async checkBackendReachability(timeoutMs = 4000, force = false): Promise<boolean> {
+    // 1. Offline fast-path: Never make a network request if browser reports offline
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      this.serverReachable = false;
+      this.lastProbeResult = false;
+      this.recomputeState();
+      return false;
+    }
+
+    // 2. Cooldown check: Return cached recent probe result if within cooldown and not forced
+    const now = Date.now();
+    if (!force && now - this.lastProbeTime < this.probeCooldownMs) {
+      return this.lastProbeResult;
+    }
+
+    // 3. Concurrency deduplication: If a probe is currently in flight, return the existing Promise
+    if (this.inFlightProbe) {
+      return this.inFlightProbe;
+    }
+
+    this.inFlightProbe = (async () => {
+      let isReachable = false;
+      let timer: any = null;
+
+      try {
+        const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        if (controller) {
+          timer = setTimeout(() => controller.abort(), timeoutMs);
+        }
+
+        const healthUrl =
+          typeof window !== 'undefined' && (window as any).__STRIDE_HEALTH_URL
+            ? (window as any).__STRIDE_HEALTH_URL
+            : '/api/health';
+
+        const res = await fetch(healthUrl, {
+          method: 'GET',
+          headers: {
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+          },
+          signal: controller?.signal,
+        });
+
+        isReachable = res.ok;
+      } catch {
+        isReachable = false;
+      } finally {
+        if (timer) clearTimeout(timer);
+        this.lastProbeTime = Date.now();
+        this.lastProbeResult = isReachable;
+        this.serverReachable = isReachable;
+        this.inFlightProbe = null;
+        this.recomputeState();
+      }
+
+      return isReachable;
+    })();
+
+    return this.inFlightProbe;
   }
 
   /**

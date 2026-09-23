@@ -108,6 +108,7 @@ export default defineConfig(() => {
             /^\/during\/voice-emergency\/.*/,
             /^\/health$/,
           ],
+          importScripts: ['sw-sync.js'],
           runtimeCaching: [
             {
               urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,

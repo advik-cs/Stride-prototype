@@ -90,11 +90,33 @@ export const sosSyncManager = {
     });
 
     window.addEventListener('online', () => {
-      console.log('[sosSyncManager] Network online detected — triggering SOS outbox synchronization');
-      this.syncPendingOutbox().catch((err) => {
+      this.handleOnlineEvent().catch((err) => {
         console.warn('[sosSyncManager] Reconnect sync error:', err);
       });
     });
+  },
+
+  /**
+   * Reacts to network 'online' event or background sync wakeups:
+   * 1. Coalesces rapid triggers via isSyncInProgress().
+   * 2. Checks if current user has pending SOS outbox records.
+   * 3. If pending SOS exists, checks backend reachability via lightweight probe.
+   * 4. If backend is reachable, flushes outbox using syncPendingOutbox().
+   */
+  async handleOnlineEvent(): Promise<void> {
+    if (this.isSyncInProgress()) {
+      return;
+    }
+
+    const hasPending = await connectivityService.hasPendingSos();
+    if (!hasPending) {
+      return;
+    }
+
+    const isReachable = await connectivityService.checkBackendReachability(4000, true);
+    if (isReachable) {
+      await this.syncPendingOutbox();
+    }
   },
 
   /**

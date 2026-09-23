@@ -2,6 +2,7 @@ import { offlineStorageService } from './offlineStorageService';
 import { duringApi, RescueRequest, WaterLevel, EmergencyType, PriorityLevel } from '../api/duringApi';
 import { authApi } from '../api/authApi';
 import { connectivityService } from './connectivityService';
+import { backgroundSyncService } from './backgroundSyncService';
 import { ActiveSosRecord, SosOutboxRecord } from './types';
 
 export interface CreateSosInput {
@@ -179,6 +180,9 @@ export const offlineSosService = {
 
     // Refresh connectivity state (ONLINE_PENDING_SYNC)
     connectivityService.refreshPendingStatus().catch(() => {});
+
+    // Attempt to register Background Sync where supported (Layer 2)
+    backgroundSyncService.registerSosSync().catch(() => {});
 
     return { localSos, isOffline: true };
   },

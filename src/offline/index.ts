@@ -6,3 +6,4 @@ export * from './sosService';
 export * from './sosSyncManager';
 export * from './connectivityService';
 export * from './useConnectivityStatus';
+export * from './backgroundSyncService';
