@@ -706,7 +706,17 @@ export const RescueOperationsView: React.FC<RescueOperationsViewProps> = ({
           </div>
 
           <div className="space-y-4">
-            {filteredRequests.map((req) => {
+            {filteredRequests.length === 0 ? (
+              <div className="p-8 text-center bg-[#F5EFEB]/50 rounded-2xl border border-dashed border-[#C8D9E6] space-y-1">
+                <p className="text-sm font-semibold text-[#2F4156]">
+                  {loading ? 'Loading emergency triage queue...' : 'No emergency requests matching filter.'}
+                </p>
+                <p className="text-xs text-[#567C8D]">
+                  {loading ? 'Connecting to live telemetry dispatch server...' : 'Active distress calls from citizens will appear here ranked by risk priority.'}
+                </p>
+              </div>
+            ) : (
+              filteredRequests.map((req) => {
               const isCritical = req.priorityLevel === 'CRITICAL';
 
               return (
@@ -875,7 +885,7 @@ export const RescueOperationsView: React.FC<RescueOperationsViewProps> = ({
                   </div>
                 </div>
               );
-            })}
+            }))}
           </div>
         </div>
       )}

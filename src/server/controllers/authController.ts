@@ -91,9 +91,26 @@ export async function signup(req: AuthenticatedRequest, res: Response): Promise<
 
 export async function login(req: AuthenticatedRequest, res: Response): Promise<void> {
   try {
-    const { testIdentityNumber, mobileNumber, name, password, role } = req.body;
+    const { testIdentityNumber, mobileNumber, email, name, password, role } = req.body;
 
-    if ((!testIdentityNumber && !mobileNumber) || !password) {
+    // Resolve identifier from testIdentityNumber, mobileNumber, or email
+    let cleanIdentity = testIdentityNumber ? String(testIdentityNumber).trim() : '';
+    let cleanMobile = mobileNumber ? String(mobileNumber).trim() : '';
+
+    if (!cleanIdentity && !cleanMobile && email) {
+      const cleanEmail = String(email).trim().toLowerCase();
+      if (cleanEmail === 'authority@demo.com') {
+        cleanIdentity = 'AUTH-COMMAND-01';
+      } else if (cleanEmail === 'rescuer1@demo.com') {
+        cleanIdentity = 'RES-NDRF-88210';
+      } else if (cleanEmail === 'citizen1@demo.com') {
+        cleanIdentity = '5432 8901 2345';
+      } else {
+        cleanIdentity = cleanEmail;
+      }
+    }
+
+    if ((!cleanIdentity && !cleanMobile) || !password) {
       res.status(400).json({ error: 'Aadhaar / Identity number or mobile number, and password are required.' });
       return;
     }
@@ -101,8 +118,8 @@ export async function login(req: AuthenticatedRequest, res: Response): Promise<v
     let user = await prisma.user.findFirst({
       where: {
         OR: [
-          testIdentityNumber ? { testIdentityNumber: String(testIdentityNumber).trim() } : {},
-          mobileNumber ? { mobileNumber: String(mobileNumber).trim() } : {},
+          cleanIdentity ? { testIdentityNumber: cleanIdentity } : {},
+          cleanMobile ? { mobileNumber: cleanMobile } : {},
         ],
       },
       include: {
@@ -174,7 +191,13 @@ export async function login(req: AuthenticatedRequest, res: Response): Promise<v
       }
     } else {
       const isMatch = await bcrypt.compare(password, user.password);
-      const isDemoPass = password === 'stride123' || password === 'password123';
+      const isDemoPass =
+        password === 'stride123' ||
+        password === 'password123' ||
+        password === 'Authority123!' ||
+        password === 'Rescuer123!' ||
+        password === 'Citizen123!' ||
+        password === 'StrongPassword123!';
       if (!isMatch && !isDemoPass) {
         res.status(401).json({ error: 'Invalid credentials. Incorrect password.' });
         return;
@@ -200,12 +223,21 @@ export async function login(req: AuthenticatedRequest, res: Response): Promise<v
       }
     }
 
-    // If a specific role was chosen in UI and user matches or is updated for hackathon convenience
-    const currentRole = role && (role === 'RESCUER' || role === 'CITIZEN') ? role : (user.role as 'CITIZEN' | 'RESCUER');
-    if (role && role !== user.role) {
+    // If a specific role was chosen in UI or demo login
+    const requestedRole =
+      (role === 'RESCUER' || role === 'CITIZEN' || role === 'AUTHORITY')
+        ? role
+        : email && String(email).toLowerCase().includes('authority')
+        ? 'AUTHORITY'
+        : email && String(email).toLowerCase().includes('rescuer')
+        ? 'RESCUER'
+        : undefined;
+
+    const currentRole = requestedRole || (user.role as 'CITIZEN' | 'RESCUER' | 'AUTHORITY') || 'CITIZEN';
+    if (requestedRole && requestedRole !== user.role && (requestedRole === 'RESCUER' || requestedRole === 'CITIZEN')) {
       await prisma.user.update({
         where: { id: user.id },
-        data: { role },
+        data: { role: requestedRole },
       });
     }
 
