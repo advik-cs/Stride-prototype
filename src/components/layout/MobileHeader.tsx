@@ -59,6 +59,7 @@ export const MobileHeader: React.FC<MobileHeaderProps> = ({
           </button>
 
           <div className="flex items-center gap-1 flex-shrink-0">
+            {/* Mobile Header Branding: Display ONLY "STRIDE" without full-form expansion or subtitle */}
             <StrideLogo size="sm" showSubtitle={false} light={isDark} />
           </div>
         </div>
