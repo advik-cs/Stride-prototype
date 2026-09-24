@@ -15,6 +15,8 @@
     "prisma:generate": "prisma generate",
     "prisma:push": "prisma db push",
     "prisma:seed": "tsx prisma/seed.ts",
+    "demo:seed": "tsx scripts/seed-demo-data.ts",
+    "demo:clear": "tsx scripts/clear-demo-data.ts",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit"
