@@ -48,7 +48,7 @@ export const HouseholdOnboardingGate: React.FC<HouseholdOnboardingGateProps> = (
             </span>
           </div>
 
-          <LanguageSelectorDropdown id="onboarding-lang-selector" />
+          <LanguageSelectorDropdown id="onboarding-lang-selector" className="hidden lg:inline-flex" />
 
           <button
             type="button"

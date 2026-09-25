@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
-import { Menu, Bell, AlertTriangle } from 'lucide-react';
+import { Menu, Bell } from 'lucide-react';
 import { StrideLogo } from '../common/StrideLogo';
-import { LanguageSelectorDropdown } from '../common/LanguageSelectorDropdown';
 import { DisasterEvent } from '../../services/disasterService';
 import { NotificationItem } from '../../services/notificationService';
 import { DisasterMode } from './DashboardLayout';
@@ -64,37 +63,8 @@ export const MobileHeader: React.FC<MobileHeaderProps> = ({
           </div>
         </div>
 
-        {/* Center / Inline: Active Disaster Alert Status Pill */}
-        {activeDisaster ? (
-          <div
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black border transition-all max-w-[130px] sm:max-w-[180px] truncate ${
-              activeDisaster.alertLevel === 'RED'
-                ? 'bg-red-500/15 border-red-500/40 text-red-700'
-                : 'bg-amber-500/15 border-amber-500/40 text-amber-800'
-            }`}
-            title={`[${activeDisaster.alertLevel}] ${activeDisaster.title}`}
-          >
-            <span
-              className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                activeDisaster.alertLevel === 'RED'
-                  ? 'bg-red-600 animate-ping'
-                  : 'bg-amber-500'
-              }`}
-            />
-            <span className="truncate">{activeDisaster.title}</span>
-          </div>
-        ) : null}
-
-        {/* Right: Language Selector + Notification Bell */}
-        <div className="flex items-center gap-1">
-          {/* Multilingual Selector */}
-          <LanguageSelectorDropdown
-            isDark={isDark}
-            id="mobile-header-language-selector"
-            className="scale-90 origin-right"
-          />
-
-          {/* Notification Bell */}
+        {/* Right: Notification Bell */}
+        <div className="flex items-center">
           <div className="relative">
             <button
               type="button"
